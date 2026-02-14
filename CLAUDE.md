@@ -82,3 +82,7 @@ State version is currently **v4**. Backward-compatible with v2/v3 (reads and dis
 
 - **JUCE** — git submodule in `JUCE/`
 - **Signalsmith Stretch** — git submodule in `signalsmith-stretch/`, with `signalsmith-linear` inside it. Include paths set in CMakeLists.txt.
+
+## Design Assets
+
+The `info/` directory (local only, not tracked in git) contains the original architecture flowchart used as reference for the UI layout.
