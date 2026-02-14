@@ -14,6 +14,7 @@ add_library(pffft STATIC EXCLUDE_FROM_ALL
     ${BUNGEE_ROOT}/submodules/pffft/pffft.c
     ${BUNGEE_ROOT}/submodules/pffft/fftpack.c
 )
+set_target_properties(pffft PROPERTIES POSITION_INDEPENDENT_CODE ON)
 if (MSVC)
     target_compile_options(pffft PRIVATE /fp:fast)
     target_compile_definitions(pffft PRIVATE _USE_MATH_DEFINES)
@@ -24,6 +25,7 @@ endif()
 # Bungee library
 file(GLOB BUNGEE_SOURCES "${BUNGEE_ROOT}/src/*.cpp")
 add_library(bungee_lib STATIC EXCLUDE_FROM_ALL ${BUNGEE_SOURCES})
+set_target_properties(bungee_lib PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(bungee_lib PRIVATE
     ${BUNGEE_ROOT}/submodules/eigen
     ${BUNGEE_ROOT}/submodules
