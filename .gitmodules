@@ -7,3 +7,6 @@
 [submodule "bungee"]
 	path = bungee
 	url = https://github.com/bungee-audio-stretch/bungee.git
+[submodule "signalsmith-linear"]
+	path = signalsmith-linear
+	url = https://github.com/Signalsmith-Audio/linear.git

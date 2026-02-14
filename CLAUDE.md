@@ -60,7 +60,7 @@ project/
 │   │   ├── ParamIds.h            — APVTS parameter ID strings (includes uiScale)
 │   │   └── ParamLayout.h/.cpp    — APVTS parameter layout with ranges
 │   └── ui/
-│       ├── TuckersLookAndFeel.h/.cpp — Theme colour palette + button styling
+│       ├── IntersectLookAndFeel.h/.cpp — Theme colour palette + button styling
 │       ├── HeaderBar.h/.cpp          — Band 1: 2-row teal header (Row1: BPM/PITCH/ALGO/SET BPM + scale buttons; Row2: ATK/DEC/SUS/REL)
 │       ├── SliceControlBar.h/.cpp    — Band 2: selected slice params with lock icons + SET BPM
 │       ├── WaveformView.h/.cpp       — Band 3: waveform display, slice overlays, playback cursors, drag-and-drop
@@ -87,7 +87,8 @@ State version is currently **v4**. Backward-compatible with v2/v3 (reads and dis
 ### Dependencies
 
 - **JUCE** — git submodule in `JUCE/`
-- **Signalsmith Stretch** — git submodule in `signalsmith-stretch/`, with `signalsmith-linear` inside it. Include paths set in CMakeLists.txt.
+- **Signalsmith Stretch** — git submodule in `signalsmith-stretch/`. Include paths set in CMakeLists.txt.
+- **Signalsmith Linear** — git submodule in `signalsmith-linear/` (dependency of Signalsmith Stretch; the repo root is on the include path so `#include "signalsmith-linear/stft.h"` resolves correctly)
 
 ## Design Assets
 

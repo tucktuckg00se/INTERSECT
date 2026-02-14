@@ -78,8 +78,9 @@ target_sources(Intersect PRIVATE
 )
 
 target_include_directories(Intersect PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/..
     ${CMAKE_CURRENT_SOURCE_DIR}/../signalsmith-stretch
-    ${CMAKE_CURRENT_SOURCE_DIR}/../signalsmith-stretch/signalsmith-linear
+    ${CMAKE_CURRENT_SOURCE_DIR}/../signalsmith-linear
     ${BUNGEE_ROOT}
 )
 

@@ -1,14 +1,14 @@
 # INTERSECT
 
-A JUCE-based audio sampler plugin that loads a single sample, slices it into regions, and triggers slices via MIDI with independent per-slice parameter control.
+A time-stretching intersecting sample slicer plugin with independent per-slice parameter control.
 
 ![INTERSECT screenshot](docs/screenshot.png)
 
 ## Features
 
-- **Drag-and-drop sample loading** — WAV, OGG, AIFF, FLAC
+- **Drag-and-drop sample loading** — WAV, OGG, AIFF, FLAC, MP3
 - **Slice-based playback** — create regions with start/end points, each mapped to a MIDI note
-- **Parameter inheritance** — slices inherit sample-level defaults (BPM, pitch, ADSR, mute group, etc.) unless individually locked/overridden
+- **Parameter inheritance** — slices inherit sample-level defaults (BPM, pitch, ADSR, mute group, etc.) unless individually overridden
 - **Three stretch algorithms:**
   - **Repitch** — classic sample-rate manipulation where pitch and speed are linked
   - **Stretch** — independent pitch and time control via [Signalsmith Stretch](https://github.com/Signalsmith-Audio/signalsmith-stretch), with tonality, formant shift, and formant compensation controls
@@ -33,12 +33,80 @@ cmake -B build -S project
 cmake --build build --config Release
 ```
 
+### Windows
+
+**Prerequisites:** [Visual Studio 2022](https://visualstudio.microsoft.com/) (Desktop development with C++ workload), [CMake 3.22+](https://cmake.org/download/)
+
+```bash
+git clone --recursive git@github.com:tucktuckg00se/INTERSECT.git
+cd INTERSECT
+cmake -B build -S project
+cmake --build build --config Release
+```
+
+**Output:** `build/project/Intersect_artefacts/Release/VST3/INTERSECT.vst3`
+
+### macOS
+
+**Prerequisites:** Xcode 14+ (install Command Line Tools via `xcode-select --install`), [CMake 3.22+](https://cmake.org/download/) (`brew install cmake`)
+
+```bash
+git clone --recursive git@github.com:tucktuckg00se/INTERSECT.git
+cd INTERSECT
+cmake -B build -S project
+cmake --build build --config Release
+```
+
+**Output:**
+- VST3: `build/project/Intersect_artefacts/Release/VST3/INTERSECT.vst3`
+- AU: `build/project/Intersect_artefacts/Release/AU/INTERSECT.component`
+
+### Linux
+
+**Prerequisites:** GCC 12+ or Clang 15+, CMake 3.22+, and JUCE system dependencies.
+
+**Debian / Ubuntu:**
+
+```bash
+sudo apt install build-essential cmake libasound2-dev libfreetype6-dev \
+  libx11-dev libxcomposite-dev libxcursor-dev libxinerama-dev \
+  libxrandr-dev libxrender-dev libwebkit2gtk-4.0-dev libglu1-mesa-dev
+```
+
+**Fedora:**
+
+```bash
+sudo dnf install gcc-c++ cmake alsa-lib-devel freetype-devel \
+  libX11-devel libXcomposite-devel libXcursor-devel libXinerama-devel \
+  libXrandr-devel libXrender-devel webkit2gtk4.0-devel mesa-libGLU-devel
+```
+
+**Arch:**
+
+```bash
+sudo pacman -S base-devel cmake alsa-lib freetype2 \
+  libx11 libxcomposite libxcursor libxinerama libxrandr libxrender \
+  webkit2gtk-4.1 glu
+```
+
+Then build:
+
+```bash
+git clone --recursive git@github.com:tucktuckg00se/INTERSECT.git
+cd INTERSECT
+cmake -B build -S project
+cmake --build build --config Release
+```
+
+**Output:** `build/project/Intersect_artefacts/Release/VST3/INTERSECT.vst3`
+
 Builds VST3, AU (macOS), and Standalone targets.
 
 ## Dependencies
 
 - [JUCE](https://github.com/juce-framework/JUCE) (git submodule)
 - [Signalsmith Stretch](https://github.com/Signalsmith-Audio/signalsmith-stretch) (git submodule, MIT license)
+- [Signalsmith Linear](https://github.com/Signalsmith-Audio/linear) (git submodule, dependency of Signalsmith Stretch)
 - [Bungee](https://github.com/bungee-audio-stretch/bungee) (git submodule, MPL-2.0 license)
 
 ## USE AT YOUR OWN RISK
