@@ -118,29 +118,43 @@ void SliceControlBar::paint (juce::Graphics& g)
     // ALGORITHM
     locked = s.lockMask & kLockAlgorithm;
     int av = locked ? s.algorithm : gAlgo;
-    drawParamCell (g, x, row1y, "ALGO", av == 0 ? "Repitch" : "Stretch", locked, kLockAlgorithm, F::FieldAlgorithm, 0.0f, 1.0f, 1.0f, false, true, cw);
+    juce::String algoNames[] = { "Repitch", "Stretch", "Bungee" };
+    drawParamCell (g, x, row1y, "ALGO", algoNames[juce::jlimit (0, 2, av)], locked, kLockAlgorithm, F::FieldAlgorithm, 0.0f, 2.0f, 1.0f, false, true, cw);
     x += cw + 4;
 
-    // TONALITY
-    float gTonal = processor.apvts.getRawParameterValue (ParamIds::defaultTonality)->load();
-    locked = s.lockMask & kLockTonality;
-    float tonalVal = locked ? s.tonalityHz : gTonal;
-    drawParamCell (g, x, row1y, "TONAL", juce::String ((int) tonalVal) + "Hz", locked, kLockTonality, F::FieldTonality, 0.0f, 8000.0f, 100.0f, false, false, cw);
-    x += cw + 4;
+    if (av == 1)
+    {
+        // TONALITY — only for Stretch (Signalsmith)
+        float gTonal = processor.apvts.getRawParameterValue (ParamIds::defaultTonality)->load();
+        locked = s.lockMask & kLockTonality;
+        float tonalVal = locked ? s.tonalityHz : gTonal;
+        drawParamCell (g, x, row1y, "TONAL", juce::String ((int) tonalVal) + "Hz", locked, kLockTonality, F::FieldTonality, 0.0f, 8000.0f, 100.0f, false, false, cw);
+        x += cw + 4;
 
-    // FORMANT
-    float gFmnt = processor.apvts.getRawParameterValue (ParamIds::defaultFormant)->load();
-    locked = s.lockMask & kLockFormant;
-    float fmntVal = locked ? s.formantSemitones : gFmnt;
-    drawParamCell (g, x, row1y, "FMNT", (fmntVal >= 0 ? "+" : "") + juce::String (fmntVal, 1), locked, kLockFormant, F::FieldFormant, -24.0f, 24.0f, 0.1f, false, false, cw);
-    x += cw + 4;
+        // FORMANT
+        float gFmnt = processor.apvts.getRawParameterValue (ParamIds::defaultFormant)->load();
+        locked = s.lockMask & kLockFormant;
+        float fmntVal = locked ? s.formantSemitones : gFmnt;
+        drawParamCell (g, x, row1y, "FMNT", (fmntVal >= 0 ? "+" : "") + juce::String (fmntVal, 1), locked, kLockFormant, F::FieldFormant, -24.0f, 24.0f, 0.1f, false, false, cw);
+        x += cw + 4;
 
-    // FORMANT COMP
-    bool gFmntC = processor.apvts.getRawParameterValue (ParamIds::defaultFormantComp)->load() > 0.5f;
-    locked = s.lockMask & kLockFormantComp;
-    bool fmntCVal = locked ? s.formantComp : gFmntC;
-    drawParamCell (g, x, row1y, "FMNT C", fmntCVal ? "ON" : "OFF", locked, kLockFormantComp, F::FieldFormantComp, 0.0f, 1.0f, 1.0f, true, false, cw);
-    x += cw + 4;
+        // FORMANT COMP
+        bool gFmntC = processor.apvts.getRawParameterValue (ParamIds::defaultFormantComp)->load() > 0.5f;
+        locked = s.lockMask & kLockFormantComp;
+        bool fmntCVal = locked ? s.formantComp : gFmntC;
+        drawParamCell (g, x, row1y, "FMNT C", fmntCVal ? "ON" : "OFF", locked, kLockFormantComp, F::FieldFormantComp, 0.0f, 1.0f, 1.0f, true, false, cw);
+        x += cw + 4;
+    }
+    else if (av == 2)
+    {
+        // GRAIN — only for Bungee
+        int gGM = (int) processor.apvts.getRawParameterValue (ParamIds::defaultGrainMode)->load();
+        locked = s.lockMask & kLockGrainMode;
+        int gmVal = locked ? s.grainMode : gGM;
+        juce::String gmNames[] = { "Fast", "Normal", "Smooth" };
+        drawParamCell (g, x, row1y, "GRAIN", gmNames[juce::jlimit (0, 2, gmVal)], locked, kLockGrainMode, F::FieldGrainMode, 0.0f, 2.0f, 1.0f, false, true, cw);
+        x += cw + 4;
+    }
 
     // ====== Separator line ======
     g.setColour (Theme::separator);
@@ -284,12 +298,22 @@ void SliceControlBar::mouseDown (const juce::MouseEvent& e)
                 return;
             }
 
-            // Algorithm choice popup
+            // Choice popup (Algorithm or Grain Mode)
             if (cell.isChoice)
             {
                 juce::PopupMenu menu;
-                menu.addItem (1, "Repitch");
-                menu.addItem (2, "Stretch");
+                if (cell.fieldId == IntersectProcessor::FieldGrainMode)
+                {
+                    menu.addItem (1, "Fast");
+                    menu.addItem (2, "Normal");
+                    menu.addItem (3, "Smooth");
+                }
+                else
+                {
+                    menu.addItem (1, "Repitch");
+                    menu.addItem (2, "Stretch");
+                    menu.addItem (3, "Bungee");
+                }
                 menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this),
                     [this, fieldId = cell.fieldId] (int result) {
                         if (result > 0)

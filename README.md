@@ -35,6 +35,10 @@ Builds VST3, AU (macOS), and Standalone targets.
 - [JUCE](https://github.com/juce-framework/JUCE) (git submodule)
 - [Signalsmith Stretch](https://github.com/Signalsmith-Audio/signalsmith-stretch) (git submodule, MIT license)
 
+
+## USE AT YOUR OWN RISK
+This plugin is 100% vibe-coded
+
 ## License
 
 All rights reserved.

@@ -49,4 +49,12 @@ public:
     void drawButtonBackground (juce::Graphics&, juce::Button&, const juce::Colour&,
                                bool isHighlighted, bool isDown) override;
     void drawButtonText (juce::Graphics&, juce::TextButton&, bool, bool) override;
+
+    void drawPopupMenuBackground (juce::Graphics&, int width, int height) override;
+    void drawPopupMenuItem (juce::Graphics&, const juce::Rectangle<int>& area,
+                            bool isSeparator, bool isActive, bool isHighlighted,
+                            bool isTicked, bool hasSubMenu,
+                            const juce::String& text, const juce::String& shortcutText,
+                            const juce::Drawable* icon, const juce::Colour* textColour) override;
+    juce::Font getPopupMenuFont() override;
 };

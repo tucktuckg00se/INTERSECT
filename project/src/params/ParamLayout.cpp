@@ -26,11 +26,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout ParamLayout::createLayout()
         juce::NormalisableRange<float> (-24.0f, 24.0f, 0.01f),
         0.0f));
 
-    // Default Algorithm: 0=Repitch, 1=Stretch
+    // Default Algorithm: 0=Repitch, 1=Stretch, 2=Bungee
     params.push_back (std::make_unique<juce::AudioParameterChoice> (
         juce::ParameterID { ParamIds::defaultAlgorithm, 1 },
         "Default Algorithm",
-        juce::StringArray { "Repitch", "Stretch" },
+        juce::StringArray { "Repitch", "Stretch", "Bungee" },
         0));
 
     // Default Attack: 0..1000 ms, default 5ms
@@ -98,6 +98,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout ParamLayout::createLayout()
         juce::ParameterID { ParamIds::defaultFormantComp, 1 },
         "Default Formant Compensation",
         false));
+
+    // Default Grain Mode (Bungee): 0=Fast(-1), 1=Normal(0), 2=Smooth(+1)
+    params.push_back (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { ParamIds::defaultGrainMode, 1 },
+        "Default Grain Mode",
+        juce::StringArray { "Fast", "Normal", "Smooth" },
+        1));  // default = Normal
 
     // UI Scale: 0.5..3.0, default 1.0, step 0.25
     params.push_back (std::make_unique<juce::AudioParameterFloat> (

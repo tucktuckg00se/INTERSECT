@@ -21,6 +21,7 @@ IntersectProcessor::IntersectProcessor()
     tonalityParam  = apvts.getRawParameterValue (ParamIds::defaultTonality);
     formantParam   = apvts.getRawParameterValue (ParamIds::defaultFormant);
     formantCompParam = apvts.getRawParameterValue (ParamIds::defaultFormantComp);
+    grainModeParam   = apvts.getRawParameterValue (ParamIds::defaultGrainMode);
 }
 
 void IntersectProcessor::prepareToPlay (double sampleRate, int /*samplesPerBlock*/)
@@ -130,6 +131,7 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                     case FieldTonality:  s.tonalityHz = val;        s.lockMask |= kLockTonality;    break;
                     case FieldFormant:   s.formantSemitones = val;   s.lockMask |= kLockFormant;     break;
                     case FieldFormantComp: s.formantComp = val > 0.5f; s.lockMask |= kLockFormantComp; break;
+                    case FieldGrainMode:  s.grainMode = (int) val;   s.lockMask |= kLockGrainMode;  break;
                     case FieldMidiNote:
                         s.midiNote = juce::jlimit (0, 127, (int) val);
                         sliceManager.rebuildMidiMap();
@@ -162,6 +164,7 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                     dst.tonalityHz      = src.tonalityHz;
                     dst.formantSemitones = src.formantSemitones;
                     dst.formantComp     = src.formantComp;
+                    dst.grainMode       = src.grainMode;
                     dst.lockMask        = src.lockMask;
                     dst.colour          = src.colour;
                     // midiNote is already assigned by createSlice
@@ -225,6 +228,7 @@ void IntersectProcessor::processMidi (juce::MidiBuffer& midi)
                                           tonalityParam->load(),
                                           formantParam->load(),
                                           formantCompParam->load() > 0.5f,
+                                          (int) grainModeParam->load(),
                                           sampleData);
                 }
             }
@@ -286,7 +290,7 @@ void IntersectProcessor::getStateInformation (juce::MemoryBlock& destData)
     juce::MemoryOutputStream stream (destData, false);
 
     // Version
-    stream.writeInt (5);
+    stream.writeInt (6);
 
     // APVTS state
     auto state = apvts.copyState();
@@ -326,6 +330,8 @@ void IntersectProcessor::getStateInformation (juce::MemoryBlock& destData)
         stream.writeFloat (s.tonalityHz);
         stream.writeFloat (s.formantSemitones);
         stream.writeBool (s.formantComp);
+        // v6 fields
+        stream.writeInt (s.grainMode);
     }
 
     // Audio PCM data (stereo interleaved floats)
@@ -402,6 +408,10 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
             s.tonalityHz      = stream.readFloat();
             s.formantSemitones = stream.readFloat();
             s.formantComp     = stream.readBool();
+        }
+        if (version >= 6)
+        {
+            s.grainMode = stream.readInt();
         }
     }
 

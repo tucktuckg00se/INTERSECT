@@ -23,7 +23,7 @@ cd "C:\Users\m_t_w\Documents\claude-projects\tuckers-sampler" && "C:\Program Fil
 
 On Windows, cmake is not on PATH — always use the full path: `"C:\Program Files\CMake\bin\cmake.exe"`
 
-Targets: VST3, AU (macOS), Standalone. Base window: 750x550 (scalable via hi-DPI controls).
+Targets: VST3(Windows/Linux/Linux), AU (macOS), Standalone. Base window: 750x550 (scalable via hi-DPI controls).
 
 ## Architecture
 

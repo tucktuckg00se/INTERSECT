@@ -66,6 +66,7 @@ public:
         FieldTonality,
         FieldFormant,
         FieldFormantComp,
+        FieldGrainMode,
     };
 
     struct Command
@@ -124,6 +125,7 @@ private:
     std::atomic<float>* tonalityParam   = nullptr;
     std::atomic<float>* formantParam    = nullptr;
     std::atomic<float>* formantCompParam = nullptr;
+    std::atomic<float>* grainModeParam   = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (IntersectProcessor)
 };

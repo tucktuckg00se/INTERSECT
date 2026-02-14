@@ -16,7 +16,8 @@ enum LockBit : uint32_t
     kLockStretch       = 512,
     kLockTonality      = 1024,
     kLockFormant       = 2048,
-    kLockFormantComp   = 4096
+    kLockFormantComp   = 4096,
+    kLockGrainMode     = 8192
 };
 
 struct Slice
@@ -27,7 +28,7 @@ struct Slice
     int      midiNote      = 36;
     float    bpm           = 120.0f;
     float    pitchSemitones = 0.0f;
-    int      algorithm     = 0;       // 0=Repitch, 1=Stretch
+    int      algorithm     = 0;       // 0=Repitch, 1=Stretch, 2=Bungee
     float    attackSec     = 0.005f;
     float    decaySec      = 0.1f;
     float    sustainLevel  = 1.0f;
@@ -38,6 +39,7 @@ struct Slice
     float    tonalityHz    = 0.0f;
     float    formantSemitones = 0.0f;
     bool     formantComp   = false;
+    int      grainMode     = 0;       // Bungee: -1=Fast, 0=Normal, +1=Smooth
     uint32_t lockMask      = 0;
     juce::Colour colour    { 0.4f, 0.7f, 0.95f, 1.0f };
 };

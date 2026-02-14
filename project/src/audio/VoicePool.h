@@ -20,6 +20,7 @@ public:
                      int globalMuteGroup, bool globalPingPong,
                      bool globalStretchEnabled, float dawBpm,
                      float globalTonality, float globalFormant, bool globalFormantComp,
+                     int globalGrainMode,
                      const SampleData& sample);
 
     void releaseNote (int note);

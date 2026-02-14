@@ -105,40 +105,57 @@ void HeaderBar::paint (juce::Graphics& g)
         g.drawText ("ALGO", x, row1y, 60, 10, juce::Justification::centredLeft);
         g.setFont (juce::Font (12.0f));
         int algo = (int) processor.apvts.getRawParameterValue (ParamIds::defaultAlgorithm)->load();
-        g.drawText (algo == 0 ? "Repitch" : "Stretch", x, row1y + 10, 60, 12, juce::Justification::centredLeft);
-        headerCells.push_back ({ x, row1y, 60, row1h, ParamIds::defaultAlgorithm, 0.0f, 1.0f, 1.0f, true, false, false, false });
+        juce::String algoNames[] = { "Repitch", "Stretch", "Bungee" };
+        g.drawText (algoNames[juce::jlimit (0, 2, algo)], x, row1y + 10, 60, 12, juce::Justification::centredLeft);
+        headerCells.push_back ({ x, row1y, 60, row1h, ParamIds::defaultAlgorithm, 0.0f, 2.0f, 1.0f, true, false, false, false });
         x += 65;
 
-        // TONAL — moved from Row 2 to Row 1
-        g.setFont (juce::Font (9.0f));
-        g.setColour (Theme::foreground.withAlpha (0.9f));
-        g.drawText ("TONAL", x, row1y, 55, 10, juce::Justification::centredLeft);
-        g.setFont (juce::Font (12.0f));
-        float tonal = processor.apvts.getRawParameterValue (ParamIds::defaultTonality)->load();
-        g.drawText (juce::String ((int) tonal) + "Hz", x, row1y + 10, 55, 12, juce::Justification::centredLeft);
-        headerCells.push_back ({ x, row1y, 55, row1h, ParamIds::defaultTonality, 0.0f, 8000.0f, 100.0f, false, false, false, false });
-        x += 60;
+        if (algo == 1)
+        {
+            // TONAL — only for Stretch (Signalsmith)
+            g.setFont (juce::Font (9.0f));
+            g.setColour (Theme::foreground.withAlpha (0.9f));
+            g.drawText ("TONAL", x, row1y, 55, 10, juce::Justification::centredLeft);
+            g.setFont (juce::Font (12.0f));
+            float tonal = processor.apvts.getRawParameterValue (ParamIds::defaultTonality)->load();
+            g.drawText (juce::String ((int) tonal) + "Hz", x, row1y + 10, 55, 12, juce::Justification::centredLeft);
+            headerCells.push_back ({ x, row1y, 55, row1h, ParamIds::defaultTonality, 0.0f, 8000.0f, 100.0f, false, false, false, false });
+            x += 60;
 
-        // FMNT — moved from Row 2 to Row 1
-        g.setFont (juce::Font (9.0f));
-        g.setColour (Theme::foreground.withAlpha (0.9f));
-        g.drawText ("FMNT", x, row1y, 55, 10, juce::Justification::centredLeft);
-        g.setFont (juce::Font (12.0f));
-        float fmnt = processor.apvts.getRawParameterValue (ParamIds::defaultFormant)->load();
-        g.drawText ((fmnt >= 0 ? "+" : "") + juce::String (fmnt, 1), x, row1y + 10, 55, 12, juce::Justification::centredLeft);
-        headerCells.push_back ({ x, row1y, 55, row1h, ParamIds::defaultFormant, -24.0f, 24.0f, 0.1f, false, false, false, false });
-        x += 60;
+            // FMNT
+            g.setFont (juce::Font (9.0f));
+            g.setColour (Theme::foreground.withAlpha (0.9f));
+            g.drawText ("FMNT", x, row1y, 55, 10, juce::Justification::centredLeft);
+            g.setFont (juce::Font (12.0f));
+            float fmnt = processor.apvts.getRawParameterValue (ParamIds::defaultFormant)->load();
+            g.drawText ((fmnt >= 0 ? "+" : "") + juce::String (fmnt, 1), x, row1y + 10, 55, 12, juce::Justification::centredLeft);
+            headerCells.push_back ({ x, row1y, 55, row1h, ParamIds::defaultFormant, -24.0f, 24.0f, 0.1f, false, false, false, false });
+            x += 60;
 
-        // FMNT C — moved from Row 2 to Row 1
-        g.setFont (juce::Font (9.0f));
-        g.setColour (Theme::foreground.withAlpha (0.9f));
-        g.drawText ("FMNT C", x, row1y, 50, 10, juce::Justification::centredLeft);
-        g.setFont (juce::Font (12.0f));
-        bool fmntC = processor.apvts.getRawParameterValue (ParamIds::defaultFormantComp)->load() > 0.5f;
-        g.setColour (fmntC ? Theme::lockGold : Theme::foreground.withAlpha (0.5f));
-        g.drawText (fmntC ? "ON" : "OFF", x, row1y + 10, 50, 12, juce::Justification::centredLeft);
-        headerCells.push_back ({ x, row1y, 50, row1h, ParamIds::defaultFormantComp, 0.0f, 1.0f, 1.0f, false, true, false, false });
-        x += 55;
+            // FMNT C
+            g.setFont (juce::Font (9.0f));
+            g.setColour (Theme::foreground.withAlpha (0.9f));
+            g.drawText ("FMNT C", x, row1y, 50, 10, juce::Justification::centredLeft);
+            g.setFont (juce::Font (12.0f));
+            bool fmntC = processor.apvts.getRawParameterValue (ParamIds::defaultFormantComp)->load() > 0.5f;
+            g.setColour (fmntC ? Theme::lockGold : Theme::foreground.withAlpha (0.5f));
+            g.drawText (fmntC ? "ON" : "OFF", x, row1y + 10, 50, 12, juce::Justification::centredLeft);
+            headerCells.push_back ({ x, row1y, 50, row1h, ParamIds::defaultFormantComp, 0.0f, 1.0f, 1.0f, false, true, false, false });
+            x += 55;
+        }
+        else if (algo == 2)
+        {
+            // GRAIN — only for Bungee
+            g.setFont (juce::Font (9.0f));
+            g.setColour (Theme::foreground.withAlpha (0.9f));
+            g.drawText ("GRAIN", x, row1y, 60, 10, juce::Justification::centredLeft);
+            g.setFont (juce::Font (12.0f));
+            int gm = (int) processor.apvts.getRawParameterValue (ParamIds::defaultGrainMode)->load();
+            juce::String gmNames[] = { "Fast", "Normal", "Smooth" };
+            g.drawText (gmNames[juce::jlimit (0, 2, gm)], x, row1y + 10, 60, 12, juce::Justification::centredLeft);
+            headerCells.push_back ({ x, row1y, 60, row1h, ParamIds::defaultGrainMode, 0.0f, 2.0f, 1.0f, true, false, false, false });
+            x += 65;
+        }
 
         // Slice count (right side of row 1, before scale buttons)
         g.setFont (juce::Font (10.0f));
@@ -276,12 +293,22 @@ void HeaderBar::mouseDown (const juce::MouseEvent& e)
                 return;
             }
 
-            // Algorithm choice popup
+            // Choice popup (Algorithm or Grain Mode)
             if (cell.isChoice)
             {
                 juce::PopupMenu menu;
-                menu.addItem (1, "Repitch");
-                menu.addItem (2, "Stretch");
+                if (cell.paramId == ParamIds::defaultGrainMode)
+                {
+                    menu.addItem (1, "Fast");
+                    menu.addItem (2, "Normal");
+                    menu.addItem (3, "Smooth");
+                }
+                else
+                {
+                    menu.addItem (1, "Repitch");
+                    menu.addItem (2, "Stretch");
+                    menu.addItem (3, "Bungee");
+                }
                 menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this),
                     [this, paramId = cell.paramId] (int result) {
                         if (result > 0)
