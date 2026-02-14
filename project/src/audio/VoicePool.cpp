@@ -172,8 +172,8 @@ void VoicePool::startVoice (int voiceIdx, int sliceIdx, float velocity, int note
 
         if (algo == 0)
         {
-            // Repitch: speed changes pitch
-            v.speed = speedRatio * v.pitchRatio;
+            // Repitch: BPM ratio drives speed (pitch is a consequence of speed)
+            v.speed = speedRatio;
         }
         else if (algo == 2)
         {
