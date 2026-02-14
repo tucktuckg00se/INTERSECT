@@ -21,9 +21,11 @@ public:
 
 private:
     void timerCallback() override;
+    void saveUserScale (float scale);
+    float loadUserScale();
 
     IntersectProcessor& processor;
-    float lastScale = 1.0f;
+    float lastScale = -1.0f;  // sentinel so first timer tick always applies
 
     IntersectLookAndFeel lnf;
     HeaderBar       headerBar;

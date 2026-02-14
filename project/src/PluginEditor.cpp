@@ -9,6 +9,13 @@ static constexpr int kSliceCtrlH = 56;
 static constexpr int kActionH    = 28;
 static constexpr int kMargin     = 8;
 
+static juce::File getUserSettingsFile()
+{
+    return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+               .getChildFile ("INTERSECT")
+               .getChildFile ("settings.yaml");
+}
+
 IntersectEditor::IntersectEditor (IntersectProcessor& p)
     : AudioProcessorEditor (p),
       processor (p),
@@ -28,8 +35,18 @@ IntersectEditor::IntersectEditor (IntersectProcessor& p)
     addAndMakeVisible (sliceControlBar);
     addAndMakeVisible (actionPanel);
 
-    float scale = processor.apvts.getRawParameterValue (ParamIds::uiScale)->load();
-    lastScale = scale;
+    // If the APVTS scale is still at default (1.0), try loading from user settings
+    float apvtsScale = processor.apvts.getRawParameterValue (ParamIds::uiScale)->load();
+    if (apvtsScale == 1.0f)
+    {
+        float userScale = loadUserScale();
+        if (userScale > 0.0f && userScale != apvtsScale)
+        {
+            if (auto* p = processor.apvts.getParameter (ParamIds::uiScale))
+                p->setValueNotifyingHost (p->convertTo0to1 (userScale));
+        }
+    }
+
     setSize (kBaseW, kBaseH);
     startTimerHz (30);
 }
@@ -46,9 +63,6 @@ void IntersectEditor::paint (juce::Graphics& g)
 
 void IntersectEditor::resized()
 {
-    float scale = processor.apvts.getRawParameterValue (ParamIds::uiScale)->load();
-    setTransform (juce::AffineTransform::scale (scale));
-
     auto area = juce::Rectangle<int> (0, 0, kBaseW, kBaseH);
 
     // 1. Header (50px) — top
@@ -74,13 +88,41 @@ void IntersectEditor::timerCallback()
 {
     waveformView.rebuildCacheIfNeeded();
 
-    // Check if scale changed
+    // Check if scale changed (lastScale starts at -1 so first tick always applies)
     float scale = processor.apvts.getRawParameterValue (ParamIds::uiScale)->load();
     if (scale != lastScale)
     {
         lastScale = scale;
         setTransform (juce::AffineTransform::scale (scale));
+        saveUserScale (scale);
     }
 
     repaint();
+}
+
+void IntersectEditor::saveUserScale (float scale)
+{
+    auto file = getUserSettingsFile();
+    file.getParentDirectory().createDirectory();
+    file.replaceWithText ("uiScale: " + juce::String (scale, 2) + "\n");
+}
+
+float IntersectEditor::loadUserScale()
+{
+    auto file = getUserSettingsFile();
+    if (! file.existsAsFile())
+        return -1.0f;
+
+    auto content = file.loadFileAsString();
+    for (auto line : juce::StringArray::fromLines (content))
+    {
+        line = line.trim();
+        if (line.startsWith ("uiScale:"))
+        {
+            float val = line.fromFirstOccurrenceOf (":", false, false).trim().getFloatValue();
+            if (val >= 0.5f && val <= 3.0f)
+                return val;
+        }
+    }
+    return -1.0f;
 }
