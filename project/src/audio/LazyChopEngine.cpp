@@ -8,6 +8,7 @@ void LazyChopEngine::start (int sampleLen)
     chopPos = 0;
     nextMidiNote = 36;
     sampleLength = sampleLen;
+    lastNote = -1;
 }
 
 void LazyChopEngine::startPreview (VoicePool& voicePool, int fromPos)
@@ -63,7 +64,15 @@ void LazyChopEngine::onNote (int note, VoicePool& voicePool, SliceManager& slice
         startPreview (voicePool, 0);
         chopPos = 0;
         nextMidiNote = 36;
+        lastNote = note;
         playing = true;
+        return;
+    }
+
+    // Re-press same note: re-audition from current start point
+    if (note == lastNote && chopPos >= 0)
+    {
+        startPreview (voicePool, chopPos);
         return;
     }
 
@@ -75,6 +84,7 @@ void LazyChopEngine::onNote (int note, VoicePool& voicePool, SliceManager& slice
     if (chopPos < 0)
     {
         chopPos = playhead;
+        lastNote = note;
         return;
     }
 
@@ -109,4 +119,5 @@ void LazyChopEngine::onNote (int note, VoicePool& voicePool, SliceManager& slice
     }
 
     chopPos = playhead;
+    lastNote = note;
 }

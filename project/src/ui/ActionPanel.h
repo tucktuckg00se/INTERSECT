@@ -15,8 +15,11 @@ private:
     IntersectProcessor& processor;
     WaveformView& waveformView;
 
+    juce::TextButton loadBtn      { "LOAD" };
     juce::TextButton addSliceBtn  { "+SLC" };
     juce::TextButton lazyChopBtn  { "LZY" };
     juce::TextButton dupBtn       { "DUP" };
     juce::TextButton deleteBtn    { "DEL" };
+
+    std::unique_ptr<juce::FileChooser> fileChooser;
 };

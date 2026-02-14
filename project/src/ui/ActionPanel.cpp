@@ -6,10 +6,34 @@
 ActionPanel::ActionPanel (IntersectProcessor& p, WaveformView& wv)
     : processor (p), waveformView (wv)
 {
+    addAndMakeVisible (loadBtn);
     addAndMakeVisible (addSliceBtn);
     addAndMakeVisible (lazyChopBtn);
     addAndMakeVisible (dupBtn);
     addAndMakeVisible (deleteBtn);
+
+    loadBtn.onClick = [this] {
+        fileChooser = std::make_unique<juce::FileChooser> (
+            "Load Audio File",
+            juce::File(),
+            "*.wav;*.ogg;*.aiff;*.flac;*.mp3");
+
+        fileChooser->launchAsync (juce::FileBrowserComponent::openMode
+                                    | juce::FileBrowserComponent::canSelectFiles,
+            [this] (const juce::FileChooser& fc)
+            {
+                auto result = fc.getResult();
+                if (result.existsAsFile())
+                {
+                    IntersectProcessor::Command cmd;
+                    cmd.type = IntersectProcessor::CmdLoadFile;
+                    cmd.fileParam = result;
+                    processor.pushCommand (cmd);
+                    processor.zoom.store (1.0f);
+                    processor.scroll.store (0.0f);
+                }
+            });
+    };
 
     addSliceBtn.onClick = [this] {
         waveformView.sliceDrawMode = ! waveformView.sliceDrawMode;
@@ -48,15 +72,16 @@ ActionPanel::ActionPanel (IntersectProcessor& p, WaveformView& wv)
 void ActionPanel::resized()
 {
     int gap = 6;
-    int numBtns = 4;
+    int numBtns = 5;
     int totalGap = gap * (numBtns - 1);
     int btnW = (getWidth() - totalGap) / numBtns;
     int btnH = getHeight();
 
-    addSliceBtn.setBounds (0, 0, btnW, btnH);
-    lazyChopBtn.setBounds (btnW + gap, 0, btnW, btnH);
-    dupBtn.setBounds (2 * (btnW + gap), 0, btnW, btnH);
-    deleteBtn.setBounds (3 * (btnW + gap), 0, btnW, btnH);
+    loadBtn.setBounds (0, 0, btnW, btnH);
+    addSliceBtn.setBounds (btnW + gap, 0, btnW, btnH);
+    lazyChopBtn.setBounds (2 * (btnW + gap), 0, btnW, btnH);
+    dupBtn.setBounds (3 * (btnW + gap), 0, btnW, btnH);
+    deleteBtn.setBounds (4 * (btnW + gap), 0, btnW, btnH);
 }
 
 void ActionPanel::paint (juce::Graphics& g)

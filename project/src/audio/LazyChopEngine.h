@@ -21,4 +21,5 @@ private:
     int  chopPos      = 0;
     int  nextMidiNote = 36;
     int  sampleLength = 0;
+    int  lastNote     = -1;
 };

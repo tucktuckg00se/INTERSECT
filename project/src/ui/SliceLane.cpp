@@ -63,9 +63,7 @@ void SliceLane::paint (juce::Graphics& g)
     std::stable_sort (visibleSlices.begin(), visibleSlices.end(),
                       [] (const SliceInfo& a, const SliceInfo& b) { return !a.selected && b.selected; });
 
-    // Track occupied label x-ranges to avoid overlap
-    std::vector<int> labelEnds;  // right edge of each drawn label
-
+    // Pass 1: Draw bars and borders in selection order (z-order)
     for (const auto& si : visibleSlices)
     {
         int sw = si.x2 - si.x1;
@@ -80,6 +78,18 @@ void SliceLane::paint (juce::Graphics& g)
             g.setColour (si.col.withAlpha (0.9f));
             g.drawRect (si.x1, 1, sw, h - 2, 1);
         }
+    }
+
+    // Re-sort by x-position for correct label overlap avoidance
+    std::sort (visibleSlices.begin(), visibleSlices.end(),
+               [] (const SliceInfo& a, const SliceInfo& b) { return a.x1 < b.x1; });
+
+    // Pass 2: Draw labels in left-to-right order
+    std::vector<int> labelEnds;  // right edge of each drawn label
+
+    for (const auto& si : visibleSlices)
+    {
+        int sw = si.x2 - si.x1;
 
         // Slice number label — left-aligned, with overlap avoidance
         if (sw > 14)
