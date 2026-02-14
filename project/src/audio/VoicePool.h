@@ -19,6 +19,7 @@ public:
                      float globalAttack, float globalDecay, float globalSustain, float globalRelease,
                      int globalMuteGroup, bool globalPingPong,
                      bool globalStretchEnabled, float dawBpm,
+                     float globalTonality, float globalFormant, bool globalFormantComp,
                      const SampleData& sample);
 
     void releaseNote (int note);

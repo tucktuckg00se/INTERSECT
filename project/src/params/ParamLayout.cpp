@@ -79,6 +79,26 @@ juce::AudioProcessorValueTreeState::ParameterLayout ParamLayout::createLayout()
         "Default Stretch Enabled",
         false));
 
+    // Default Tonality: 0..8000 Hz, default 0 (off)
+    params.push_back (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { ParamIds::defaultTonality, 1 },
+        "Default Tonality",
+        juce::NormalisableRange<float> (0.0f, 8000.0f, 1.0f),
+        0.0f));
+
+    // Default Formant: -24..+24 semitones, default 0
+    params.push_back (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { ParamIds::defaultFormant, 1 },
+        "Default Formant",
+        juce::NormalisableRange<float> (-24.0f, 24.0f, 0.1f),
+        0.0f));
+
+    // Default Formant Compensation: off/on
+    params.push_back (std::make_unique<juce::AudioParameterBool> (
+        juce::ParameterID { ParamIds::defaultFormantComp, 1 },
+        "Default Formant Compensation",
+        false));
+
     // UI Scale: 0.5..3.0, default 1.0, step 0.25
     params.push_back (std::make_unique<juce::AudioParameterFloat> (
         juce::ParameterID { ParamIds::uiScale, 1 },

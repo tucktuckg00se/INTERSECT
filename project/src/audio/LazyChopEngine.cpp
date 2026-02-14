@@ -34,20 +34,8 @@ void LazyChopEngine::startPreview (VoicePool& voicePool, int fromPos)
     v.envelope.noteOn (0.0f, 0.0f, 0.5f, 0.02f);
 }
 
-void LazyChopEngine::stop (VoicePool& voicePool, SliceManager& sliceMgr)
+void LazyChopEngine::stop (VoicePool& voicePool, SliceManager& /*sliceMgr*/)
 {
-    // Close pending slice — set end to full sample length
-    if (playing && chopPos < sampleLength)
-    {
-        int newIdx = sliceMgr.createSlice (chopPos, sampleLength);
-        if (newIdx >= 0)
-        {
-            auto& s = sliceMgr.getSlice (newIdx);
-            s.midiNote = nextMidiNote;
-            sliceMgr.rebuildMidiMap();
-        }
-    }
-
     // Stop preview voice
     auto& v = voicePool.getVoice (getPreviewVoiceIndex());
     v.active = false;
@@ -65,6 +53,7 @@ void LazyChopEngine::onNote (int note, VoicePool& voicePool, SliceManager& slice
         const auto& s = sliceMgr.getSlice (existingSlice);
         startPreview (voicePool, s.startSample);
         playing = true;
+        chopPos = -1;  // reset so next unassigned note only sets a new start
         return;
     }
 
@@ -81,6 +70,13 @@ void LazyChopEngine::onNote (int note, VoicePool& voicePool, SliceManager& slice
     // Subsequent unassigned note — place slice boundary at playhead
     auto& v = voicePool.getVoice (getPreviewVoiceIndex());
     int playhead = (int) std::floor (v.position);
+
+    // After audition, first unassigned note just sets a new start point
+    if (chopPos < 0)
+    {
+        chopPos = playhead;
+        return;
+    }
 
     // Handle wrap-around: if playhead wrapped past chopPos, close slice to end of sample
     if (playhead < chopPos)

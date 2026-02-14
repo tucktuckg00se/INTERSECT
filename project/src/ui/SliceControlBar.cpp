@@ -157,6 +157,27 @@ void SliceControlBar::paint (juce::Graphics& g)
     drawParamCell (g, x, 2, "STRETCH", strOn ? "ON" : "OFF", locked, kLockStretch, F::FieldStretchEnabled, 0.0f, 1.0f, 1.0f, true, false, cw);
     x += cw + 4;
 
+    // TONALITY
+    float gTonal = processor.apvts.getRawParameterValue (ParamIds::defaultTonality)->load();
+    locked = s.lockMask & kLockTonality;
+    float tonalVal = locked ? s.tonalityHz : gTonal;
+    drawParamCell (g, x, 2, "TONAL", juce::String ((int) tonalVal) + "Hz", locked, kLockTonality, F::FieldTonality, 0.0f, 8000.0f, 100.0f, false, false, cw);
+    x += cw + 4;
+
+    // FORMANT
+    float gFmnt = processor.apvts.getRawParameterValue (ParamIds::defaultFormant)->load();
+    locked = s.lockMask & kLockFormant;
+    float fmntVal = locked ? s.formantSemitones : gFmnt;
+    drawParamCell (g, x, 2, "FMNT", (fmntVal >= 0 ? "+" : "") + juce::String (fmntVal, 1), locked, kLockFormant, F::FieldFormant, -24.0f, 24.0f, 0.1f, false, false, cw);
+    x += cw + 4;
+
+    // FORMANT COMP
+    bool gFmntC = processor.apvts.getRawParameterValue (ParamIds::defaultFormantComp)->load() > 0.5f;
+    locked = s.lockMask & kLockFormantComp;
+    bool fmntCVal = locked ? s.formantComp : gFmntC;
+    drawParamCell (g, x, 2, "FMNT C", fmntCVal ? "ON" : "OFF", locked, kLockFormantComp, F::FieldFormantComp, 0.0f, 1.0f, 1.0f, true, false, cw);
+    x += cw + 4;
+
     // MIDI note (not lockable — no lock bit)
     g.setFont (juce::Font (9.0f));
     g.setColour (Theme::foreground.withAlpha (0.5f));
@@ -235,6 +256,11 @@ void SliceControlBar::mouseDown (const juce::MouseEvent& e)
                         bool gStr = processor.apvts.getRawParameterValue (ParamIds::defaultStretchEnabled)->load() > 0.5f;
                         currentVal = sliceLocked ? s.stretchEnabled : gStr;
                     }
+                    else if (cell.fieldId == IntersectProcessor::FieldFormantComp)
+                    {
+                        bool gFC = processor.apvts.getRawParameterValue (ParamIds::defaultFormantComp)->load() > 0.5f;
+                        currentVal = sliceLocked ? s.formantComp : gFC;
+                    }
 
                     IntersectProcessor::Command cmd;
                     cmd.type = IntersectProcessor::CmdSetSliceParam;
@@ -308,6 +334,14 @@ void SliceControlBar::mouseDown (const juce::MouseEvent& e)
                         break;
                     case IntersectProcessor::FieldMidiNote:
                         dragStartValue = (float) s.midiNote;
+                        break;
+                    case IntersectProcessor::FieldTonality:
+                        dragStartValue = (s.lockMask & kLockTonality) ? s.tonalityHz :
+                            processor.apvts.getRawParameterValue (ParamIds::defaultTonality)->load();
+                        break;
+                    case IntersectProcessor::FieldFormant:
+                        dragStartValue = (s.lockMask & kLockFormant) ? s.formantSemitones :
+                            processor.apvts.getRawParameterValue (ParamIds::defaultFormant)->load();
                         break;
                     default:
                         dragStartValue = 0.0f;
@@ -394,6 +428,14 @@ void SliceControlBar::mouseDoubleClick (const juce::MouseEvent& e)
                         break;
                     case IntersectProcessor::FieldMidiNote:
                         currentVal = (float) s.midiNote;
+                        break;
+                    case IntersectProcessor::FieldTonality:
+                        currentVal = (s.lockMask & kLockTonality) ? s.tonalityHz :
+                            processor.apvts.getRawParameterValue (ParamIds::defaultTonality)->load();
+                        break;
+                    case IntersectProcessor::FieldFormant:
+                        currentVal = (s.lockMask & kLockFormant) ? s.formantSemitones :
+                            processor.apvts.getRawParameterValue (ParamIds::defaultFormant)->load();
                         break;
                     default: break;
                 }

@@ -18,6 +18,9 @@ IntersectProcessor::IntersectProcessor()
     muteGroupParam = apvts.getRawParameterValue (ParamIds::defaultMuteGroup);
     pingPongParam  = apvts.getRawParameterValue (ParamIds::defaultPingPong);
     stretchParam   = apvts.getRawParameterValue (ParamIds::defaultStretchEnabled);
+    tonalityParam  = apvts.getRawParameterValue (ParamIds::defaultTonality);
+    formantParam   = apvts.getRawParameterValue (ParamIds::defaultFormant);
+    formantCompParam = apvts.getRawParameterValue (ParamIds::defaultFormantComp);
 }
 
 void IntersectProcessor::prepareToPlay (double sampleRate, int /*samplesPerBlock*/)
@@ -124,10 +127,45 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                     case FieldMuteGroup: s.muteGroup = (int) val; s.lockMask |= kLockMuteGroup; break;
                     case FieldPingPong:  s.pingPong = val > 0.5f; s.lockMask |= kLockPingPong; break;
                     case FieldStretchEnabled: s.stretchEnabled = val > 0.5f; s.lockMask |= kLockStretch; break;
+                    case FieldTonality:  s.tonalityHz = val;        s.lockMask |= kLockTonality;    break;
+                    case FieldFormant:   s.formantSemitones = val;   s.lockMask |= kLockFormant;     break;
+                    case FieldFormantComp: s.formantComp = val > 0.5f; s.lockMask |= kLockFormantComp; break;
                     case FieldMidiNote:
                         s.midiNote = juce::jlimit (0, 127, (int) val);
                         sliceManager.rebuildMidiMap();
                         break;
+                }
+            }
+            break;
+        }
+
+        case CmdDuplicateSlice:
+        {
+            int sel = sliceManager.selectedSlice;
+            if (sel >= 0 && sel < sliceManager.getNumSlices())
+            {
+                const auto& src = sliceManager.getSlice (sel);
+                int newIdx = sliceManager.createSlice (src.startSample, src.endSample);
+                if (newIdx >= 0)
+                {
+                    auto& dst = sliceManager.getSlice (newIdx);
+                    dst.bpm             = src.bpm;
+                    dst.pitchSemitones  = src.pitchSemitones;
+                    dst.algorithm       = src.algorithm;
+                    dst.attackSec       = src.attackSec;
+                    dst.decaySec        = src.decaySec;
+                    dst.sustainLevel    = src.sustainLevel;
+                    dst.releaseSec      = src.releaseSec;
+                    dst.muteGroup       = src.muteGroup;
+                    dst.pingPong        = src.pingPong;
+                    dst.stretchEnabled  = src.stretchEnabled;
+                    dst.tonalityHz      = src.tonalityHz;
+                    dst.formantSemitones = src.formantSemitones;
+                    dst.formantComp     = src.formantComp;
+                    dst.lockMask        = src.lockMask;
+                    dst.colour          = src.colour;
+                    // midiNote is already assigned by createSlice
+                    sliceManager.selectedSlice = newIdx;
                 }
             }
             break;
@@ -184,6 +222,9 @@ void IntersectProcessor::processMidi (juce::MidiBuffer& midi)
                                           pingPongParam->load() > 0.5f,
                                           stretchParam->load() > 0.5f,
                                           dawBpm.load(),
+                                          tonalityParam->load(),
+                                          formantParam->load(),
+                                          formantCompParam->load() > 0.5f,
                                           sampleData);
                 }
             }
@@ -245,7 +286,7 @@ void IntersectProcessor::getStateInformation (juce::MemoryBlock& destData)
     juce::MemoryOutputStream stream (destData, false);
 
     // Version
-    stream.writeInt (4);
+    stream.writeInt (5);
 
     // APVTS state
     auto state = apvts.copyState();
@@ -281,6 +322,10 @@ void IntersectProcessor::getStateInformation (juce::MemoryBlock& destData)
         stream.writeBool (s.stretchEnabled);
         stream.writeInt ((int) s.lockMask);
         stream.writeInt ((int) s.colour.getARGB());
+        // v5 fields
+        stream.writeFloat (s.tonalityHz);
+        stream.writeFloat (s.formantSemitones);
+        stream.writeBool (s.formantComp);
     }
 
     // Audio PCM data (stereo interleaved floats)
@@ -352,6 +397,12 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
             s.stretchEnabled = false;
         s.lockMask       = (uint32_t) stream.readInt();
         s.colour         = juce::Colour ((juce::uint32) stream.readInt());
+        if (version >= 5)
+        {
+            s.tonalityHz      = stream.readFloat();
+            s.formantSemitones = stream.readFloat();
+            s.formantComp     = stream.readBool();
+        }
     }
 
     // Audio PCM

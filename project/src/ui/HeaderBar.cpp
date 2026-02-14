@@ -74,7 +74,7 @@ void HeaderBar::paint (juce::Graphics& g)
                 // Show calculated pitch from BPM ratio
                 float dawBpm = processor.dawBpm.load();
                 float calcPitch = (dawBpm > 0.0f && bpm > 0.0f)
-                    ? 12.0f * std::log2 (bpm / dawBpm) : 0.0f;
+                    ? 12.0f * std::log2 (dawBpm / bpm) : 0.0f;
                 juce::String pitchStr = (calcPitch >= 0 ? "+" : "") + juce::String (calcPitch, 1) + "st";
                 g.setColour (Theme::foreground.withAlpha (0.5f));
                 g.drawText (pitchStr, x, row1y + 10, 60, 12, juce::Justification::centredLeft);
@@ -173,6 +173,16 @@ void HeaderBar::paint (juce::Graphics& g)
         headerCells.push_back ({ x, row2y, 40, row2h, ParamIds::defaultPingPong, 0.0f, 1.0f, 1.0f, false, true, false, false });
         x += 45;
 
+        // MUTE GROUP
+        g.setFont (juce::Font (9.0f));
+        g.setColour (Theme::foreground.withAlpha (0.9f));
+        g.drawText ("MUTE", x, row2y, 45, 10, juce::Justification::centredLeft);
+        g.setFont (juce::Font (11.0f));
+        float muteGrp = processor.apvts.getRawParameterValue (ParamIds::defaultMuteGroup)->load();
+        g.drawText (juce::String ((int) muteGrp), x, row2y + 10, 45, 12, juce::Justification::centredLeft);
+        headerCells.push_back ({ x, row2y, 45, row2h, ParamIds::defaultMuteGroup, 0.0f, 32.0f, 1.0f, false, false, false, false });
+        x += 50;
+
         // STRETCH toggle
         g.setFont (juce::Font (9.0f));
         g.setColour (Theme::foreground.withAlpha (0.9f));
@@ -183,6 +193,37 @@ void HeaderBar::paint (juce::Graphics& g)
         g.drawText (strOn ? "ON" : "OFF", x, row2y + 10, 55, 12, juce::Justification::centredLeft);
         headerCells.push_back ({ x, row2y, 55, row2h, ParamIds::defaultStretchEnabled, 0.0f, 1.0f, 1.0f, false, true, false, false });
         x += 60;
+
+        // TONAL
+        g.setFont (juce::Font (9.0f));
+        g.setColour (Theme::foreground.withAlpha (0.9f));
+        g.drawText ("TONAL", x, row2y, 55, 10, juce::Justification::centredLeft);
+        g.setFont (juce::Font (11.0f));
+        float tonal = processor.apvts.getRawParameterValue (ParamIds::defaultTonality)->load();
+        g.drawText (juce::String ((int) tonal) + "Hz", x, row2y + 10, 55, 12, juce::Justification::centredLeft);
+        headerCells.push_back ({ x, row2y, 55, row2h, ParamIds::defaultTonality, 0.0f, 8000.0f, 100.0f, false, false, false, false });
+        x += 60;
+
+        // FMNT
+        g.setFont (juce::Font (9.0f));
+        g.setColour (Theme::foreground.withAlpha (0.9f));
+        g.drawText ("FMNT", x, row2y, 55, 10, juce::Justification::centredLeft);
+        g.setFont (juce::Font (11.0f));
+        float fmnt = processor.apvts.getRawParameterValue (ParamIds::defaultFormant)->load();
+        g.drawText ((fmnt >= 0 ? "+" : "") + juce::String (fmnt, 1), x, row2y + 10, 55, 12, juce::Justification::centredLeft);
+        headerCells.push_back ({ x, row2y, 55, row2h, ParamIds::defaultFormant, -24.0f, 24.0f, 0.1f, false, false, false, false });
+        x += 60;
+
+        // FMNT C
+        g.setFont (juce::Font (9.0f));
+        g.setColour (Theme::foreground.withAlpha (0.9f));
+        g.drawText ("FMNT C", x, row2y, 50, 10, juce::Justification::centredLeft);
+        g.setFont (juce::Font (11.0f));
+        bool fmntC = processor.apvts.getRawParameterValue (ParamIds::defaultFormantComp)->load() > 0.5f;
+        g.setColour (fmntC ? Theme::lockGold : Theme::foreground.withAlpha (0.5f));
+        g.drawText (fmntC ? "ON" : "OFF", x, row2y + 10, 50, 12, juce::Justification::centredLeft);
+        headerCells.push_back ({ x, row2y, 50, row2h, ParamIds::defaultFormantComp, 0.0f, 1.0f, 1.0f, false, true, false, false });
+        x += 55;
     }
     else
     {

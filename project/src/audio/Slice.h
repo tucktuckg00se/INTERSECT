@@ -12,8 +12,11 @@ enum LockBit : uint32_t
     kLockSustain   = 32,
     kLockRelease   = 64,
     kLockMuteGroup = 128,
-    kLockPingPong  = 256,
-    kLockStretch   = 512
+    kLockPingPong      = 256,
+    kLockStretch       = 512,
+    kLockTonality      = 1024,
+    kLockFormant       = 2048,
+    kLockFormantComp   = 4096
 };
 
 struct Slice
@@ -32,6 +35,9 @@ struct Slice
     int      muteGroup     = 1;
     bool     pingPong      = false;
     bool     stretchEnabled = false;
+    float    tonalityHz    = 0.0f;
+    float    formantSemitones = 0.0f;
+    bool     formantComp   = false;
     uint32_t lockMask      = 0;
     juce::Colour colour    { 0.4f, 0.7f, 0.95f, 1.0f };
 };

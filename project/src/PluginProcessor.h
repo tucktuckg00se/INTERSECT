@@ -46,6 +46,7 @@ public:
         CmdStretch,
         CmdToggleLock,
         CmdSetSliceParam,
+        CmdDuplicateSlice,
     };
 
     // Param field identifiers for CmdSetSliceParam
@@ -62,6 +63,9 @@ public:
         FieldPingPong,
         FieldMidiNote,
         FieldStretchEnabled,
+        FieldTonality,
+        FieldFormant,
+        FieldFormantComp,
     };
 
     struct Command
@@ -117,6 +121,9 @@ private:
     std::atomic<float>* muteGroupParam  = nullptr;
     std::atomic<float>* pingPongParam   = nullptr;
     std::atomic<float>* stretchParam    = nullptr;
+    std::atomic<float>* tonalityParam   = nullptr;
+    std::atomic<float>* formantParam    = nullptr;
+    std::atomic<float>* formantCompParam = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (IntersectProcessor)
 };

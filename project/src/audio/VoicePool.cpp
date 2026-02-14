@@ -41,6 +41,7 @@ int VoicePool::allocate()
 }
 
 static void initStretcher (Voice& v, float pitchSemis, double sr,
+                           float tonalityHz, float formantSemis, bool formantComp,
                            const SampleData& sample)
 {
     int blockSize = std::max (256, (int)(sr * 0.023));   // ~1024 @ 44.1k (~23ms)
@@ -48,7 +49,12 @@ static void initStretcher (Voice& v, float pitchSemis, double sr,
 
     v.stretcher = std::make_shared<signalsmith::stretch::SignalsmithStretch<float, void>>();
     v.stretcher->configure (2, blockSize, interval, false);
-    v.stretcher->setTransposeSemitones (pitchSemis);
+
+    float tonalityLimit = (tonalityHz > 0.0f && sr > 0.0) ? (float)(tonalityHz / sr) : 0.0f;
+    v.stretcher->setTransposeSemitones (pitchSemis, tonalityLimit);
+
+    if (formantSemis != 0.0f || formantComp)
+        v.stretcher->setFormantSemitones (formantSemis, formantComp);
 
     v.stretchInBufL.resize (kStretchBlockSize);
     v.stretchInBufR.resize (kStretchBlockSize);
@@ -82,6 +88,7 @@ void VoicePool::startVoice (int voiceIdx, int sliceIdx, float velocity, int note
                             float globalAttack, float globalDecay, float globalSustain, float globalRelease,
                             int globalMuteGroup, bool globalPingPong,
                             bool globalStretchEnabled, float dawBpmVal,
+                            float globalTonality, float globalFormant, bool globalFormantComp,
                             const SampleData& sample)
 {
     auto& v = voices[voiceIdx];
@@ -120,6 +127,12 @@ void VoicePool::startVoice (int voiceIdx, int sliceIdx, float velocity, int note
                                        s.stretchEnabled ? 1.0f : 0.0f,
                                        globalStretchEnabled ? 1.0f : 0.0f) > 0.5f;
 
+    float tonality = sm.resolveParam (sliceIdx, kLockTonality, s.tonalityHz, globalTonality);
+    float formant = sm.resolveParam (sliceIdx, kLockFormant, s.formantSemitones, globalFormant);
+    bool fComp = sm.resolveParam (sliceIdx, kLockFormantComp,
+                                   s.formantComp ? 1.0f : 0.0f,
+                                   globalFormantComp ? 1.0f : 0.0f) > 0.5f;
+
     // Reset stretch state
     v.stretchActive = false;
     v.wsolaActive = false;
@@ -142,7 +155,7 @@ void VoicePool::startVoice (int voiceIdx, int sliceIdx, float velocity, int note
             v.stretchPitchSemis = pitch;
             v.stretchSrcPos = s.startSample;
 
-            initStretcher (v, pitch, sampleRate, sample);
+            initStretcher (v, pitch, sampleRate, tonality, formant, fComp, sample);
         }
     }
     else
@@ -156,7 +169,7 @@ void VoicePool::startVoice (int voiceIdx, int sliceIdx, float velocity, int note
             v.stretchPitchSemis = pitch;
             v.stretchSrcPos = s.startSample;
 
-            initStretcher (v, pitch, sampleRate, sample);
+            initStretcher (v, pitch, sampleRate, tonality, formant, fComp, sample);
         }
         else
         {

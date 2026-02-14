@@ -15,7 +15,13 @@ cmake -B build -S project
 cmake --build build --config Release
 ```
 
-On Windows if cmake isn't on PATH: `"C:\Program Files\CMake\bin\cmake.exe"`
+**Important — build commands must run from the repo root** (`C:\Users\m_t_w\Documents\claude-projects\tuckers-sampler`). The `build/` directory lives at the repo root, not inside `project/`. Use `cd` to the repo root first, then run cmake:
+
+```bash
+cd "C:\Users\m_t_w\Documents\claude-projects\tuckers-sampler" && "C:\Program Files\CMake\bin\cmake.exe" --build build --config Release
+```
+
+On Windows, cmake is not on PATH — always use the full path: `"C:\Program Files\CMake\bin\cmake.exe"`
 
 Targets: VST3, AU (macOS), Standalone. Base window: 750x550 (scalable via hi-DPI controls).
 

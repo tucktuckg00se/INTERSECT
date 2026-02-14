@@ -106,7 +106,8 @@ void ScrollZoomBar::mouseDrag (const juce::MouseEvent& e)
     // Horizontal drag: scroll
     auto track = getTrackBounds();
     int thumbW = std::max (16, (int) (track.getWidth() / newZoom));
-    int trackRange = track.getWidth() - thumbW;
+    int effectiveThumbW = std::max (track.getWidth() / 4, thumbW);
+    int trackRange = track.getWidth() - effectiveThumbW;
 
     if (trackRange > 0)
     {

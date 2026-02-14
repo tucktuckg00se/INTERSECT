@@ -187,50 +187,40 @@ void WaveformView::mouseDown (const juce::MouseEvent& e)
         return;
     }
 
-    // Check slice edges (6px hot zone)
+    // Check slice edges (6px hot zone) — only for already-selected slice
+    int sel = processor.sliceManager.selectedSlice;
     int num = processor.sliceManager.getNumSlices();
-    int bestIdx = -1;
-    int bestWidth = INT_MAX;
 
-    for (int i = 0; i < num; ++i)
+    if (sel >= 0 && sel < num)
     {
-        const auto& s = processor.sliceManager.getSlice (i);
-        if (! s.active) continue;
-
-        int x1 = sampleToPixel (s.startSample);
-        int x2 = sampleToPixel (s.endSample);
-
-        if (std::abs (e.x - x1) < 6)
+        const auto& s = processor.sliceManager.getSlice (sel);
+        if (s.active)
         {
-            dragMode = DragEdgeLeft;
-            dragSliceIdx = i;
-            processor.sliceManager.selectedSlice = i;
-            return;
-        }
-        if (std::abs (e.x - x2) < 6)
-        {
-            dragMode = DragEdgeRight;
-            dragSliceIdx = i;
-            processor.sliceManager.selectedSlice = i;
-            return;
-        }
+            int x1 = sampleToPixel (s.startSample);
+            int x2 = sampleToPixel (s.endSample);
 
-        if (e.x > x1 && e.x < x2)
-        {
-            int w = x2 - x1;
-            if (w < bestWidth) { bestWidth = w; bestIdx = i; }
-        }
-    }
+            if (std::abs (e.x - x1) < 6)
+            {
+                dragMode = DragEdgeLeft;
+                dragSliceIdx = sel;
+                return;
+            }
+            if (std::abs (e.x - x2) < 6)
+            {
+                dragMode = DragEdgeRight;
+                dragSliceIdx = sel;
+                return;
+            }
 
-    // Click inside slice body: select + set up move
-    if (bestIdx >= 0)
-    {
-        processor.sliceManager.selectedSlice = bestIdx;
-        const auto& s = processor.sliceManager.getSlice (bestIdx);
-        dragMode = MoveSlice;
-        dragSliceIdx = bestIdx;
-        dragOffset = samplePos - s.startSample;
-        dragSliceLen = s.endSample - s.startSample;
+            if (e.x > x1 && e.x < x2)
+            {
+                dragMode = MoveSlice;
+                dragSliceIdx = sel;
+                dragOffset = samplePos - s.startSample;
+                dragSliceLen = s.endSample - s.startSample;
+                return;
+            }
+        }
     }
 }
 

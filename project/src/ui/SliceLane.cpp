@@ -4,7 +4,17 @@
 
 SliceLane::SliceLane (IntersectProcessor& p) : processor (p)
 {
+    addAndMakeVisible (dupBtn);
+    dupBtn.setTooltip ("Duplicate selected slice");
+    dupBtn.onClick = [this] {
+        IntersectProcessor::Command cmd;
+        cmd.type = IntersectProcessor::CmdDuplicateSlice;
+        processor.pushCommand (cmd);
+        repaint();
+    };
+
     addAndMakeVisible (midiSelectBtn);
+    midiSelectBtn.setTooltip ("MIDI selects slice");
     midiSelectBtn.onClick = [this] {
         bool current = processor.midiSelectsSlice.load();
         processor.midiSelectsSlice.store (! current);
@@ -16,6 +26,7 @@ void SliceLane::resized()
 {
     int btnW = 20;
     midiSelectBtn.setBounds (getWidth() - btnW - 2, 2, btnW, getHeight() - 4);
+    dupBtn.setBounds (getWidth() - btnW * 2 - 4, 2, btnW, getHeight() - 4);
 }
 
 void SliceLane::paint (juce::Graphics& g)
@@ -99,9 +110,8 @@ void SliceLane::mouseDown (const juce::MouseEvent& e)
     int w = getWidth();
     int num = processor.sliceManager.getNumSlices();
 
-    // Find which slice bar was clicked (smallest containing bar)
-    int bestIdx = -1;
-    int bestWidth = INT_MAX;
+    // Collect all overlapping slice indices at click position
+    std::vector<int> overlapping;
 
     for (int i = 0; i < num; ++i)
     {
@@ -113,16 +123,25 @@ void SliceLane::mouseDown (const juce::MouseEvent& e)
         int x2 = (int) ((float) (s.endSample - visStart) / visLen * w);
 
         if (e.x >= x1 && e.x < x2)
-        {
-            int sw = x2 - x1;
-            if (sw < bestWidth)
-            {
-                bestWidth = sw;
-                bestIdx = i;
-            }
-        }
+            overlapping.push_back (i);
     }
 
-    if (bestIdx >= 0)
-        processor.sliceManager.selectedSlice = bestIdx;
+    if (! overlapping.empty())
+    {
+        int current = processor.sliceManager.selectedSlice;
+
+        // If current selection is in the list, cycle to the next one
+        auto it = std::find (overlapping.begin(), overlapping.end(), current);
+        if (it != overlapping.end())
+        {
+            ++it;
+            if (it == overlapping.end())
+                it = overlapping.begin();
+            processor.sliceManager.selectedSlice = *it;
+        }
+        else
+        {
+            processor.sliceManager.selectedSlice = overlapping.front();
+        }
+    }
 }

@@ -30,7 +30,7 @@ IntersectEditor::IntersectEditor (IntersectProcessor& p)
 
     float scale = processor.apvts.getRawParameterValue (ParamIds::uiScale)->load();
     lastScale = scale;
-    setSize ((int) (kBaseW * scale), (int) (kBaseH * scale));
+    setSize (kBaseW, kBaseH);
     startTimerHz (30);
 }
 
@@ -79,7 +79,7 @@ void IntersectEditor::timerCallback()
     if (scale != lastScale)
     {
         lastScale = scale;
-        setSize ((int) (kBaseW * scale), (int) (kBaseH * scale));
+        setSize (kBaseW, kBaseH);
     }
 
     repaint();
