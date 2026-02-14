@@ -1,0 +1,35 @@
+# Build
+build/
+cmake-build-*/
+out/
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.ncb
+*.sdf
+*.opensdf
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Claude Code
+.claude/
+
+# Compiled objects
+*.o
+*.obj
+*.dll
+*.so
+*.dylib
+*.exe
+*.vst3
+*.component
+
+# Misc
+nul

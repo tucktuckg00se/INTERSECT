@@ -1,0 +1,37 @@
+#pragma once
+#include <juce_audio_processors/juce_audio_processors.h>
+#include "PluginProcessor.h"
+#include "ui/TuckersLookAndFeel.h"
+#include "ui/HeaderBar.h"
+#include "ui/SliceLane.h"
+#include "ui/SliceControlBar.h"
+#include "ui/WaveformView.h"
+#include "ui/ScrollZoomBar.h"
+#include "ui/ActionPanel.h"
+
+class IntersectEditor : public juce::AudioProcessorEditor,
+                             private juce::Timer
+{
+public:
+    explicit IntersectEditor (IntersectProcessor&);
+    ~IntersectEditor() override;
+
+    void paint (juce::Graphics&) override;
+    void resized() override;
+
+private:
+    void timerCallback() override;
+
+    IntersectProcessor& processor;
+    float lastScale = 1.0f;
+
+    IntersectLookAndFeel lnf;
+    HeaderBar       headerBar;
+    SliceLane       sliceLane;
+    WaveformView    waveformView;
+    ScrollZoomBar   scrollZoomBar;
+    SliceControlBar sliceControlBar;
+    ActionPanel     actionPanel;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (IntersectEditor)
+};
