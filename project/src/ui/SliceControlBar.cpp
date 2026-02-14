@@ -25,26 +25,28 @@ void SliceControlBar::drawParamCell (juce::Graphics& g, int x, int y,
                                      int fieldId, float minVal, float maxVal, float step,
                                      bool isBoolean, bool isChoice, int& outWidth)
 {
+    int cellH = 24;
+
     // Label
     g.setFont (juce::Font (9.0f));
     g.setColour (locked ? Theme::lockGold.withAlpha (0.8f)
                         : Theme::foreground.withAlpha (0.45f));
-    g.drawText (label, x + 12, y + 2, 60, 12, juce::Justification::centredLeft);
+    g.drawText (label, x + 12, y + 1, 60, 10, juce::Justification::centredLeft);
 
     // Value
     g.setFont (juce::Font (11.0f));
     g.setColour (locked ? Theme::foreground
                         : Theme::foreground.withAlpha (0.4f));
-    g.drawText (value, x + 12, y + 14, 60, 14, juce::Justification::centredLeft);
+    g.drawText (value, x + 12, y + 11, 60, 12, juce::Justification::centredLeft);
 
     // Lock icon
-    drawLockIcon (g, x + 1, y + 4, locked);
+    drawLockIcon (g, x + 1, y + 3, locked);
 
     int labelW = (int) juce::Font (9.0f).getStringWidthFloat (label);
     int valueW = (int) juce::Font (11.0f).getStringWidthFloat (value);
     outWidth = std::max (std::max (labelW, valueW) + 18, 50);
 
-    cells.push_back ({ x, y, outWidth, 28, lockBit, fieldId, minVal, maxVal, step, isBoolean, isChoice, false });
+    cells.push_back ({ x, y, outWidth, cellH, lockBit, fieldId, minVal, maxVal, step, isBoolean, isChoice, false });
 }
 
 void SliceControlBar::paint (juce::Graphics& g)
@@ -59,17 +61,11 @@ void SliceControlBar::paint (juce::Graphics& g)
     {
         g.setFont (juce::Font (12.0f));
         g.setColour (Theme::foreground.withAlpha (0.35f));
-        g.drawText ("No slice selected", 8, 14, 200, 16, juce::Justification::centredLeft);
+        g.drawText ("No slice selected", 8, 20, 200, 16, juce::Justification::centredLeft);
         return;
     }
 
     const auto& s = processor.sliceManager.getSlice (idx);
-
-    // Slice label
-    g.setFont (juce::Font (13.0f).boldened());
-    g.setColour (Theme::accent);
-    g.drawText ("Slice " + juce::String (idx + 1), 8, 14, 55, 16, juce::Justification::centredLeft);
-    int x = 70;
 
     // Global defaults for inheritance display
     float gBpm     = processor.apvts.getRawParameterValue (ParamIds::defaultBpm)->load();
@@ -86,19 +82,29 @@ void SliceControlBar::paint (juce::Graphics& g)
     int cw;
     using F = IntersectProcessor;
 
+    // ====== Row 1 (y=2): Slice N | BPM | SET BPM | PITCH | ALGO | TONAL | FMNT | FMNT C ======
+    int row1y = 2;
+    int x = 8;
+
+    // Slice label
+    g.setFont (juce::Font (13.0f).boldened());
+    g.setColour (Theme::accent);
+    g.drawText ("Slice " + juce::String (idx + 1), x, row1y + 4, 55, 16, juce::Justification::centredLeft);
+    x = 70;
+
     // BPM
     bool locked = s.lockMask & kLockBpm;
     juce::String val = juce::String ((int) (locked ? s.bpm : gBpm));
-    drawParamCell (g, x, 2, "BPM", val, locked, kLockBpm, F::FieldBpm, 20.0f, 999.0f, 1.0f, false, false, cw);
+    drawParamCell (g, x, row1y, "BPM", val, locked, kLockBpm, F::FieldBpm, 20.0f, 999.0f, 1.0f, false, false, cw);
     x += cw + 4;
 
     // SET BPM (slice-level)
     {
         g.setFont (juce::Font (9.0f));
         g.setColour (Theme::accent);
-        g.drawText ("SET", x + 2, 4, 30, 12, juce::Justification::centredLeft);
-        g.drawText ("BPM", x + 2, 16, 30, 12, juce::Justification::centredLeft);
-        cells.push_back ({ x, 2, 34, 28, 0, 0, 0.0f, 0.0f, 0.0f, false, false, true });
+        g.drawText ("SET", x + 2, row1y + 1, 30, 10, juce::Justification::centredLeft);
+        g.drawText ("BPM", x + 2, row1y + 11, 30, 10, juce::Justification::centredLeft);
+        cells.push_back ({ x, row1y, 34, 24, 0, 0, 0.0f, 0.0f, 0.0f, false, false, true });
         x += 38;
     }
 
@@ -106,87 +112,95 @@ void SliceControlBar::paint (juce::Graphics& g)
     locked = s.lockMask & kLockPitch;
     float pv = locked ? s.pitchSemitones : gPitch;
     val = (pv >= 0 ? "+" : "") + juce::String (pv, 1);
-    drawParamCell (g, x, 2, "PITCH", val, locked, kLockPitch, F::FieldPitch, -24.0f, 24.0f, 0.1f, false, false, cw);
+    drawParamCell (g, x, row1y, "PITCH", val, locked, kLockPitch, F::FieldPitch, -24.0f, 24.0f, 0.1f, false, false, cw);
     x += cw + 4;
 
     // ALGORITHM
     locked = s.lockMask & kLockAlgorithm;
     int av = locked ? s.algorithm : gAlgo;
-    drawParamCell (g, x, 2, "ALGO", av == 0 ? "Repitch" : "Stretch", locked, kLockAlgorithm, F::FieldAlgorithm, 0.0f, 1.0f, 1.0f, false, true, cw);
-    x += cw + 4;
-
-    // ATTACK
-    locked = s.lockMask & kLockAttack;
-    float atk = locked ? s.attackSec * 1000.0f : gAttack;
-    drawParamCell (g, x, 2, "ATK", juce::String ((int) atk) + "ms", locked, kLockAttack, F::FieldAttack, 0.0f, 1.0f, 0.001f, false, false, cw);
-    x += cw + 4;
-
-    // DECAY
-    locked = s.lockMask & kLockDecay;
-    float dec = locked ? s.decaySec * 1000.0f : gDecay;
-    drawParamCell (g, x, 2, "DEC", juce::String ((int) dec) + "ms", locked, kLockDecay, F::FieldDecay, 0.0f, 5.0f, 0.001f, false, false, cw);
-    x += cw + 4;
-
-    // SUSTAIN
-    locked = s.lockMask & kLockSustain;
-    float susVal = locked ? s.sustainLevel * 100.0f : gSustain;
-    drawParamCell (g, x, 2, "SUS", juce::String ((int) susVal) + "%", locked, kLockSustain, F::FieldSustain, 0.0f, 1.0f, 0.01f, false, false, cw);
-    x += cw + 4;
-
-    // RELEASE
-    locked = s.lockMask & kLockRelease;
-    float relVal = locked ? s.releaseSec * 1000.0f : gRelease;
-    drawParamCell (g, x, 2, "REL", juce::String ((int) relVal) + "ms", locked, kLockRelease, F::FieldRelease, 0.0f, 5.0f, 0.001f, false, false, cw);
-    x += cw + 4;
-
-    // MUTE GROUP
-    locked = s.lockMask & kLockMuteGroup;
-    int mg = locked ? s.muteGroup : gMG;
-    drawParamCell (g, x, 2, "MUTE", juce::String (mg), locked, kLockMuteGroup, F::FieldMuteGroup, 0.0f, 32.0f, 1.0f, false, false, cw);
-    x += cw + 4;
-
-    // PING-PONG
-    locked = s.lockMask & kLockPingPong;
-    bool pp = locked ? s.pingPong : gPP;
-    drawParamCell (g, x, 2, "PP", pp ? "ON" : "OFF", locked, kLockPingPong, F::FieldPingPong, 0.0f, 1.0f, 1.0f, true, false, cw);
-    x += cw + 4;
-
-    // STRETCH
-    locked = s.lockMask & kLockStretch;
-    bool strOn = locked ? s.stretchEnabled : gStretch;
-    drawParamCell (g, x, 2, "STRETCH", strOn ? "ON" : "OFF", locked, kLockStretch, F::FieldStretchEnabled, 0.0f, 1.0f, 1.0f, true, false, cw);
+    drawParamCell (g, x, row1y, "ALGO", av == 0 ? "Repitch" : "Stretch", locked, kLockAlgorithm, F::FieldAlgorithm, 0.0f, 1.0f, 1.0f, false, true, cw);
     x += cw + 4;
 
     // TONALITY
     float gTonal = processor.apvts.getRawParameterValue (ParamIds::defaultTonality)->load();
     locked = s.lockMask & kLockTonality;
     float tonalVal = locked ? s.tonalityHz : gTonal;
-    drawParamCell (g, x, 2, "TONAL", juce::String ((int) tonalVal) + "Hz", locked, kLockTonality, F::FieldTonality, 0.0f, 8000.0f, 100.0f, false, false, cw);
+    drawParamCell (g, x, row1y, "TONAL", juce::String ((int) tonalVal) + "Hz", locked, kLockTonality, F::FieldTonality, 0.0f, 8000.0f, 100.0f, false, false, cw);
     x += cw + 4;
 
     // FORMANT
     float gFmnt = processor.apvts.getRawParameterValue (ParamIds::defaultFormant)->load();
     locked = s.lockMask & kLockFormant;
     float fmntVal = locked ? s.formantSemitones : gFmnt;
-    drawParamCell (g, x, 2, "FMNT", (fmntVal >= 0 ? "+" : "") + juce::String (fmntVal, 1), locked, kLockFormant, F::FieldFormant, -24.0f, 24.0f, 0.1f, false, false, cw);
+    drawParamCell (g, x, row1y, "FMNT", (fmntVal >= 0 ? "+" : "") + juce::String (fmntVal, 1), locked, kLockFormant, F::FieldFormant, -24.0f, 24.0f, 0.1f, false, false, cw);
     x += cw + 4;
 
     // FORMANT COMP
     bool gFmntC = processor.apvts.getRawParameterValue (ParamIds::defaultFormantComp)->load() > 0.5f;
     locked = s.lockMask & kLockFormantComp;
     bool fmntCVal = locked ? s.formantComp : gFmntC;
-    drawParamCell (g, x, 2, "FMNT C", fmntCVal ? "ON" : "OFF", locked, kLockFormantComp, F::FieldFormantComp, 0.0f, 1.0f, 1.0f, true, false, cw);
+    drawParamCell (g, x, row1y, "FMNT C", fmntCVal ? "ON" : "OFF", locked, kLockFormantComp, F::FieldFormantComp, 0.0f, 1.0f, 1.0f, true, false, cw);
     x += cw + 4;
 
-    // MIDI note (not lockable — no lock bit)
+    // ====== Separator line ======
+    g.setColour (Theme::separator);
+    g.drawHorizontalLine (26, 8.0f, (float) getWidth() - 8.0f);
+
+    // ====== Row 2 (y=28): ATK | DEC | SUS | REL | PP | MUTE | STRETCH | MIDI | info ======
+    int row2y = 28;
+    x = 8;
+
+    // ATTACK
+    locked = s.lockMask & kLockAttack;
+    float atk = locked ? s.attackSec * 1000.0f : gAttack;
+    drawParamCell (g, x, row2y, "ATK", juce::String ((int) atk) + "ms", locked, kLockAttack, F::FieldAttack, 0.0f, 1.0f, 0.001f, false, false, cw);
+    x += cw + 4;
+
+    // DECAY
+    locked = s.lockMask & kLockDecay;
+    float dec = locked ? s.decaySec * 1000.0f : gDecay;
+    drawParamCell (g, x, row2y, "DEC", juce::String ((int) dec) + "ms", locked, kLockDecay, F::FieldDecay, 0.0f, 5.0f, 0.001f, false, false, cw);
+    x += cw + 4;
+
+    // SUSTAIN
+    locked = s.lockMask & kLockSustain;
+    float susVal = locked ? s.sustainLevel * 100.0f : gSustain;
+    drawParamCell (g, x, row2y, "SUS", juce::String ((int) susVal) + "%", locked, kLockSustain, F::FieldSustain, 0.0f, 1.0f, 0.01f, false, false, cw);
+    x += cw + 4;
+
+    // RELEASE
+    locked = s.lockMask & kLockRelease;
+    float relVal = locked ? s.releaseSec * 1000.0f : gRelease;
+    drawParamCell (g, x, row2y, "REL", juce::String ((int) relVal) + "ms", locked, kLockRelease, F::FieldRelease, 0.0f, 5.0f, 0.001f, false, false, cw);
+    x += cw + 4;
+
+    // PING-PONG
+    locked = s.lockMask & kLockPingPong;
+    bool pp = locked ? s.pingPong : gPP;
+    drawParamCell (g, x, row2y, "PP", pp ? "ON" : "OFF", locked, kLockPingPong, F::FieldPingPong, 0.0f, 1.0f, 1.0f, true, false, cw);
+    x += cw + 4;
+
+    // MUTE GROUP
+    locked = s.lockMask & kLockMuteGroup;
+    int mg = locked ? s.muteGroup : gMG;
+    drawParamCell (g, x, row2y, "MUTE", juce::String (mg), locked, kLockMuteGroup, F::FieldMuteGroup, 0.0f, 32.0f, 1.0f, false, false, cw);
+    x += cw + 4;
+
+    // STRETCH
+    locked = s.lockMask & kLockStretch;
+    bool strOn = locked ? s.stretchEnabled : gStretch;
+    drawParamCell (g, x, row2y, "STRETCH", strOn ? "ON" : "OFF", locked, kLockStretch, F::FieldStretchEnabled, 0.0f, 1.0f, 1.0f, true, false, cw);
+    x += cw + 4;
+
+    // MIDI note (not lockable)
     g.setFont (juce::Font (9.0f));
     g.setColour (Theme::foreground.withAlpha (0.5f));
-    g.drawText ("MIDI", x + 2, 2, 40, 12, juce::Justification::centredLeft);
+    g.drawText ("MIDI", x + 2, row2y + 1, 40, 10, juce::Justification::centredLeft);
     g.setFont (juce::Font (11.0f));
     g.setColour (Theme::foreground.withAlpha (0.8f));
-    g.drawText (juce::String (s.midiNote), x + 2, 14, 40, 14, juce::Justification::centredLeft);
-    cells.push_back ({ x, 2, 40, 28, 0, F::FieldMidiNote, 0.0f, 127.0f, 1.0f, false, false, false });
-    x += 40;
+    g.drawText (juce::String (s.midiNote), x + 2, row2y + 11, 40, 12, juce::Justification::centredLeft);
+    cells.push_back ({ x, row2y, 40, 24, 0, F::FieldMidiNote, 0.0f, 127.0f, 1.0f, false, false, false });
+    x += 44;
 
     // Start/End/Length info
     g.setFont (juce::Font (9.0f));
@@ -194,11 +208,9 @@ void SliceControlBar::paint (juce::Graphics& g)
     double srate = processor.getSampleRate();
     if (srate <= 0) srate = 44100.0;
     double lenSec = (s.endSample - s.startSample) / srate;
-    g.drawText ("Start:" + juce::String (s.startSample) +
-                "  End:" + juce::String (s.endSample) +
-                "  Len:" + juce::String (s.endSample - s.startSample) +
+    g.drawText (juce::String (s.startSample) + "-" + juce::String (s.endSample) +
                 " (" + juce::String (lenSec, 2) + "s)",
-                70, 32, 500, 12, juce::Justification::centredLeft);
+                x, row2y + 6, 200, 12, juce::Justification::centredLeft);
 }
 
 void SliceControlBar::mouseDown (const juce::MouseEvent& e)
@@ -451,7 +463,7 @@ void SliceControlBar::showTextEditor (const ParamCell& cell, float currentValue)
 {
     textEditor = std::make_unique<juce::TextEditor>();
     addAndMakeVisible (*textEditor);
-    textEditor->setBounds (cell.x + 12, cell.y + 12, cell.w - 14, 16);
+    textEditor->setBounds (cell.x + 12, cell.y + 10, cell.w - 14, 14);
     textEditor->setFont (juce::Font (11.0f));
     textEditor->setColour (juce::TextEditor::backgroundColourId, Theme::darkBar.brighter (0.15f));
     textEditor->setColour (juce::TextEditor::textColourId, Theme::foreground);

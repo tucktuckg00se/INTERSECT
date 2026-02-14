@@ -2,117 +2,137 @@
 #include "TuckersLookAndFeel.h"
 #include "WaveformView.h"
 #include "../PluginProcessor.h"
+#include <cmath>
 
 ScrollZoomBar::ScrollZoomBar (IntersectProcessor& p, WaveformView& wv)
     : processor (p), waveformView (wv)
 {
-    addAndMakeVisible (scrollLeft);
-    addAndMakeVisible (scrollRight);
-    addAndMakeVisible (zoomOut);
-    addAndMakeVisible (zoomIn);
-
-    scrollLeft.onClick = [this] {
-        float sc = processor.scroll.load();
-        processor.scroll.store (juce::jlimit (0.0f, 1.0f, sc - 0.05f));
-        waveformView.repaint();
-    };
-    scrollRight.onClick = [this] {
-        float sc = processor.scroll.load();
-        processor.scroll.store (juce::jlimit (0.0f, 1.0f, sc + 0.05f));
-        waveformView.repaint();
-    };
-    zoomOut.onClick = [this] {
-        float z = processor.zoom.load();
-        processor.zoom.store (std::max (1.0f, z / 1.5f));
-        waveformView.repaint();
-    };
-    zoomIn.onClick = [this] {
-        float z = processor.zoom.load();
-        processor.zoom.store (std::min (256.0f, z * 1.5f));
-        waveformView.repaint();
-    };
-}
-
-juce::Rectangle<int> ScrollZoomBar::getTrackBounds() const
-{
-    int btnW = 22;
-    int barX = btnW + 2;
-    int barW = getWidth() - btnW * 4 - 12;
-    return { barX, 0, barW, getHeight() };
-}
-
-juce::Rectangle<int> ScrollZoomBar::getThumbBounds() const
-{
-    auto track = getTrackBounds();
-    float z = processor.zoom.load();
-    float sc = processor.scroll.load();
-    int thumbW = std::max (16, (int) (track.getWidth() / z));
-    int thumbX = track.getX() + (int) (sc * (track.getWidth() - thumbW));
-    return { thumbX, 2, thumbW, getHeight() - 4 };
 }
 
 void ScrollZoomBar::paint (juce::Graphics& g)
 {
-    auto track = getTrackBounds();
-
-    // Scrollbar background
-    g.setColour (Theme::darkBar);
-    g.fillRect (track);
-
-    // Thumb
-    auto thumb = getThumbBounds();
-    g.setColour (isDraggingThumb ? Theme::accent.withAlpha (0.7f)
-                                 : Theme::accent.withAlpha (0.5f));
-    g.fillRect (thumb);
-}
-
-void ScrollZoomBar::resized()
-{
-    int btnW = 22;
-    int barW = getWidth() - btnW * 4 - 12;
+    int w = getWidth();
     int h = getHeight();
 
-    scrollLeft.setBounds (0, 0, btnW, h);
-    scrollRight.setBounds (btnW + barW + 4, 0, btnW, h);
-    zoomOut.setBounds (btnW + barW + btnW + 6, 0, btnW, h);
-    zoomIn.setBounds (btnW + barW + btnW * 2 + 8, 0, btnW, h);
+    // Slightly lighter background so it reads as a ruler even when empty
+    g.fillAll (Theme::darkBar.brighter (0.04f));
+
+    // Top edge line
+    g.setColour (Theme::separator);
+    g.drawHorizontalLine (0, 0.0f, (float) w);
+
+    int numFrames = processor.sampleData.getNumFrames();
+    if (numFrames <= 0 || w <= 0)
+        return;
+
+    float z = processor.zoom.load();
+    float sc = processor.scroll.load();
+    float viewFrac = 1.0f / z;
+    float viewStart = sc * (1.0f - viewFrac);
+    float viewEnd = viewStart + viewFrac;
+
+    // Choose major tick spacing — aim for ~80-150px between labelled ticks
+    float viewPercent = viewFrac * 100.0f;
+    float rawStep = viewPercent * 80.0f / (float) w;
+    // Nice values spanning deep zoom to full view
+    const float niceSteps[] = { 0.01f, 0.02f, 0.05f, 0.1f, 0.2f, 0.5f,
+                                1.0f, 2.0f, 5.0f, 10.0f, 25.0f, 50.0f };
+    float majorStep = 50.0f;
+    for (float ns : niceSteps)
+    {
+        if (ns >= rawStep) { majorStep = ns; break; }
+    }
+
+    float startPct = viewStart * 100.0f;
+    float endPct = viewEnd * 100.0f;
+
+    // Minor ticks: 4 subdivisions between each major tick
+    float minorStep = majorStep / 4.0f;
+    float firstMinor = std::floor (startPct / minorStep) * minorStep;
+
+    for (float pct = firstMinor; pct <= endPct; pct += minorStep)
+    {
+        float frac = pct / 100.0f;
+        float px = (frac - viewStart) / viewFrac * (float) w;
+        int tx = (int) px;
+        if (tx < 0 || tx >= w) continue;
+
+        // Is this a major tick?
+        bool isMajor = (std::fmod (pct + 0.0001f, majorStep) < minorStep * 0.5f);
+
+        if (isMajor)
+        {
+            g.setColour (Theme::foreground.withAlpha (0.3f));
+            g.drawVerticalLine (tx, 1.0f, (float) h * 0.5f);
+
+            // Label
+            g.setFont (juce::Font (8.0f));
+            g.setColour (Theme::foreground.withAlpha (0.45f));
+            juce::String label;
+            if (majorStep >= 1.0f)
+                label = juce::String ((int) std::round (pct)) + "%";
+            else
+                label = juce::String (pct, 1) + "%";
+            int labelW = 36;
+            int labelX = tx - labelW / 2;
+            labelX = std::max (0, std::min (w - labelW, labelX));
+            g.drawText (label, labelX, (int) (h * 0.45f), labelW, (int) (h * 0.55f),
+                         juce::Justification::centred);
+        }
+        else
+        {
+            g.setColour (Theme::foreground.withAlpha (0.15f));
+            g.drawVerticalLine (tx, 1.0f, (float) h * 0.3f);
+        }
+    }
 }
 
 void ScrollZoomBar::mouseDown (const juce::MouseEvent& e)
 {
-    auto thumb = getThumbBounds();
-    if (thumb.contains (e.getPosition()))
-    {
-        isDraggingThumb = true;
-        dragStartScroll = processor.scroll.load();
-        dragStartZoom = processor.zoom.load();
-        dragStartX = e.x;
-        dragStartY = e.y;
-        repaint();
-    }
+    isDragging = true;
+    dragStartZoom = processor.zoom.load();
+    dragStartX = e.x;
+    dragStartY = e.y;
+
+    // Record the sample fraction under the cursor so zoom can pivot here
+    int w = getWidth();
+    float z = dragStartZoom;
+    float sc = processor.scroll.load();
+    float viewFrac = 1.0f / z;
+    float viewStart = sc * (1.0f - viewFrac);
+
+    dragAnchorPixelFrac = (w > 0) ? (float) e.x / (float) w : 0.5f;
+    dragAnchorFrac = viewStart + dragAnchorPixelFrac * viewFrac;
+    dragAnchorFrac = juce::jlimit (0.0f, 1.0f, dragAnchorFrac);
 }
 
 void ScrollZoomBar::mouseDrag (const juce::MouseEvent& e)
 {
-    if (! isDraggingThumb)
+    if (! isDragging)
         return;
 
-    // Vertical drag: zoom (down = zoom in, up = zoom out)
-    float deltaY = (float) (e.y - dragStartY);  // positive = down
+    int w = getWidth();
+    if (w <= 0) return;
+
+    // Vertical drag: zoom
+    float deltaY = (float) (e.y - dragStartY);
     float zoomFactor = std::pow (1.01f, deltaY);
     float newZoom = juce::jlimit (1.0f, 256.0f, dragStartZoom * zoomFactor);
     processor.zoom.store (newZoom);
 
-    // Horizontal drag: scroll
-    auto track = getTrackBounds();
-    int thumbW = std::max (16, (int) (track.getWidth() / newZoom));
-    int effectiveThumbW = std::max (track.getWidth() / 4, thumbW);
-    int trackRange = track.getWidth() - effectiveThumbW;
+    float newViewFrac = 1.0f / newZoom;
 
-    if (trackRange > 0)
+    // Horizontal drag offset in sample-fraction space
+    float hDragFrac = -(float) (e.x - dragStartX) / (float) w * newViewFrac;
+
+    // Anchor: keep dragAnchorFrac at the original pixel fraction, then add horizontal offset
+    float newViewStart = dragAnchorFrac - dragAnchorPixelFrac * newViewFrac + hDragFrac;
+
+    // Convert viewStart to scroll: viewStart = scroll * (1 - viewFrac)
+    float maxScroll = 1.0f - newViewFrac;
+    if (maxScroll > 0.0f)
     {
-        float deltaFrac = (float) (e.x - dragStartX) / (float) trackRange;
-        float newScroll = juce::jlimit (0.0f, 1.0f, dragStartScroll + deltaFrac);
+        float newScroll = juce::jlimit (0.0f, 1.0f, newViewStart / maxScroll);
         processor.scroll.store (newScroll);
     }
 
@@ -122,6 +142,6 @@ void ScrollZoomBar::mouseDrag (const juce::MouseEvent& e)
 
 void ScrollZoomBar::mouseUp (const juce::MouseEvent&)
 {
-    isDraggingThumb = false;
+    isDragging = false;
     repaint();
 }

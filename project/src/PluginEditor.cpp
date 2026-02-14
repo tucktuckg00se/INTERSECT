@@ -5,8 +5,8 @@ static constexpr int kBaseH      = 550;
 static constexpr int kHeaderH    = 50;
 static constexpr int kSliceLaneH = 24;
 static constexpr int kScrollbarH = 22;
-static constexpr int kSliceCtrlH = 48;
-static constexpr int kActionH    = 36;
+static constexpr int kSliceCtrlH = 56;
+static constexpr int kActionH    = 28;
 static constexpr int kMargin     = 8;
 
 IntersectEditor::IntersectEditor (IntersectProcessor& p)
@@ -51,22 +51,22 @@ void IntersectEditor::resized()
 
     auto area = juce::Rectangle<int> (0, 0, kBaseW, kBaseH);
 
-    // 1. Header (50px)
+    // 1. Header (50px) — top
     headerBar.setBounds (area.removeFromTop (kHeaderH));
 
     // 2. SliceLane (24px)
     sliceLane.setBounds (area.removeFromTop (kSliceLaneH).reduced (kMargin, 0));
 
-    // Bottom: ActionBar (36px)
-    actionPanel.setBounds (area.removeFromBottom (kActionH).reduced (kMargin, 0));
-
-    // SliceControlBar (48px)
+    // 3. SliceControlBar (56px) — bottom
     sliceControlBar.setBounds (area.removeFromBottom (kSliceCtrlH));
 
-    // Scrollbar (22px)
+    // 4. ActionPanel (28px) — above slice control
+    actionPanel.setBounds (area.removeFromBottom (kActionH).reduced (kMargin, 0));
+
+    // 5. RulerBar / ScrollZoomBar (22px) — above action panel
     scrollZoomBar.setBounds (area.removeFromBottom (kScrollbarH).reduced (kMargin, 0));
 
-    // Waveform (flexible)
+    // 6. WaveformView (flexible) — remaining space
     waveformView.setBounds (area.reduced (kMargin, 0));
 }
 

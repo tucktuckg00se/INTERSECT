@@ -13,6 +13,5 @@ public:
 
 private:
     IntersectProcessor& processor;
-    juce::TextButton dupBtn { "D" };
     juce::TextButton midiSelectBtn { "M" };
 };

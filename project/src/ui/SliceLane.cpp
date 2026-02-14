@@ -4,15 +4,6 @@
 
 SliceLane::SliceLane (IntersectProcessor& p) : processor (p)
 {
-    addAndMakeVisible (dupBtn);
-    dupBtn.setTooltip ("Duplicate selected slice");
-    dupBtn.onClick = [this] {
-        IntersectProcessor::Command cmd;
-        cmd.type = IntersectProcessor::CmdDuplicateSlice;
-        processor.pushCommand (cmd);
-        repaint();
-    };
-
     addAndMakeVisible (midiSelectBtn);
     midiSelectBtn.setTooltip ("MIDI selects slice");
     midiSelectBtn.onClick = [this] {
@@ -26,7 +17,6 @@ void SliceLane::resized()
 {
     int btnW = 20;
     midiSelectBtn.setBounds (getWidth() - btnW - 2, 2, btnW, getHeight() - 4);
-    dupBtn.setBounds (getWidth() - btnW * 2 - 4, 2, btnW, getHeight() - 4);
 }
 
 void SliceLane::paint (juce::Graphics& g)
