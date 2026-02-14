@@ -67,7 +67,7 @@ target_sources(Intersect PRIVATE
     src/audio/WsolaEngine.cpp
     src/audio/LazyChopEngine.cpp
     src/params/ParamLayout.cpp
-    src/ui/TuckersLookAndFeel.cpp
+    src/ui/IntersectLookAndFeel.cpp
     src/ui/HeaderBar.cpp
     src/ui/SliceControlBar.cpp
     src/ui/WaveformView.cpp

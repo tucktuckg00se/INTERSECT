@@ -1,5 +1,5 @@
 #include "ActionPanel.h"
-#include "TuckersLookAndFeel.h"
+#include "IntersectLookAndFeel.h"
 #include "WaveformView.h"
 #include "../PluginProcessor.h"
 

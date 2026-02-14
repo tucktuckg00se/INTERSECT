@@ -79,7 +79,7 @@ void IntersectEditor::timerCallback()
     if (scale != lastScale)
     {
         lastScale = scale;
-        setSize (kBaseW, kBaseH);
+        setTransform (juce::AffineTransform::scale (scale));
     }
 
     repaint();

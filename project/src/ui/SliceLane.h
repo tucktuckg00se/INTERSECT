@@ -12,6 +12,8 @@ public:
     void mouseDown (const juce::MouseEvent& e) override;
 
 private:
+    void updateMidiButtonAppearance (bool active);
+
     IntersectProcessor& processor;
     juce::TextButton midiSelectBtn { "M" };
 };

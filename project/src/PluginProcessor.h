@@ -67,6 +67,7 @@ public:
         FieldFormant,
         FieldFormantComp,
         FieldGrainMode,
+        FieldVolume,
     };
 
     struct Command

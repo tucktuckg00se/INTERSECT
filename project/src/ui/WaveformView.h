@@ -45,4 +45,12 @@ private:
     int drawStart = 0;
     int dragOffset = 0;    // for MoveSlice: offset from mouse to slice start
     int dragSliceLen = 0;  // for MoveSlice: original slice length
+
+    // Middle-mouse drag (scroll+zoom like ScrollZoomBar)
+    bool midDragging = false;
+    float midDragStartZoom = 1.0f;
+    float midDragAnchorFrac = 0.0f;
+    float midDragAnchorPixelFrac = 0.0f;
+    int   midDragStartX = 0;
+    int   midDragStartY = 0;
 };

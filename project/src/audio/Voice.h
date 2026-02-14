@@ -29,6 +29,7 @@ struct Voice
     int          muteGroup    = 0;
     int          age          = 0;
     bool         looping      = false;
+    float        volume       = 1.0f;
 
     // WSOLA fields (legacy, still used for basic WSOLA fallback)
     bool         wsolaActive  = false;

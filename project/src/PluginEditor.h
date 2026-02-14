@@ -1,7 +1,7 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "PluginProcessor.h"
-#include "ui/TuckersLookAndFeel.h"
+#include "ui/IntersectLookAndFeel.h"
 #include "ui/HeaderBar.h"
 #include "ui/SliceLane.h"
 #include "ui/SliceControlBar.h"

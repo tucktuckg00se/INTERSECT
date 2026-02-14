@@ -1,5 +1,5 @@
 #include "SliceListPanel.h"
-#include "TuckersLookAndFeel.h"
+#include "IntersectLookAndFeel.h"
 #include "../PluginProcessor.h"
 
 SliceListPanel::SliceListPanel (IntersectProcessor& p) : processor (p) {}

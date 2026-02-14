@@ -1,5 +1,5 @@
 #include "WaveformView.h"
-#include "TuckersLookAndFeel.h"
+#include "IntersectLookAndFeel.h"
 #include "../PluginProcessor.h"
 
 WaveformView::WaveformView (IntersectProcessor& p) : processor (p) {}
@@ -178,6 +178,25 @@ void WaveformView::mouseDown (const juce::MouseEvent& e)
     if (! processor.sampleData.isLoaded())
         return;
 
+    // Middle-mouse drag: scroll+zoom (like ScrollZoomBar)
+    if (e.mods.isMiddleButtonDown())
+    {
+        midDragging = true;
+        midDragStartZoom = processor.zoom.load();
+        midDragStartX = e.x;
+        midDragStartY = e.y;
+
+        int w = getWidth();
+        float z = midDragStartZoom;
+        float sc = processor.scroll.load();
+        float viewFrac = 1.0f / z;
+        float viewStart = sc * (1.0f - viewFrac);
+
+        midDragAnchorPixelFrac = (w > 0) ? (float) e.x / (float) w : 0.5f;
+        midDragAnchorFrac = juce::jlimit (0.0f, 1.0f, viewStart + midDragAnchorPixelFrac * viewFrac);
+        return;
+    }
+
     int samplePos = std::max (0, std::min (pixelToSample (e.x), processor.sampleData.getNumFrames()));
 
     if (sliceDrawMode)
@@ -229,6 +248,30 @@ void WaveformView::mouseDrag (const juce::MouseEvent& e)
     if (! processor.sampleData.isLoaded())
         return;
 
+    // Middle-mouse drag: scroll+zoom
+    if (midDragging)
+    {
+        int w = getWidth();
+        if (w <= 0) return;
+
+        float deltaY = (float) (e.y - midDragStartY);
+        float zoomFactor = std::pow (1.01f, deltaY);
+        float newZoom = juce::jlimit (1.0f, 2048.0f, midDragStartZoom * zoomFactor);
+        processor.zoom.store (newZoom);
+
+        float newViewFrac = 1.0f / newZoom;
+        float hDragFrac = -(float) (e.x - midDragStartX) / (float) w * newViewFrac;
+        float newViewStart = midDragAnchorFrac - midDragAnchorPixelFrac * newViewFrac + hDragFrac;
+
+        float maxScroll = 1.0f - newViewFrac;
+        if (maxScroll > 0.0f)
+            processor.scroll.store (juce::jlimit (0.0f, 1.0f, newViewStart / maxScroll));
+
+        prevWidth = -1;
+        repaint();
+        return;
+    }
+
     int samplePos = std::max (0, std::min (pixelToSample (e.x), processor.sampleData.getNumFrames()));
 
     if (dragMode == DragEdgeLeft && dragSliceIdx >= 0)
@@ -262,6 +305,12 @@ void WaveformView::mouseDrag (const juce::MouseEvent& e)
 
 void WaveformView::mouseUp (const juce::MouseEvent& e)
 {
+    if (midDragging)
+    {
+        midDragging = false;
+        return;
+    }
+
     if (dragMode == DrawSlice)
     {
         int endPos = std::max (0, std::min (pixelToSample (e.x), processor.sampleData.getNumFrames()));
@@ -296,13 +345,33 @@ void WaveformView::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseW
     }
     else
     {
-        // Zoom
-        float z = processor.zoom.load();
+        // Cursor-anchored zoom
+        int width = getWidth();
+        float oldZoom = processor.zoom.load();
+        float oldViewFrac = 1.0f / oldZoom;
+        float oldScroll = processor.scroll.load();
+        float oldViewStart = oldScroll * (1.0f - oldViewFrac);
+
+        // Sample fraction under cursor
+        float cursorPixelFrac = (width > 0) ? (float) e.x / (float) width : 0.5f;
+        float anchorFrac = oldViewStart + cursorPixelFrac * oldViewFrac;
+
+        // Apply zoom change
+        float newZoom = oldZoom;
         if (w.deltaY > 0)
-            z = std::min (256.0f, z * 1.2f);
+            newZoom = std::min (2048.0f, oldZoom * 1.2f);
         else
-            z = std::max (1.0f, z / 1.2f);
-        processor.zoom.store (z);
+            newZoom = std::max (1.0f, oldZoom / 1.2f);
+        processor.zoom.store (newZoom);
+
+        // Recompute scroll so anchorFrac stays at same pixel position
+        float newViewFrac = 1.0f / newZoom;
+        float newViewStart = anchorFrac - cursorPixelFrac * newViewFrac;
+        float maxScroll = 1.0f - newViewFrac;
+        if (maxScroll > 0.0f)
+            processor.scroll.store (juce::jlimit (0.0f, 1.0f, newViewStart / maxScroll));
+        else
+            processor.scroll.store (0.0f);
     }
     prevWidth = -1;  // force cache rebuild
     repaint();

@@ -132,6 +132,7 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                     case FieldFormant:   s.formantSemitones = val;   s.lockMask |= kLockFormant;     break;
                     case FieldFormantComp: s.formantComp = val > 0.5f; s.lockMask |= kLockFormantComp; break;
                     case FieldGrainMode:  s.grainMode = (int) val;   s.lockMask |= kLockGrainMode;  break;
+                    case FieldVolume:     s.volume = val;            s.lockMask |= kLockVolume;    break;
                     case FieldMidiNote:
                         s.midiNote = juce::jlimit (0, 127, (int) val);
                         sliceManager.rebuildMidiMap();
@@ -165,6 +166,7 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                     dst.formantSemitones = src.formantSemitones;
                     dst.formantComp     = src.formantComp;
                     dst.grainMode       = src.grainMode;
+                    dst.volume          = src.volume;
                     dst.lockMask        = src.lockMask;
                     dst.colour          = src.colour;
                     // midiNote is already assigned by createSlice
@@ -229,6 +231,7 @@ void IntersectProcessor::processMidi (juce::MidiBuffer& midi)
                                           formantParam->load(),
                                           formantCompParam->load() > 0.5f,
                                           (int) grainModeParam->load(),
+                                          masterVolParam->load(),
                                           sampleData);
                 }
             }
@@ -262,7 +265,6 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     if (! sampleData.isLoaded())
         return;
 
-    float masterVol = masterVolParam->load();
     auto* outL = buffer.getWritePointer (0);
     auto* outR = buffer.getNumChannels() > 1 ? buffer.getWritePointer (1) : nullptr;
 
@@ -271,9 +273,9 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         float sL = 0.0f, sR = 0.0f;
         voicePool.processSample (sampleData, currentSampleRate, sL, sR);
 
-        outL[i] = sL * masterVol;
+        outL[i] = sL;
         if (outR != nullptr)
-            outR[i] = sR * masterVol;
+            outR[i] = sR;
     }
 
     // Pass through MIDI
@@ -290,7 +292,7 @@ void IntersectProcessor::getStateInformation (juce::MemoryBlock& destData)
     juce::MemoryOutputStream stream (destData, false);
 
     // Version
-    stream.writeInt (6);
+    stream.writeInt (7);
 
     // APVTS state
     auto state = apvts.copyState();
@@ -332,6 +334,8 @@ void IntersectProcessor::getStateInformation (juce::MemoryBlock& destData)
         stream.writeBool (s.formantComp);
         // v6 fields
         stream.writeInt (s.grainMode);
+        // v7 fields
+        stream.writeFloat (s.volume);
     }
 
     // Audio PCM data (stereo interleaved floats)
@@ -412,6 +416,10 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
         if (version >= 6)
         {
             s.grainMode = stream.readInt();
+        }
+        if (version >= 7)
+        {
+            s.volume = stream.readFloat();
         }
     }
 

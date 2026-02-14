@@ -17,7 +17,8 @@ enum LockBit : uint32_t
     kLockTonality      = 1024,
     kLockFormant       = 2048,
     kLockFormantComp   = 4096,
-    kLockGrainMode     = 8192
+    kLockGrainMode     = 8192,
+    kLockVolume        = 16384
 };
 
 struct Slice
@@ -40,6 +41,7 @@ struct Slice
     float    formantSemitones = 0.0f;
     bool     formantComp   = false;
     int      grainMode     = 0;       // Bungee: -1=Fast, 0=Normal, +1=Smooth
+    float    volume        = 1.0f;
     uint32_t lockMask      = 0;
     juce::Colour colour    { 0.4f, 0.7f, 0.95f, 1.0f };
 };

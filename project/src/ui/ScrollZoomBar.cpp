@@ -1,5 +1,5 @@
 #include "ScrollZoomBar.h"
-#include "TuckersLookAndFeel.h"
+#include "IntersectLookAndFeel.h"
 #include "WaveformView.h"
 #include "../PluginProcessor.h"
 #include <cmath>
@@ -117,7 +117,7 @@ void ScrollZoomBar::mouseDrag (const juce::MouseEvent& e)
     // Vertical drag: zoom
     float deltaY = (float) (e.y - dragStartY);
     float zoomFactor = std::pow (1.01f, deltaY);
-    float newZoom = juce::jlimit (1.0f, 256.0f, dragStartZoom * zoomFactor);
+    float newZoom = juce::jlimit (1.0f, 2048.0f, dragStartZoom * zoomFactor);
     processor.zoom.store (newZoom);
 
     float newViewFrac = 1.0f / newZoom;

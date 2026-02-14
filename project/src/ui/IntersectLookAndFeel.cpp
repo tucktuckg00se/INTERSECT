@@ -1,4 +1,4 @@
-#include "TuckersLookAndFeel.h"
+#include "IntersectLookAndFeel.h"
 
 IntersectLookAndFeel::IntersectLookAndFeel()
 {
@@ -10,16 +10,24 @@ void IntersectLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button
                                                   bool isHighlighted, bool isDown)
 {
     auto bounds = button.getLocalBounds().toFloat();
-    g.setColour (isDown ? Theme::buttonHover.brighter (0.1f)
-                        : isHighlighted ? Theme::buttonHover
-                                        : Theme::button);
+
+    // Use the button's own colour if it has been explicitly set
+    auto btnCol = button.findColour (juce::TextButton::buttonColourId);
+    auto baseBg = (btnCol != juce::Colour()) ? btnCol : Theme::button;
+
+    g.setColour (isDown ? baseBg.brighter (0.15f)
+                        : isHighlighted ? baseBg.brighter (0.08f)
+                                        : baseBg);
     g.fillRect (bounds);
 }
 
 void IntersectLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& button,
                                             bool /*isHighlighted*/, bool /*isDown*/)
 {
-    g.setColour (Theme::foreground);
+    auto textCol = button.findColour (button.getToggleState()
+                                       ? juce::TextButton::textColourOnId
+                                       : juce::TextButton::textColourOffId);
+    g.setColour (textCol.isTransparent() ? Theme::foreground : textCol);
     g.setFont (juce::Font (12.0f));
     g.drawText (button.getButtonText(), button.getLocalBounds(),
                 juce::Justification::centred);
@@ -60,4 +68,31 @@ void IntersectLookAndFeel::drawPopupMenuItem (juce::Graphics& g, const juce::Rec
 juce::Font IntersectLookAndFeel::getPopupMenuFont()
 {
     return juce::Font (12.0f);
+}
+
+void IntersectLookAndFeel::drawTooltip (juce::Graphics& g, const juce::String& text, int width, int height)
+{
+    g.fillAll (Theme::darkBar.brighter (0.1f));
+    g.setColour (Theme::separator);
+    g.drawRect (0, 0, width, height, 1);
+    g.setColour (Theme::foreground);
+    g.setFont (juce::Font (11.0f));
+    g.drawText (text, 4, 0, width - 8, height, juce::Justification::centredLeft);
+}
+
+juce::Rectangle<int> IntersectLookAndFeel::getTooltipBounds (const juce::String& text,
+                                                              juce::Point<int> screenPos,
+                                                              juce::Rectangle<int> parentArea)
+{
+    int w = (int) juce::Font (11.0f).getStringWidthFloat (text) + 12;
+    int h = 20;
+    int x = screenPos.x;
+    int y = screenPos.y + 18;
+
+    if (x + w > parentArea.getRight())
+        x = parentArea.getRight() - w;
+    if (y + h > parentArea.getBottom())
+        y = screenPos.y - h - 4;
+
+    return { x, y, w, h };
 }

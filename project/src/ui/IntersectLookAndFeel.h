@@ -57,4 +57,8 @@ public:
                             const juce::String& text, const juce::String& shortcutText,
                             const juce::Drawable* icon, const juce::Colour* textColour) override;
     juce::Font getPopupMenuFont() override;
+
+    void drawTooltip (juce::Graphics&, const juce::String& text, int width, int height) override;
+    juce::Rectangle<int> getTooltipBounds (const juce::String& text, juce::Point<int> screenPos,
+                                           juce::Rectangle<int> parentArea) override;
 };

@@ -1,5 +1,5 @@
 #include "HeaderBar.h"
-#include "TuckersLookAndFeel.h"
+#include "IntersectLookAndFeel.h"
 #include "../PluginProcessor.h"
 #include "../audio/WsolaEngine.h"
 #include <cmath>
@@ -243,6 +243,16 @@ void HeaderBar::paint (juce::Graphics& g)
         g.drawText (strOn ? "ON" : "OFF", x, row2y + 10, 55, 12, juce::Justification::centredLeft);
         headerCells.push_back ({ x, row2y, 55, row2h, ParamIds::defaultStretchEnabled, 0.0f, 1.0f, 1.0f, false, true, false, false });
         x += 60;
+
+        // VOL
+        g.setFont (juce::Font (9.0f));
+        g.setColour (Theme::foreground.withAlpha (0.9f));
+        g.drawText ("VOL", x, row2y, 50, 10, juce::Justification::centredLeft);
+        g.setFont (juce::Font (11.0f));
+        float vol = processor.apvts.getRawParameterValue (ParamIds::masterVolume)->load();
+        g.drawText (juce::String ((int) (vol * 100.0f)) + "%", x, row2y + 10, 50, 12, juce::Justification::centredLeft);
+        headerCells.push_back ({ x, row2y, 50, row2h, ParamIds::masterVolume, 0.0f, 1.0f, 0.01f, false, false, false, false });
+        x += 55;
     }
     else
     {

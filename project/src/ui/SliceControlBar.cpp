@@ -1,5 +1,5 @@
 #include "SliceControlBar.h"
-#include "TuckersLookAndFeel.h"
+#include "IntersectLookAndFeel.h"
 #include "../PluginProcessor.h"
 #include "../audio/WsolaEngine.h"
 
@@ -206,6 +206,13 @@ void SliceControlBar::paint (juce::Graphics& g)
     drawParamCell (g, x, row2y, "STRETCH", strOn ? "ON" : "OFF", locked, kLockStretch, F::FieldStretchEnabled, 0.0f, 1.0f, 1.0f, true, false, cw);
     x += cw + 4;
 
+    // VOL
+    float gVol = processor.apvts.getRawParameterValue (ParamIds::masterVolume)->load();
+    locked = s.lockMask & kLockVolume;
+    float volVal = locked ? s.volume : gVol;
+    drawParamCell (g, x, row2y, "VOL", juce::String ((int) (volVal * 100.0f)) + "%", locked, kLockVolume, F::FieldVolume, 0.0f, 1.0f, 0.01f, false, false, cw);
+    x += cw + 4;
+
     // MIDI note (not lockable)
     g.setFont (juce::Font (9.0f));
     g.setColour (Theme::foreground.withAlpha (0.5f));
@@ -379,6 +386,10 @@ void SliceControlBar::mouseDown (const juce::MouseEvent& e)
                         dragStartValue = (s.lockMask & kLockFormant) ? s.formantSemitones :
                             processor.apvts.getRawParameterValue (ParamIds::defaultFormant)->load();
                         break;
+                    case IntersectProcessor::FieldVolume:
+                        dragStartValue = (s.lockMask & kLockVolume) ? s.volume :
+                            processor.apvts.getRawParameterValue (ParamIds::masterVolume)->load();
+                        break;
                     default:
                         dragStartValue = 0.0f;
                         break;
@@ -473,6 +484,10 @@ void SliceControlBar::mouseDoubleClick (const juce::MouseEvent& e)
                         currentVal = (s.lockMask & kLockFormant) ? s.formantSemitones :
                             processor.apvts.getRawParameterValue (ParamIds::defaultFormant)->load();
                         break;
+                    case IntersectProcessor::FieldVolume:
+                        currentVal = ((s.lockMask & kLockVolume) ? s.volume :
+                            processor.apvts.getRawParameterValue (ParamIds::masterVolume)->load()) * 100.0f;
+                        break;
                     default: break;
                 }
             }
@@ -499,7 +514,8 @@ void SliceControlBar::showTextEditor (const ParamCell& cell, float currentValue)
         cell.fieldId == IntersectProcessor::FieldDecay ||
         cell.fieldId == IntersectProcessor::FieldRelease)
         displayVal = juce::String ((int) currentValue);
-    else if (cell.fieldId == IntersectProcessor::FieldSustain)
+    else if (cell.fieldId == IntersectProcessor::FieldSustain ||
+             cell.fieldId == IntersectProcessor::FieldVolume)
         displayVal = juce::String ((int) currentValue);
     else if (cell.step >= 1.0f)
         displayVal = juce::String ((int) currentValue);
@@ -518,12 +534,13 @@ void SliceControlBar::showTextEditor (const ParamCell& cell, float currentValue)
         if (textEditor == nullptr) return;
         float val = textEditor->getText().getFloatValue();
 
-        // Convert ms to seconds for ATK/DEC/REL, percent to fraction for SUS
+        // Convert ms to seconds for ATK/DEC/REL, percent to fraction for SUS/VOL
         if (fieldId == IntersectProcessor::FieldAttack ||
             fieldId == IntersectProcessor::FieldDecay ||
             fieldId == IntersectProcessor::FieldRelease)
             val /= 1000.0f;
-        else if (fieldId == IntersectProcessor::FieldSustain)
+        else if (fieldId == IntersectProcessor::FieldSustain ||
+                 fieldId == IntersectProcessor::FieldVolume)
             val /= 100.0f;
 
         val = juce::jlimit (minV, maxV, val);

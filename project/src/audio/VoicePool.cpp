@@ -111,7 +111,7 @@ void VoicePool::startVoice (int voiceIdx, int sliceIdx, float velocity, int note
                             int globalMuteGroup, bool globalPingPong,
                             bool globalStretchEnabled, float dawBpmVal,
                             float globalTonality, float globalFormant, bool globalFormantComp,
-                            int globalGrainMode,
+                            int globalGrainMode, float globalVolume,
                             const SampleData& sample)
 {
     auto& v = voices[voiceIdx];
@@ -160,6 +160,8 @@ void VoicePool::startVoice (int voiceIdx, int sliceIdx, float velocity, int note
                                            (float) s.grainMode, (float) globalGrainMode);
     // Convert grainMode choice index (0=Fast, 1=Normal, 2=Smooth) to log2 hop adjust (-1, 0, +1)
     int hopAdj = grainMode - 1;
+
+    v.volume = sm.resolveParam (sliceIdx, kLockVolume, s.volume, globalVolume);
 
     // Reset stretch state
     v.stretchActive = false;
@@ -424,8 +426,8 @@ void VoicePool::processSample (const SampleData& sample, double sampleRate,
 
             if (v.stretchOutReadPos < v.stretchOutAvail)
             {
-                voiceL = v.stretchOutBufL[(size_t) v.stretchOutReadPos] * env * v.velocity;
-                voiceR = v.stretchOutBufR[(size_t) v.stretchOutReadPos] * env * v.velocity;
+                voiceL = v.stretchOutBufL[(size_t) v.stretchOutReadPos] * env * v.velocity * v.volume;
+                voiceR = v.stretchOutBufR[(size_t) v.stretchOutReadPos] * env * v.velocity * v.volume;
                 v.stretchOutReadPos++;
             }
 
@@ -461,8 +463,8 @@ void VoicePool::processSample (const SampleData& sample, double sampleRate,
 
             if (v.bungeeOutReadPos < v.bungeeOutAvail)
             {
-                voiceL = v.bungeeOutBufL[(size_t) v.bungeeOutReadPos] * env * v.velocity;
-                voiceR = v.bungeeOutBufR[(size_t) v.bungeeOutReadPos] * env * v.velocity;
+                voiceL = v.bungeeOutBufL[(size_t) v.bungeeOutReadPos] * env * v.velocity * v.volume;
+                voiceR = v.bungeeOutBufR[(size_t) v.bungeeOutReadPos] * env * v.velocity * v.volume;
                 v.bungeeOutReadPos++;
             }
 
@@ -487,8 +489,8 @@ void VoicePool::processSample (const SampleData& sample, double sampleRate,
             }
 
             // Linear interpolation
-            voiceL = sample.getInterpolatedSample (v.position, 0) * env * v.velocity;
-            voiceR = sample.getInterpolatedSample (v.position, 1) * env * v.velocity;
+            voiceL = sample.getInterpolatedSample (v.position, 0) * env * v.velocity * v.volume;
+            voiceR = sample.getInterpolatedSample (v.position, 1) * env * v.velocity * v.volume;
 
             v.age++;
 
