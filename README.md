@@ -2,7 +2,7 @@
 
 A JUCE-based audio sampler plugin that loads a single sample, slices it into regions, and triggers slices via MIDI with independent per-slice parameter control.
 
-![INTERSECT screenshot](docs/screenshot.png?v=2)
+![INTERSECT screenshot](https://raw.githubusercontent.com/tucktuckg00se/INTERSECT/master/docs/screenshot.png)
 
 ## Features
 
