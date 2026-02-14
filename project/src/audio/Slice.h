@@ -24,7 +24,7 @@ struct Slice
     int      midiNote      = 36;
     float    bpm           = 120.0f;
     float    pitchSemitones = 0.0f;
-    int      algorithm     = 0;       // 0=Direct, 1=WSOLA
+    int      algorithm     = 0;       // 0=Repitch, 1=Stretch
     float    attackSec     = 0.005f;
     float    decaySec      = 0.1f;
     float    sustainLevel  = 1.0f;

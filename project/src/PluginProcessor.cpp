@@ -23,6 +23,7 @@ IntersectProcessor::IntersectProcessor()
 void IntersectProcessor::prepareToPlay (double sampleRate, int /*samplesPerBlock*/)
 {
     currentSampleRate = sampleRate;
+    voicePool.setSampleRate (sampleRate);
 }
 
 void IntersectProcessor::releaseResources() {}
@@ -68,7 +69,7 @@ void IntersectProcessor::handleCommand (const Command& cmd)
 
         case CmdLazyChopStart:
             if (sampleData.isLoaded())
-                lazyChop.start (voicePool, sampleData.getNumFrames());
+                lazyChop.start (sampleData.getNumFrames());
             break;
 
         case CmdLazyChopStop:
@@ -182,7 +183,8 @@ void IntersectProcessor::processMidi (juce::MidiBuffer& midi)
                                           (int) muteGroupParam->load(),
                                           pingPongParam->load() > 0.5f,
                                           stretchParam->load() > 0.5f,
-                                          dawBpm.load());
+                                          dawBpm.load(),
+                                          sampleData);
                 }
             }
         }

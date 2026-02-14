@@ -1,32 +1,34 @@
 #include "LazyChopEngine.h"
 #include <cmath>
 
-void LazyChopEngine::start (VoicePool& voicePool, int sampleLen)
+void LazyChopEngine::start (int sampleLen)
 {
     active = true;
-    waitingForFirstNote = true;
+    playing = false;
     chopPos = 0;
     nextMidiNote = 36;
     sampleLength = sampleLen;
+}
 
-    // Start preview voice immediately — sample plays from the beginning
+void LazyChopEngine::startPreview (VoicePool& voicePool, int fromPos)
+{
     auto& v = voicePool.getVoice (getPreviewVoiceIndex());
     v.active      = true;
     v.sliceIdx    = -1;
-    v.position    = 0.0;
+    v.position    = (double) fromPos;
     v.speed       = 1.0;
     v.direction   = 1;
     v.velocity    = 1.0f;
     v.midiNote    = -1;
     v.startSample = 0;
-    v.endSample   = sampleLen;
+    v.endSample   = sampleLength;
     v.pingPong    = false;
     v.muteGroup   = 0;
     v.wsolaActive = false;
     v.stretchActive = false;
     v.pitchRatio  = 1.0f;
     v.age         = 0;
-    v.looping     = false;
+    v.looping     = true;
 
     // Sustain at half volume
     v.envelope.noteOn (0.0f, 0.0f, 0.5f, 0.02f);
@@ -35,7 +37,7 @@ void LazyChopEngine::start (VoicePool& voicePool, int sampleLen)
 void LazyChopEngine::stop (VoicePool& voicePool, SliceManager& sliceMgr)
 {
     // Close pending slice — set end to full sample length
-    if (! waitingForFirstNote && chopPos < sampleLength)
+    if (playing && chopPos < sampleLength)
     {
         int newIdx = sliceMgr.createSlice (chopPos, sampleLength);
         if (newIdx >= 0)
@@ -51,27 +53,56 @@ void LazyChopEngine::stop (VoicePool& voicePool, SliceManager& sliceMgr)
     v.active = false;
 
     active = false;
-    waitingForFirstNote = true;
+    playing = false;
 }
 
 void LazyChopEngine::onNote (int note, VoicePool& voicePool, SliceManager& sliceMgr)
 {
-    auto& v = voicePool.getVoice (getPreviewVoiceIndex());
-    int previewPos = (int) std::floor (v.position);
-
-    if (waitingForFirstNote)
+    // If this MIDI note is already assigned to an existing slice, audition it
+    int existingSlice = sliceMgr.midiNoteToSlice (note);
+    if (existingSlice >= 0)
     {
-        // First note: set chopPos to current playhead (start of first slice)
-        chopPos = previewPos;
-        nextMidiNote = note;
-        waitingForFirstNote = false;
+        const auto& s = sliceMgr.getSlice (existingSlice);
+        startPreview (voicePool, s.startSample);
+        playing = true;
         return;
     }
 
-    // Close current slice at playhead position (min 64 samples)
-    if (previewPos > chopPos + 64)
+    // First unassigned note — start playback from beginning
+    if (! playing)
     {
-        int newIdx = sliceMgr.createSlice (chopPos, previewPos);
+        startPreview (voicePool, 0);
+        chopPos = 0;
+        nextMidiNote = 36;
+        playing = true;
+        return;
+    }
+
+    // Subsequent unassigned note — place slice boundary at playhead
+    auto& v = voicePool.getVoice (getPreviewVoiceIndex());
+    int playhead = (int) std::floor (v.position);
+
+    // Handle wrap-around: if playhead wrapped past chopPos, close slice to end of sample
+    if (playhead < chopPos)
+    {
+        if (sampleLength - chopPos >= 64)
+        {
+            int idx = sliceMgr.createSlice (chopPos, sampleLength);
+            if (idx >= 0)
+            {
+                auto& s = sliceMgr.getSlice (idx);
+                s.midiNote = nextMidiNote;
+                nextMidiNote = std::min (nextMidiNote + 1, 127);
+                sliceMgr.rebuildMidiMap();
+            }
+        }
+        chopPos = 0;
+    }
+
+    // Create slice from chopPos to playhead (min 64 samples)
+    if (playhead - chopPos >= 64)
+    {
+        int newIdx = sliceMgr.createSlice (chopPos, playhead);
         if (newIdx >= 0)
         {
             auto& s = sliceMgr.getSlice (newIdx);
@@ -81,6 +112,5 @@ void LazyChopEngine::onNote (int note, VoicePool& voicePool, SliceManager& slice
         }
     }
 
-    // Start new slice at current playhead
-    chopPos = previewPos;
+    chopPos = playhead;
 }

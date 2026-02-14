@@ -18,13 +18,16 @@ public:
                      float globalBpm, float globalPitch, int globalAlgorithm,
                      float globalAttack, float globalDecay, float globalSustain, float globalRelease,
                      int globalMuteGroup, bool globalPingPong,
-                     bool globalStretchEnabled, float dawBpm);
+                     bool globalStretchEnabled, float dawBpm,
+                     const SampleData& sample);
 
     void releaseNote (int note);
     void muteGroup (int group, int exceptVoice);
 
     void processSample (const SampleData& sample, double sampleRate,
                         float& outL, float& outR);
+
+    void setSampleRate (double sr) { sampleRate = sr; }
 
     Voice& getVoice (int idx) { return voices[idx]; }
 
@@ -33,4 +36,5 @@ public:
 
 private:
     std::array<Voice, kMaxVoices> voices;
+    double sampleRate = 44100.0;
 };

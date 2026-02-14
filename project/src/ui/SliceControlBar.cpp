@@ -112,7 +112,7 @@ void SliceControlBar::paint (juce::Graphics& g)
     // ALGORITHM
     locked = s.lockMask & kLockAlgorithm;
     int av = locked ? s.algorithm : gAlgo;
-    drawParamCell (g, x, 2, "ALGO", av == 0 ? "Repitch" : "WSOLA", locked, kLockAlgorithm, F::FieldAlgorithm, 0.0f, 1.0f, 1.0f, false, true, cw);
+    drawParamCell (g, x, 2, "ALGO", av == 0 ? "Repitch" : "Stretch", locked, kLockAlgorithm, F::FieldAlgorithm, 0.0f, 1.0f, 1.0f, false, true, cw);
     x += cw + 4;
 
     // ATTACK
@@ -251,7 +251,7 @@ void SliceControlBar::mouseDown (const juce::MouseEvent& e)
             {
                 juce::PopupMenu menu;
                 menu.addItem (1, "Repitch");
-                menu.addItem (2, "WSOLA");
+                menu.addItem (2, "Stretch");
                 menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this),
                     [this, fieldId = cell.fieldId] (int result) {
                         if (result > 0)

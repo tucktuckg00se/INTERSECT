@@ -26,11 +26,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout ParamLayout::createLayout()
         juce::NormalisableRange<float> (-24.0f, 24.0f, 0.01f),
         0.0f));
 
-    // Default Algorithm: 0=Direct, 1=WSOLA
+    // Default Algorithm: 0=Repitch, 1=Stretch
     params.push_back (std::make_unique<juce::AudioParameterChoice> (
         juce::ParameterID { ParamIds::defaultAlgorithm, 1 },
         "Default Algorithm",
-        juce::StringArray { "Repitch", "WSOLA" },
+        juce::StringArray { "Repitch", "Stretch" },
         0));
 
     // Default Attack: 0..1000 ms, default 5ms

@@ -6,19 +6,19 @@ class LazyChopEngine
 {
 public:
     bool isActive() const { return active; }
-    bool isWaitingForFirstNote() const { return waitingForFirstNote; }
-    int  getNextMidiNote() const { return nextMidiNote; }
 
-    void start (VoicePool& voicePool, int sampleLen);
+    void start (int sampleLen);
     void stop (VoicePool& voicePool, SliceManager& sliceMgr);
     void onNote (int note, VoicePool& voicePool, SliceManager& sliceMgr);
 
     int getPreviewVoiceIndex() const { return VoicePool::kMaxVoices - 1; }
 
 private:
-    bool active              = false;
-    bool waitingForFirstNote = true;
-    int  chopPos             = 0;
-    int  nextMidiNote        = 36;
-    int  sampleLength        = 0;
+    void startPreview (VoicePool& voicePool, int fromPos);
+
+    bool active       = false;
+    bool playing      = false;
+    int  chopPos      = 0;
+    int  nextMidiNote = 36;
+    int  sampleLength = 0;
 };

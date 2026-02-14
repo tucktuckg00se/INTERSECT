@@ -96,7 +96,7 @@ void HeaderBar::paint (juce::Graphics& g)
         g.drawText ("ALGO", x, row1y, 60, 10, juce::Justification::centredLeft);
         g.setFont (juce::Font (12.0f));
         int algo = (int) processor.apvts.getRawParameterValue (ParamIds::defaultAlgorithm)->load();
-        g.drawText (algo == 0 ? "Repitch" : "WSOLA", x, row1y + 10, 60, 12, juce::Justification::centredLeft);
+        g.drawText (algo == 0 ? "Repitch" : "Stretch", x, row1y + 10, 60, 12, juce::Justification::centredLeft);
         headerCells.push_back ({ x, row1y, 60, row1h, ParamIds::defaultAlgorithm, 0.0f, 1.0f, 1.0f, true, false, false, false });
         x += 65;
 
@@ -238,7 +238,7 @@ void HeaderBar::mouseDown (const juce::MouseEvent& e)
             {
                 juce::PopupMenu menu;
                 menu.addItem (1, "Repitch");
-                menu.addItem (2, "WSOLA");
+                menu.addItem (2, "Stretch");
                 menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this),
                     [this, paramId = cell.paramId] (int result) {
                         if (result > 0)

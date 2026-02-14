@@ -40,12 +40,49 @@ int VoicePool::allocate()
     return best;
 }
 
+static void initStretcher (Voice& v, float pitchSemis, double sr,
+                           const SampleData& sample)
+{
+    int blockSize = std::max (256, (int)(sr * 0.023));   // ~1024 @ 44.1k (~23ms)
+    int interval  = std::max (64,  (int)(sr * 0.006));   // ~256 @ 44.1k (~6ms)
+
+    v.stretcher = std::make_shared<signalsmith::stretch::SignalsmithStretch<float, void>>();
+    v.stretcher->configure (2, blockSize, interval, false);
+    v.stretcher->setTransposeSemitones (pitchSemis);
+
+    v.stretchInBufL.resize (kStretchBlockSize);
+    v.stretchInBufR.resize (kStretchBlockSize);
+    v.stretchOutBufL.resize (kStretchBlockSize);
+    v.stretchOutBufR.resize (kStretchBlockSize);
+    v.stretchOutReadPos = 0;
+    v.stretchOutAvail = 0;
+
+    // Pre-roll: prime the pipeline so first output isn't silence
+    float playbackRate = v.stretchTimeRatio;
+    int seekLen = v.stretcher->outputSeekLength (playbackRate);
+    seekLen = std::min (seekLen, v.endSample - v.startSample);
+
+    if (seekLen > 0 && sample.isLoaded())
+    {
+        std::vector<float> seekL ((size_t) seekLen), seekR ((size_t) seekLen);
+        for (int i = 0; i < seekLen; ++i)
+        {
+            seekL[(size_t) i] = sample.getInterpolatedSample (v.startSample + i, 0);
+            seekR[(size_t) i] = sample.getInterpolatedSample (v.startSample + i, 1);
+        }
+        float* ptrs[2] = { seekL.data(), seekR.data() };
+        v.stretcher->outputSeek (ptrs, seekLen);
+        v.stretchSrcPos = v.startSample + seekLen;
+    }
+}
+
 void VoicePool::startVoice (int voiceIdx, int sliceIdx, float velocity, int note,
                             SliceManager& sm,
                             float globalBpm, float globalPitch, int globalAlgorithm,
                             float globalAttack, float globalDecay, float globalSustain, float globalRelease,
                             int globalMuteGroup, bool globalPingPong,
-                            bool globalStretchEnabled, float dawBpmVal)
+                            bool globalStretchEnabled, float dawBpmVal,
+                            const SampleData& sample)
 {
     auto& v = voices[voiceIdx];
     const auto& s = sm.getSlice (sliceIdx);
@@ -105,17 +142,7 @@ void VoicePool::startVoice (int voiceIdx, int sliceIdx, float velocity, int note
             v.stretchPitchSemis = pitch;
             v.stretchSrcPos = s.startSample;
 
-            // Initialize stretcher
-            v.stretcher = std::make_shared<signalsmith::stretch::SignalsmithStretch<float, void>>();
-            v.stretcher->presetCheaper (2, 44100.0f);
-            v.stretcher->setTransposeSemitones (pitch);
-
-            v.stretchInBufL.resize (kStretchBlockSize);
-            v.stretchInBufR.resize (kStretchBlockSize);
-            v.stretchOutBufL.resize (kStretchBlockSize);
-            v.stretchOutBufR.resize (kStretchBlockSize);
-            v.stretchOutReadPos = 0;
-            v.stretchOutAvail = 0;
+            initStretcher (v, pitch, sampleRate, sample);
         }
     }
     else
@@ -129,16 +156,7 @@ void VoicePool::startVoice (int voiceIdx, int sliceIdx, float velocity, int note
             v.stretchPitchSemis = pitch;
             v.stretchSrcPos = s.startSample;
 
-            v.stretcher = std::make_shared<signalsmith::stretch::SignalsmithStretch<float, void>>();
-            v.stretcher->presetCheaper (2, 44100.0f);
-            v.stretcher->setTransposeSemitones (pitch);
-
-            v.stretchInBufL.resize (kStretchBlockSize);
-            v.stretchInBufR.resize (kStretchBlockSize);
-            v.stretchOutBufL.resize (kStretchBlockSize);
-            v.stretchOutBufR.resize (kStretchBlockSize);
-            v.stretchOutReadPos = 0;
-            v.stretchOutAvail = 0;
+            initStretcher (v, pitch, sampleRate, sample);
         }
         else
         {
