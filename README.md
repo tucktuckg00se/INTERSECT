@@ -22,6 +22,54 @@ A time-stretching intersecting sample slicer plugin with independent per-slice p
 - **Full state recall** — all parameters, slices, and audio data saved/restored with the DAW session
 - **Dark industrial theme** — styled popup menus and controls
 
+## Usage
+
+### Getting Started
+
+1. **Load a sample** — drag and drop an audio file onto the waveform area, or click **LOAD**
+2. **Create slices** — use **ADD** to draw regions on the waveform, or **LAZY** to chop in real time
+3. **Play slices** — each slice is mapped to a MIDI note starting at C2 (note 36)
+
+### Creating Slices
+
+- **ADD** — click the button, then click and drag on the waveform to draw a slice region
+- **LAZY** — starts continuous playback; press any MIDI key to place a slice boundary at the current playhead. Click **STOP** when done. The final slice closes at the end of the sample
+- **AUTO** — splits the selected slice into equal parts (2-128 divisions)
+- **COPY** — duplicates the selected slice with all its parameters
+- **DEL** — deletes the selected slice
+
+### Editing Slices
+
+- Drag the **S** handle (left edge) or **E** handle (right edge) to resize a slice
+- Drag the middle of a slice to move it
+- Click a slice in the waveform, slice lane, or slice list to select it
+- Scroll wheel to zoom, shift+scroll or middle-drag to scroll
+
+### Sample Controls (top bar)
+
+These are the defaults inherited by all slices:
+
+- **BPM** — sample tempo (drag vertically or double-click to type)
+- **PITCH** — pitch shift in semitones (-24 to +24)
+- **ALGO** — Repitch (speed=pitch), Stretch (independent pitch/time), or Bungee (granular)
+- **ATK / DEC / SUS / REL** — ADSR amplitude envelope
+- **PP** — ping-pong (reverse) playback
+- **MUTE** — mute group (voices in the same group cut each other off)
+- **STRETCH** — enable time-stretching (syncs playback to DAW tempo)
+- **VOL** — master volume
+
+### Slice Controls (second bar)
+
+Per-slice overrides. Each parameter has a **lock icon** — click it to override the sample default for that slice. Unlocked parameters inherit from the sample controls above.
+
+### SET BPM
+
+Calculates BPM from a slice's length. Select a slice, click **SET BPM**, and choose a time division (4 bars, 1 bar, 1/4 note, etc.). INTERSECT sets the BPM so that slice equals the chosen duration at your DAW's tempo.
+
+### MIDI-Selects-Slice
+
+Click the **M** button to toggle. When active, playing a MIDI note automatically selects that slice in the UI.
+
 ## Install
 
 Download the latest release zip for your platform from the [Releases](https://github.com/tucktuckg00se/INTERSECT/releases) page and extract it.
