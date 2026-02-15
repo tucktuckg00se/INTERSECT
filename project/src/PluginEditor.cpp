@@ -2,11 +2,11 @@
 
 static constexpr int kBaseW      = 750;
 static constexpr int kBaseH      = 550;
-static constexpr int kHeaderH    = 50;
-static constexpr int kSliceLaneH = 24;
-static constexpr int kScrollbarH = 22;
-static constexpr int kSliceCtrlH = 56;
-static constexpr int kActionH    = 28;
+static constexpr int kHeaderH    = 66;
+static constexpr int kSliceLaneH = 30;
+static constexpr int kScrollbarH = 28;
+static constexpr int kSliceCtrlH = 72;
+static constexpr int kActionH    = 34;
 static constexpr int kMargin     = 8;
 
 static juce::File getSettingsDir()
@@ -35,6 +35,7 @@ IntersectEditor::IntersectEditor (IntersectProcessor& p)
       sliceControlBar (p),
       actionPanel (p, waveformView)
 {
+    juce::LookAndFeel::setDefaultLookAndFeel (&lnf);
     setLookAndFeel (&lnf);
 
     addAndMakeVisible (headerBar);
@@ -64,6 +65,7 @@ IntersectEditor::IntersectEditor (IntersectProcessor& p)
 
 IntersectEditor::~IntersectEditor()
 {
+    juce::LookAndFeel::setDefaultLookAndFeel (nullptr);
     setLookAndFeel (nullptr);
 }
 

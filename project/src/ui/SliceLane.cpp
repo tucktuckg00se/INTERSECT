@@ -77,7 +77,7 @@ void SliceLane::paint (juce::Graphics& g)
         if (sw > 14)
         {
             juce::String label = juce::String (si.idx + 1);
-            g.setFont (juce::Font (9.0f).boldened());
+            g.setFont (juce::Font (12.0f).boldened());
             int labelW = (int) g.getCurrentFont().getStringWidthFloat (label) + 6;
             int labelX = si.x1 + 3;
 

@@ -20,8 +20,8 @@ SliceControlBar::SliceControlBar (IntersectProcessor& p) : processor (p)
 
 void SliceControlBar::resized()
 {
-    int btnW = 20;
-    midiSelectBtn.setBounds (getWidth() - btnW - 4, 2, btnW, 22);
+    int btnW = 24;
+    midiSelectBtn.setBounds (getWidth() - btnW - 4, 2, btnW, 28);
 }
 
 void SliceControlBar::updateMidiButtonAppearance (bool active)
@@ -45,12 +45,12 @@ void SliceControlBar::drawLockIcon (juce::Graphics& g, int x, int y, bool locked
     if (locked)
     {
         g.setColour (getTheme().lockGold);
-        g.fillRect (x, y, 8, 8);
+        g.fillRect (x, y, 10, 10);
     }
     else
     {
         g.setColour (getTheme().lockDim.withAlpha (0.6f));
-        g.drawRect (x, y, 8, 8, 1);
+        g.drawRect (x, y, 10, 10, 1);
     }
 }
 
@@ -60,26 +60,26 @@ void SliceControlBar::drawParamCell (juce::Graphics& g, int x, int y,
                                      int fieldId, float minVal, float maxVal, float step,
                                      bool isBoolean, bool isChoice, int& outWidth)
 {
-    int cellH = 24;
+    int cellH = 32;
 
     // Label
-    g.setFont (juce::Font (9.0f));
+    g.setFont (juce::Font (12.0f));
     g.setColour (locked ? getTheme().lockGold.withAlpha (0.8f)
                         : getTheme().foreground.withAlpha (0.45f));
-    g.drawText (label, x + 12, y + 1, 60, 10, juce::Justification::centredLeft);
+    g.drawText (label, x + 14, y + 2, 70, 13, juce::Justification::centredLeft);
 
     // Value
-    g.setFont (juce::Font (11.0f));
+    g.setFont (juce::Font (14.0f));
     g.setColour (locked ? getTheme().foreground
                         : getTheme().foreground.withAlpha (0.4f));
-    g.drawText (value, x + 12, y + 11, 60, 12, juce::Justification::centredLeft);
+    g.drawText (value, x + 14, y + 15, 70, 14, juce::Justification::centredLeft);
 
     // Lock icon
-    drawLockIcon (g, x + 1, y + 3, locked);
+    drawLockIcon (g, x + 1, y + 4, locked);
 
-    int labelW = (int) juce::Font (9.0f).getStringWidthFloat (label);
-    int valueW = (int) juce::Font (11.0f).getStringWidthFloat (value);
-    outWidth = std::max (std::max (labelW, valueW) + 18, 50);
+    int labelW = (int) juce::Font (12.0f).getStringWidthFloat (label);
+    int valueW = (int) juce::Font (14.0f).getStringWidthFloat (value);
+    outWidth = std::max (std::max (labelW, valueW) + 20, 55);
 
     cells.push_back ({ x, y, outWidth, cellH, lockBit, fieldId, minVal, maxVal, step, isBoolean, isChoice, false });
 }
@@ -96,37 +96,42 @@ void SliceControlBar::paint (juce::Graphics& g)
     int numSlices = processor.sliceManager.getNumSlices();
     int rightEdge = midiSelectBtn.getX() - 4;  // right boundary for painted content
 
-    // Root note display (always visible)
+    // ====== Row 1 right side: always draw ROOT, SLICES, SLICE N ======
+    int row1y = 2;
+
+    // Root note display (always visible, Row 1)
     {
         int rn = processor.sliceManager.rootNote.load();
         bool editable = (numSlices == 0);
-        int rnX = rightEdge - 50;
-        int rnY = 28;
-        rootNoteArea = { rnX, rnY, 50, 24 };
+        int rnX = rightEdge - 55;
+        rootNoteArea = { rnX, row1y, 55, 30 };
 
-        g.setFont (juce::Font (9.0f));
+        g.setFont (juce::Font (12.0f));
         g.setColour (editable ? getTheme().accent.withAlpha (0.7f)
                               : getTheme().foreground.withAlpha (0.45f));
-        g.drawText ("ROOT", rnX, rnY + 1, 50, 10, juce::Justification::centredLeft);
-        g.setFont (juce::Font (11.0f));
+        g.drawText ("ROOT", rnX, row1y + 2, 55, 13, juce::Justification::centredLeft);
+        g.setFont (juce::Font (14.0f));
         g.setColour (editable ? getTheme().foreground
                               : getTheme().foreground.withAlpha (0.8f));
-        g.drawText (juce::String (rn), rnX, rnY + 11, 50, 12, juce::Justification::centredLeft);
+        g.drawText (juce::String (rn), rnX, row1y + 15, 55, 14, juce::Justification::centredLeft);
+    }
+
+    // SLICES count (Row 1, left of ROOT)
+    {
+        int slcX = rightEdge - 115;
+        g.setFont (juce::Font (12.0f));
+        g.setColour (getTheme().foreground.withAlpha (0.45f));
+        g.drawText ("SLICES", slcX, row1y + 2, 55, 13, juce::Justification::centredLeft);
+        g.setFont (juce::Font (14.0f));
+        g.setColour (getTheme().foreground.withAlpha (0.8f));
+        g.drawText (juce::String (numSlices), slcX, row1y + 15, 55, 14, juce::Justification::centredLeft);
     }
 
     if (idx < 0 || idx >= numSlices)
     {
-        g.setFont (juce::Font (12.0f));
+        g.setFont (juce::Font (15.0f));
         g.setColour (getTheme().foreground.withAlpha (0.35f));
-        g.drawText ("No slice selected", 8, 20, 200, 16, juce::Justification::centredLeft);
-
-        // Show slice count even when no slice is selected
-        g.setFont (juce::Font (9.0f));
-        g.setColour (getTheme().foreground.withAlpha (0.45f));
-        g.drawText ("SLICES", rightEdge - 110, 28 + 1, 50, 10, juce::Justification::centredLeft);
-        g.setFont (juce::Font (11.0f));
-        g.setColour (getTheme().foreground.withAlpha (0.8f));
-        g.drawText (juce::String (numSlices), rightEdge - 110, 28 + 11, 50, 12, juce::Justification::centredLeft);
+        g.drawText ("No slice selected", 8, 24, 220, 18, juce::Justification::centredLeft);
         return;
     }
 
@@ -147,15 +152,27 @@ void SliceControlBar::paint (juce::Graphics& g)
     int cw;
     using F = IntersectProcessor;
 
-    // ====== Row 1 (y=2): BPM | SET BPM | PITCH | ALGO | ... | SLICE N (right) ======
-    int row1y = 2;
+    // ====== Row 1 (y=2): BPM | SET BPM | PITCH | ALGO | ... | S-E | SLICES | ROOT | SLICE N | M ======
     int x = 8;
 
-    // Slice label (right side of row 1, left of M button, right-aligned, ALL CAPS)
-    g.setFont (juce::Font (13.0f).boldened());
+    // Slice label (right side of row 1, left of ROOT)
+    g.setFont (juce::Font (17.0f).boldened());
     g.setColour (getTheme().accent);
-    g.drawText ("SLICE " + juce::String (idx + 1), rightEdge - 65, row1y + 4, 60, 16,
+    g.drawText ("SLICE " + juce::String (idx + 1), rightEdge - 195, row1y + 4, 75, 20,
                 juce::Justification::centredRight);
+
+    // Start/End/Length info (Row 1, left of SLICE N)
+    {
+        g.setFont (juce::Font (12.0f));
+        g.setColour (getTheme().foreground.withAlpha (0.35f));
+        double srate = processor.getSampleRate();
+        if (srate <= 0) srate = 44100.0;
+        double lenSec = (s.endSample - s.startSample) / srate;
+        juce::String seText = juce::String (s.startSample) + "-" + juce::String (s.endSample) +
+                              " (" + juce::String (lenSec, 2) + "s)";
+        int seW = (int) juce::Font (12.0f).getStringWidthFloat (seText) + 8;
+        g.drawText (seText, rightEdge - 200 - seW, row1y + 8, seW, 14, juce::Justification::centredRight);
+    }
 
     // BPM
     bool locked = s.lockMask & kLockBpm;
@@ -165,12 +182,12 @@ void SliceControlBar::paint (juce::Graphics& g)
 
     // SET BPM (slice-level)
     {
-        g.setFont (juce::Font (9.0f));
+        g.setFont (juce::Font (12.0f));
         g.setColour (getTheme().accent);
-        g.drawText ("SET", x + 2, row1y + 1, 30, 10, juce::Justification::centredLeft);
-        g.drawText ("BPM", x + 2, row1y + 11, 30, 10, juce::Justification::centredLeft);
-        cells.push_back ({ x, row1y, 34, 24, 0, 0, 0.0f, 0.0f, 0.0f, false, false, true });
-        x += 38;
+        g.drawText ("SET", x + 2, row1y + 2, 34, 13, juce::Justification::centredLeft);
+        g.drawText ("BPM", x + 2, row1y + 15, 34, 13, juce::Justification::centredLeft);
+        cells.push_back ({ x, row1y, 38, 32, 0, 0, 0.0f, 0.0f, 0.0f, false, false, true });
+        x += 42;
     }
 
     // PITCH
@@ -223,10 +240,10 @@ void SliceControlBar::paint (juce::Graphics& g)
 
     // ====== Separator line ======
     g.setColour (getTheme().separator);
-    g.drawHorizontalLine (26, 8.0f, (float) getWidth() - 8.0f);
+    g.drawHorizontalLine (34, 8.0f, (float) getWidth() - 8.0f);
 
-    // ====== Row 2 (y=28): ATK | DEC | SUS | REL | PP | MUTE | STRETCH | MIDI | info ======
-    int row2y = 28;
+    // ====== Row 2 (y=36): ATK | DEC | SUS | REL | PP | MUTE | STRETCH | VOL | MIDI ======
+    int row2y = 36;
     x = 8;
 
     // ATTACK
@@ -279,32 +296,14 @@ void SliceControlBar::paint (juce::Graphics& g)
     x += cw + 4;
 
     // MIDI note (not lockable)
-    g.setFont (juce::Font (9.0f));
+    g.setFont (juce::Font (12.0f));
     g.setColour (getTheme().foreground.withAlpha (0.5f));
-    g.drawText ("MIDI", x + 2, row2y + 1, 40, 10, juce::Justification::centredLeft);
-    g.setFont (juce::Font (11.0f));
+    g.drawText ("MIDI", x + 2, row2y + 2, 45, 13, juce::Justification::centredLeft);
+    g.setFont (juce::Font (14.0f));
     g.setColour (getTheme().foreground.withAlpha (0.8f));
-    g.drawText (juce::String (s.midiNote), x + 2, row2y + 11, 40, 12, juce::Justification::centredLeft);
-    cells.push_back ({ x, row2y, 40, 24, 0, F::FieldMidiNote, 0.0f, 127.0f, 1.0f, false, false, false });
-    x += 44;
-
-    // Start/End/Length info
-    g.setFont (juce::Font (9.0f));
-    g.setColour (getTheme().foreground.withAlpha (0.35f));
-    double srate = processor.getSampleRate();
-    if (srate <= 0) srate = 44100.0;
-    double lenSec = (s.endSample - s.startSample) / srate;
-    g.drawText (juce::String (s.startSample) + "-" + juce::String (s.endSample) +
-                " (" + juce::String (lenSec, 2) + "s)",
-                x, row2y + 6, 200, 12, juce::Justification::centredLeft);
-
-    // Slice count (right side of row 2)
-    g.setFont (juce::Font (9.0f));
-    g.setColour (getTheme().foreground.withAlpha (0.45f));
-    g.drawText ("SLICES", rightEdge - 110, row2y + 1, 50, 10, juce::Justification::centredLeft);
-    g.setFont (juce::Font (11.0f));
-    g.setColour (getTheme().foreground.withAlpha (0.8f));
-    g.drawText (juce::String (numSlices), rightEdge - 110, row2y + 11, 50, 12, juce::Justification::centredLeft);
+    g.drawText (juce::String (s.midiNote), x + 2, row2y + 15, 45, 14, juce::Justification::centredLeft);
+    cells.push_back ({ x, row2y, 45, 32, 0, F::FieldMidiNote, 0.0f, 127.0f, 1.0f, false, false, false });
+    x += 49;
 }
 
 void SliceControlBar::mouseDown (const juce::MouseEvent& e)
@@ -525,9 +524,9 @@ void SliceControlBar::mouseDoubleClick (const juce::MouseEvent& e)
     {
         textEditor = std::make_unique<juce::TextEditor>();
         addAndMakeVisible (*textEditor);
-        textEditor->setBounds (rootNoteArea.getX(), rootNoteArea.getY() + 10,
-                               rootNoteArea.getWidth(), 14);
-        textEditor->setFont (juce::Font (11.0f));
+        textEditor->setBounds (rootNoteArea.getX(), rootNoteArea.getY() + 14,
+                               rootNoteArea.getWidth(), 16);
+        textEditor->setFont (juce::Font (14.0f));
         textEditor->setColour (juce::TextEditor::backgroundColourId, getTheme().darkBar.brighter (0.15f));
         textEditor->setColour (juce::TextEditor::textColourId, getTheme().foreground);
         textEditor->setColour (juce::TextEditor::outlineColourId, getTheme().accent);
@@ -622,8 +621,8 @@ void SliceControlBar::showTextEditor (const ParamCell& cell, float currentValue)
 {
     textEditor = std::make_unique<juce::TextEditor>();
     addAndMakeVisible (*textEditor);
-    textEditor->setBounds (cell.x + 12, cell.y + 10, cell.w - 14, 14);
-    textEditor->setFont (juce::Font (11.0f));
+    textEditor->setBounds (cell.x + 14, cell.y + 14, cell.w - 16, 16);
+    textEditor->setFont (juce::Font (14.0f));
     textEditor->setColour (juce::TextEditor::backgroundColourId, getTheme().darkBar.brighter (0.15f));
     textEditor->setColour (juce::TextEditor::textColourId, getTheme().foreground);
     textEditor->setColour (juce::TextEditor::outlineColourId, getTheme().accent);

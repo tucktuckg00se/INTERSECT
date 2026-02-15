@@ -46,7 +46,7 @@ void IntersectLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& 
                                        ? juce::TextButton::textColourOnId
                                        : juce::TextButton::textColourOffId);
     g.setColour (textCol.isTransparent() ? getTheme().foreground : textCol);
-    g.setFont (juce::Font (12.0f));
+    g.setFont (juce::Font (15.0f));
     g.drawText (button.getButtonText(), button.getLocalBounds(),
                 juce::Justification::centred);
 }
@@ -85,7 +85,7 @@ void IntersectLookAndFeel::drawPopupMenuItem (juce::Graphics& g, const juce::Rec
 
 juce::Font IntersectLookAndFeel::getPopupMenuFont()
 {
-    return juce::Font (12.0f);
+    return juce::Font (15.0f);
 }
 
 void IntersectLookAndFeel::drawTooltip (juce::Graphics& g, const juce::String& text, int width, int height)
@@ -94,7 +94,7 @@ void IntersectLookAndFeel::drawTooltip (juce::Graphics& g, const juce::String& t
     g.setColour (getTheme().separator);
     g.drawRect (0, 0, width, height, 1);
     g.setColour (getTheme().foreground);
-    g.setFont (juce::Font (11.0f));
+    g.setFont (juce::Font (14.0f));
     g.drawText (text, 4, 0, width - 8, height, juce::Justification::centredLeft);
 }
 
@@ -102,8 +102,8 @@ juce::Rectangle<int> IntersectLookAndFeel::getTooltipBounds (const juce::String&
                                                               juce::Point<int> screenPos,
                                                               juce::Rectangle<int> parentArea)
 {
-    int w = (int) juce::Font (11.0f).getStringWidthFloat (text) + 12;
-    int h = 20;
+    int w = (int) juce::Font (14.0f).getStringWidthFloat (text) + 14;
+    int h = 24;
     int x = screenPos.x;
     int y = screenPos.y + 18;
 

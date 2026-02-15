@@ -396,7 +396,7 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
     juce::MemoryInputStream stream (data, (size_t) sizeInBytes, false);
 
     int version = stream.readInt();
-    if (version < 1)
+    if (version < 9)
         return;
 
     // APVTS state
@@ -409,21 +409,8 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
     scroll.store (stream.readFloat());
     sliceManager.selectedSlice = stream.readInt();
 
-    if (version >= 4)
-    {
-        midiSelectsSlice.store (stream.readBool());
-    }
-    if (version >= 8)
-    {
-        sliceManager.rootNote.store (stream.readInt());
-    }
-
-    // Sample bounds (version 2/3 — read and discard for backward compat)
-    if (version >= 2 && version <= 3)
-    {
-        stream.readInt();  // sampleStart (discarded)
-        stream.readInt();  // sampleEnd (discarded)
-    }
+    midiSelectsSlice.store (stream.readBool());
+    sliceManager.rootNote.store (stream.readInt());
 
     // Slice data
     int numSlices = stream.readInt();
@@ -444,68 +431,35 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
         s.releaseSec     = stream.readFloat();
         s.muteGroup      = stream.readInt();
         s.pingPong       = stream.readBool();
-        if (version >= 3)
-            s.stretchEnabled = stream.readBool();
-        else
-            s.stretchEnabled = false;
+        s.stretchEnabled = stream.readBool();
         s.lockMask       = (uint32_t) stream.readInt();
         s.colour         = juce::Colour ((juce::uint32) stream.readInt());
-        if (version >= 5)
-        {
-            s.tonalityHz      = stream.readFloat();
-            s.formantSemitones = stream.readFloat();
-            s.formantComp     = stream.readBool();
-        }
-        if (version >= 6)
-        {
-            s.grainMode = stream.readInt();
-        }
-        if (version >= 7)
-        {
-            s.volume = stream.readFloat();
-        }
+        s.tonalityHz      = stream.readFloat();
+        s.formantSemitones = stream.readFloat();
+        s.formantComp     = stream.readBool();
+        s.grainMode = stream.readInt();
+        s.volume = stream.readFloat();
     }
 
-    if (version >= 9)
-    {
-        // v9: path-only restore
-        auto filePath = stream.readString();
-        auto fileName = stream.readString();
+    // Path-based sample restore
+    auto filePath = stream.readString();
+    auto fileName = stream.readString();
 
-        if (filePath.isNotEmpty())
-        {
-            juce::File f (filePath);
-            double sr = currentSampleRate > 0 ? currentSampleRate : 44100.0;
-            if (f.existsAsFile() && sampleData.loadFromFile (f, sr))
-            {
-                sampleMissing.store (false);
-            }
-            else
-            {
-                sampleMissing.store (true);
-                missingFilePath = filePath;
-                sampleData.setFileName (fileName);
-                sampleData.setFilePath (filePath);
-            }
-        }
-    }
-    else
+    if (filePath.isNotEmpty())
     {
-        // v8 and earlier: PCM restore (backward compat)
-        int numFrames = stream.readInt();
-        if (numFrames > 0)
+        juce::File f (filePath);
+        double sr = currentSampleRate > 0 ? currentSampleRate : 44100.0;
+        if (f.existsAsFile() && sampleData.loadFromFile (f, sr))
         {
-            juce::AudioBuffer<float> restoredBuf (2, numFrames);
-            for (int f = 0; f < numFrames; ++f)
-            {
-                restoredBuf.setSample (0, f, stream.readFloat());
-                restoredBuf.setSample (1, f, stream.readFloat());
-            }
-            sampleData.loadFromBuffer (std::move (restoredBuf));
+            sampleMissing.store (false);
         }
-
-        if (version >= 8)
-            sampleData.setFileName (stream.readString());
+        else
+        {
+            sampleMissing.store (true);
+            missingFilePath = filePath;
+            sampleData.setFileName (fileName);
+            sampleData.setFilePath (filePath);
+        }
     }
 
     sliceManager.rebuildMidiMap();
