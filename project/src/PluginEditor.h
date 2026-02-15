@@ -19,13 +19,18 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
 
+    juce::StringArray getAvailableThemes();
+    void applyTheme (const juce::String& themeName);
+
 private:
     void timerCallback() override;
-    void saveUserScale (float scale);
-    float loadUserScale();
+    void ensureDefaultThemes();
+    void saveUserSettings (float scale, const juce::String& themeName);
+    void loadUserSettings();
 
     IntersectProcessor& processor;
     float lastScale = -1.0f;  // sentinel so first timer tick always applies
+    float savedScale = -1.0f;
 
     IntersectLookAndFeel lnf;
     HeaderBar       headerBar;

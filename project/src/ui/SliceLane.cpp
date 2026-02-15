@@ -24,7 +24,7 @@ void SliceLane::resized()
 
 void SliceLane::paint (juce::Graphics& g)
 {
-    g.fillAll (Theme::darkBar);
+    g.fillAll (getTheme().darkBar);
 
     int numFrames = processor.sampleData.getNumFrames();
     if (numFrames <= 0)
@@ -120,7 +120,7 @@ void SliceLane::paint (juce::Graphics& g)
     updateMidiButtonAppearance (processor.midiSelectsSlice.load());
 
     // Bottom separator line
-    g.setColour (Theme::separator);
+    g.setColour (getTheme().separator);
     g.drawHorizontalLine (h - 1, 0.0f, (float) w);
 }
 
@@ -177,14 +177,14 @@ void SliceLane::updateMidiButtonAppearance (bool active)
 {
     if (active)
     {
-        midiSelectBtn.setColour (juce::TextButton::textColourOnId, Theme::accent);
-        midiSelectBtn.setColour (juce::TextButton::textColourOffId, Theme::accent);
-        midiSelectBtn.setColour (juce::TextButton::buttonColourId, Theme::accent.withAlpha (0.2f));
+        midiSelectBtn.setColour (juce::TextButton::textColourOnId, getTheme().accent);
+        midiSelectBtn.setColour (juce::TextButton::textColourOffId, getTheme().accent);
+        midiSelectBtn.setColour (juce::TextButton::buttonColourId, getTheme().accent.withAlpha (0.2f));
     }
     else
     {
-        midiSelectBtn.setColour (juce::TextButton::textColourOnId, Theme::foreground);
-        midiSelectBtn.setColour (juce::TextButton::textColourOffId, Theme::foreground);
-        midiSelectBtn.setColour (juce::TextButton::buttonColourId, Theme::button);
+        midiSelectBtn.setColour (juce::TextButton::textColourOnId, getTheme().foreground);
+        midiSelectBtn.setColour (juce::TextButton::textColourOffId, getTheme().foreground);
+        midiSelectBtn.setColour (juce::TextButton::buttonColourId, getTheme().button);
     }
 }

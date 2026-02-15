@@ -1,7 +1,7 @@
 #include "SliceControlBar.h"
 #include "IntersectLookAndFeel.h"
 #include "../PluginProcessor.h"
-#include "../audio/WsolaEngine.h"
+#include "../audio/GrainEngine.h"
 
 SliceControlBar::SliceControlBar (IntersectProcessor& p) : processor (p) {}
 
@@ -9,12 +9,12 @@ void SliceControlBar::drawLockIcon (juce::Graphics& g, int x, int y, bool locked
 {
     if (locked)
     {
-        g.setColour (Theme::lockGold);
+        g.setColour (getTheme().lockGold);
         g.fillRect (x, y, 8, 8);
     }
     else
     {
-        g.setColour (Theme::lockDim.withAlpha (0.6f));
+        g.setColour (getTheme().lockDim.withAlpha (0.6f));
         g.drawRect (x, y, 8, 8, 1);
     }
 }
@@ -29,14 +29,14 @@ void SliceControlBar::drawParamCell (juce::Graphics& g, int x, int y,
 
     // Label
     g.setFont (juce::Font (9.0f));
-    g.setColour (locked ? Theme::lockGold.withAlpha (0.8f)
-                        : Theme::foreground.withAlpha (0.45f));
+    g.setColour (locked ? getTheme().lockGold.withAlpha (0.8f)
+                        : getTheme().foreground.withAlpha (0.45f));
     g.drawText (label, x + 12, y + 1, 60, 10, juce::Justification::centredLeft);
 
     // Value
     g.setFont (juce::Font (11.0f));
-    g.setColour (locked ? Theme::foreground
-                        : Theme::foreground.withAlpha (0.4f));
+    g.setColour (locked ? getTheme().foreground
+                        : getTheme().foreground.withAlpha (0.4f));
     g.drawText (value, x + 12, y + 11, 60, 12, juce::Justification::centredLeft);
 
     // Lock icon
@@ -51,7 +51,7 @@ void SliceControlBar::drawParamCell (juce::Graphics& g, int x, int y,
 
 void SliceControlBar::paint (juce::Graphics& g)
 {
-    g.fillAll (Theme::darkBar);
+    g.fillAll (getTheme().darkBar);
     cells.clear();
 
     int idx = processor.sliceManager.selectedSlice;
@@ -60,7 +60,7 @@ void SliceControlBar::paint (juce::Graphics& g)
     if (idx < 0 || idx >= numSlices)
     {
         g.setFont (juce::Font (12.0f));
-        g.setColour (Theme::foreground.withAlpha (0.35f));
+        g.setColour (getTheme().foreground.withAlpha (0.35f));
         g.drawText ("No slice selected", 8, 20, 200, 16, juce::Justification::centredLeft);
         return;
     }
@@ -88,7 +88,7 @@ void SliceControlBar::paint (juce::Graphics& g)
 
     // Slice label
     g.setFont (juce::Font (13.0f).boldened());
-    g.setColour (Theme::accent);
+    g.setColour (getTheme().accent);
     g.drawText ("Slice " + juce::String (idx + 1), x, row1y + 4, 55, 16, juce::Justification::centredLeft);
     x = 70;
 
@@ -101,7 +101,7 @@ void SliceControlBar::paint (juce::Graphics& g)
     // SET BPM (slice-level)
     {
         g.setFont (juce::Font (9.0f));
-        g.setColour (Theme::accent);
+        g.setColour (getTheme().accent);
         g.drawText ("SET", x + 2, row1y + 1, 30, 10, juce::Justification::centredLeft);
         g.drawText ("BPM", x + 2, row1y + 11, 30, 10, juce::Justification::centredLeft);
         cells.push_back ({ x, row1y, 34, 24, 0, 0, 0.0f, 0.0f, 0.0f, false, false, true });
@@ -157,7 +157,7 @@ void SliceControlBar::paint (juce::Graphics& g)
     }
 
     // ====== Separator line ======
-    g.setColour (Theme::separator);
+    g.setColour (getTheme().separator);
     g.drawHorizontalLine (26, 8.0f, (float) getWidth() - 8.0f);
 
     // ====== Row 2 (y=28): ATK | DEC | SUS | REL | PP | MUTE | STRETCH | MIDI | info ======
@@ -215,17 +215,17 @@ void SliceControlBar::paint (juce::Graphics& g)
 
     // MIDI note (not lockable)
     g.setFont (juce::Font (9.0f));
-    g.setColour (Theme::foreground.withAlpha (0.5f));
+    g.setColour (getTheme().foreground.withAlpha (0.5f));
     g.drawText ("MIDI", x + 2, row2y + 1, 40, 10, juce::Justification::centredLeft);
     g.setFont (juce::Font (11.0f));
-    g.setColour (Theme::foreground.withAlpha (0.8f));
+    g.setColour (getTheme().foreground.withAlpha (0.8f));
     g.drawText (juce::String (s.midiNote), x + 2, row2y + 11, 40, 12, juce::Justification::centredLeft);
     cells.push_back ({ x, row2y, 40, 24, 0, F::FieldMidiNote, 0.0f, 127.0f, 1.0f, false, false, false });
     x += 44;
 
     // Start/End/Length info
     g.setFont (juce::Font (9.0f));
-    g.setColour (Theme::foreground.withAlpha (0.35f));
+    g.setColour (getTheme().foreground.withAlpha (0.35f));
     double srate = processor.getSampleRate();
     if (srate <= 0) srate = 44100.0;
     double lenSec = (s.endSample - s.startSample) / srate;
@@ -504,9 +504,9 @@ void SliceControlBar::showTextEditor (const ParamCell& cell, float currentValue)
     addAndMakeVisible (*textEditor);
     textEditor->setBounds (cell.x + 12, cell.y + 10, cell.w - 14, 14);
     textEditor->setFont (juce::Font (11.0f));
-    textEditor->setColour (juce::TextEditor::backgroundColourId, Theme::darkBar.brighter (0.15f));
-    textEditor->setColour (juce::TextEditor::textColourId, Theme::foreground);
-    textEditor->setColour (juce::TextEditor::outlineColourId, Theme::accent);
+    textEditor->setColour (juce::TextEditor::backgroundColourId, getTheme().darkBar.brighter (0.15f));
+    textEditor->setColour (juce::TextEditor::textColourId, getTheme().foreground);
+    textEditor->setColour (juce::TextEditor::outlineColourId, getTheme().accent);
 
     // Display value
     juce::String displayVal;
@@ -568,19 +568,20 @@ void SliceControlBar::showTextEditor (const ParamCell& cell, float currentValue)
 void SliceControlBar::showSetBpmPopup()
 {
     juce::PopupMenu menu;
-    menu.addItem (1, "4 bars");
-    menu.addItem (2, "2 bars");
-    menu.addItem (3, "1 bar");
-    menu.addItem (4, "1/2 bar");
-    menu.addItem (5, "1/4 bar");
-    menu.addItem (6, "1/8 bar");
-    menu.addItem (7, "1/16 bar");
-    menu.addItem (8, "1/32 bar");
+    menu.addItem (1, "16 bars");
+    menu.addItem (2, "8 bars");
+    menu.addItem (3, "4 bars");
+    menu.addItem (4, "2 bars");
+    menu.addItem (5, "1 bar");
+    menu.addItem (6, "1/2 note");
+    menu.addItem (7, "1/4 note");
+    menu.addItem (8, "1/8 note");
+    menu.addItem (9, "1/16 note");
 
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this),
         [this] (int result) {
             if (result <= 0) return;
-            float bars[] = { 0.0f, 4.0f, 2.0f, 1.0f, 0.5f, 0.25f, 0.125f, 0.0625f, 0.03125f };
+            float bars[] = { 0.0f, 16.0f, 8.0f, 4.0f, 2.0f, 1.0f, 0.5f, 0.25f, 0.125f, 0.0625f };
 
             IntersectProcessor::Command cmd;
             cmd.type = IntersectProcessor::CmdStretch;

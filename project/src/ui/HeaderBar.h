@@ -29,11 +29,16 @@ private:
 
     void showTextEditor (const HeaderCell& cell);
     void showSetBpmPopup (bool forSampleDefault);
+    void showThemePopup();
     void adjustScale (float delta);
 
     IntersectProcessor& processor;
+    juce::TextButton loadBtn { "LOAD" };
     juce::TextButton scaleDownBtn { juce::String::charToString (0x2212) };  // minus
     juce::TextButton scaleUpBtn   { "+" };
+    juce::TextButton themeBtn { "THM" };
+
+    std::unique_ptr<juce::FileChooser> fileChooser;
 
     // Drag state
     int activeDragCell = -1;

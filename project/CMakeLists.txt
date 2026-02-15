@@ -49,7 +49,7 @@ endif()
 target_link_libraries(bungee_lib PRIVATE pffft)
 
 juce_add_plugin(Intersect
-    COMPANY_NAME "Intersect"
+    COMPANY_NAME "tucktuckg00se"
     PLUGIN_MANUFACTURER_CODE Intx
     PLUGIN_CODE Ixsr
     FORMATS VST3 AU Standalone
@@ -60,13 +60,18 @@ juce_add_plugin(Intersect
     EDITOR_WANTS_KEYBOARD_FOCUS TRUE
 )
 
+juce_add_binary_data(IntersectFonts SOURCES
+    fonts/IBMPlexSans-Regular.ttf
+    fonts/IBMPlexSans-Bold.ttf
+)
+
 target_sources(Intersect PRIVATE
     src/PluginProcessor.cpp
     src/PluginEditor.cpp
     src/audio/SampleData.cpp
     src/audio/SliceManager.cpp
     src/audio/VoicePool.cpp
-    src/audio/WsolaEngine.cpp
+    src/audio/GrainEngine.cpp
     src/audio/LazyChopEngine.cpp
     src/params/ParamLayout.cpp
     src/ui/IntersectLookAndFeel.cpp
@@ -98,6 +103,7 @@ target_link_libraries(Intersect
         juce::juce_audio_utils
         juce::juce_dsp
         bungee_lib
+        IntersectFonts
     PUBLIC
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags

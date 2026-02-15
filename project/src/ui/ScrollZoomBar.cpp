@@ -15,10 +15,10 @@ void ScrollZoomBar::paint (juce::Graphics& g)
     int h = getHeight();
 
     // Slightly lighter background so it reads as a ruler even when empty
-    g.fillAll (Theme::darkBar.brighter (0.04f));
+    g.fillAll (getTheme().darkBar.brighter (0.04f));
 
     // Top edge line
-    g.setColour (Theme::separator);
+    g.setColour (getTheme().separator);
     g.drawHorizontalLine (0, 0.0f, (float) w);
 
     int numFrames = processor.sampleData.getNumFrames();
@@ -62,12 +62,12 @@ void ScrollZoomBar::paint (juce::Graphics& g)
 
         if (isMajor)
         {
-            g.setColour (Theme::foreground.withAlpha (0.3f));
+            g.setColour (getTheme().foreground.withAlpha (0.3f));
             g.drawVerticalLine (tx, 1.0f, (float) h * 0.5f);
 
             // Label
             g.setFont (juce::Font (8.0f));
-            g.setColour (Theme::foreground.withAlpha (0.45f));
+            g.setColour (getTheme().foreground.withAlpha (0.45f));
             juce::String label;
             if (majorStep >= 1.0f)
                 label = juce::String ((int) std::round (pct)) + "%";
@@ -81,7 +81,7 @@ void ScrollZoomBar::paint (juce::Graphics& g)
         }
         else
         {
-            g.setColour (Theme::foreground.withAlpha (0.15f));
+            g.setColour (getTheme().foreground.withAlpha (0.15f));
             g.drawVerticalLine (tx, 1.0f, (float) h * 0.3f);
         }
     }

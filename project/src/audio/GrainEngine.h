@@ -2,7 +2,7 @@
 #include "Voice.h"
 #include "SampleData.h"
 
-class WsolaEngine
+class GrainEngine
 {
 public:
     static constexpr int kGrainSize = 1024;

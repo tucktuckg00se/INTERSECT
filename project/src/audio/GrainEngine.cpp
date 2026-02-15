@@ -1,13 +1,13 @@
-#include "WsolaEngine.h"
+#include "GrainEngine.h"
 #include <cmath>
 
 static float hannWindow (double pos)
 {
-    double t = pos / WsolaEngine::kGrainSize;
+    double t = pos / GrainEngine::kGrainSize;
     return 0.5f * (1.0f - std::cos (2.0 * juce::MathConstants<double>::pi * t));
 }
 
-void WsolaEngine::processVoice (Voice& v, const SampleData& sample, double sampleRate,
+void GrainEngine::processVoice (Voice& v, const SampleData& sample, double sampleRate,
                                 float& outL, float& outR)
 {
     outL = 0.0f;
@@ -103,7 +103,7 @@ void WsolaEngine::processVoice (Voice& v, const SampleData& sample, double sampl
     v.age++;
 }
 
-float WsolaEngine::calcStretchBpm (int startSample, int endSample, float timeUnitBars, double sampleRate)
+float GrainEngine::calcStretchBpm (int startSample, int endSample, float timeUnitBars, double sampleRate)
 {
     double durationSec = (endSample - startSample) / sampleRate;
     float beats = timeUnitBars * 4.0f;  // 4 beats per bar

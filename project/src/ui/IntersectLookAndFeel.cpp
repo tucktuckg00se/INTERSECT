@@ -1,8 +1,26 @@
 #include "IntersectLookAndFeel.h"
+#include "BinaryData.h"
+
+static ThemeData globalTheme = ThemeData::darkTheme();
+
+ThemeData& getTheme() { return globalTheme; }
+void setTheme (const ThemeData& t) { globalTheme = t; }
 
 IntersectLookAndFeel::IntersectLookAndFeel()
 {
-    setColour (juce::ResizableWindow::backgroundColourId, Theme::background);
+    setColour (juce::ResizableWindow::backgroundColourId, getTheme().background);
+
+    regularTypeface = juce::Typeface::createSystemTypefaceFor (
+        BinaryData::IBMPlexSansRegular_ttf, BinaryData::IBMPlexSansRegular_ttfSize);
+    boldTypeface = juce::Typeface::createSystemTypefaceFor (
+        BinaryData::IBMPlexSansBold_ttf, BinaryData::IBMPlexSansBold_ttfSize);
+}
+
+juce::Typeface::Ptr IntersectLookAndFeel::getTypefaceForFont (const juce::Font& f)
+{
+    if (f.isBold())
+        return boldTypeface;
+    return regularTypeface;
 }
 
 void IntersectLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& button,
@@ -13,7 +31,7 @@ void IntersectLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button
 
     // Use the button's own colour if it has been explicitly set
     auto btnCol = button.findColour (juce::TextButton::buttonColourId);
-    auto baseBg = (btnCol != juce::Colour()) ? btnCol : Theme::button;
+    auto baseBg = (btnCol != juce::Colour()) ? btnCol : getTheme().button;
 
     g.setColour (isDown ? baseBg.brighter (0.15f)
                         : isHighlighted ? baseBg.brighter (0.08f)
@@ -27,7 +45,7 @@ void IntersectLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& 
     auto textCol = button.findColour (button.getToggleState()
                                        ? juce::TextButton::textColourOnId
                                        : juce::TextButton::textColourOffId);
-    g.setColour (textCol.isTransparent() ? Theme::foreground : textCol);
+    g.setColour (textCol.isTransparent() ? getTheme().foreground : textCol);
     g.setFont (juce::Font (12.0f));
     g.drawText (button.getButtonText(), button.getLocalBounds(),
                 juce::Justification::centred);
@@ -35,8 +53,8 @@ void IntersectLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& 
 
 void IntersectLookAndFeel::drawPopupMenuBackground (juce::Graphics& g, int width, int height)
 {
-    g.fillAll (Theme::darkBar);
-    g.setColour (Theme::separator);
+    g.fillAll (getTheme().darkBar);
+    g.setColour (getTheme().separator);
     g.drawRect (0, 0, width, height, 1);
 }
 
@@ -48,19 +66,19 @@ void IntersectLookAndFeel::drawPopupMenuItem (juce::Graphics& g, const juce::Rec
 {
     if (isSeparator)
     {
-        g.setColour (Theme::separator);
+        g.setColour (getTheme().separator);
         g.fillRect (area.reduced (4, 0).withHeight (1).withY (area.getCentreY()));
         return;
     }
 
     if (isHighlighted && isActive)
     {
-        g.setColour (Theme::buttonHover);
+        g.setColour (getTheme().buttonHover);
         g.fillRect (area);
     }
 
-    g.setColour (isTicked ? Theme::accent
-                          : (isActive ? Theme::foreground : Theme::foreground.withAlpha (0.4f)));
+    g.setColour (isTicked ? getTheme().accent
+                          : (isActive ? getTheme().foreground : getTheme().foreground.withAlpha (0.4f)));
     g.setFont (getPopupMenuFont());
     g.drawText (text, area.reduced (8, 0), juce::Justification::centredLeft);
 }
@@ -72,10 +90,10 @@ juce::Font IntersectLookAndFeel::getPopupMenuFont()
 
 void IntersectLookAndFeel::drawTooltip (juce::Graphics& g, const juce::String& text, int width, int height)
 {
-    g.fillAll (Theme::darkBar.brighter (0.1f));
-    g.setColour (Theme::separator);
+    g.fillAll (getTheme().darkBar.brighter (0.1f));
+    g.setColour (getTheme().separator);
     g.drawRect (0, 0, width, height, 1);
-    g.setColour (Theme::foreground);
+    g.setColour (getTheme().foreground);
     g.setFont (juce::Font (11.0f));
     g.drawText (text, 4, 0, width - 8, height, juce::Justification::centredLeft);
 }

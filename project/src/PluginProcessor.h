@@ -47,6 +47,7 @@ public:
         CmdToggleLock,
         CmdSetSliceParam,
         CmdDuplicateSlice,
+        CmdSplitSlice,
     };
 
     // Param field identifiers for CmdSetSliceParam

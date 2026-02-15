@@ -44,13 +44,13 @@ void WaveformView::rebuildCacheIfNeeded()
 
 void WaveformView::paint (juce::Graphics& g)
 {
-    g.fillAll (Theme::waveformBg);
+    g.fillAll (getTheme().waveformBg);
 
     // Grid lines
     int cy = getHeight() / 2;
-    g.setColour (Theme::gridLine.withAlpha (0.5f));
+    g.setColour (getTheme().gridLine.withAlpha (0.5f));
     g.drawHorizontalLine (cy, 0.0f, (float) getWidth());
-    g.setColour (Theme::gridLine.withAlpha (0.2f));
+    g.setColour (getTheme().gridLine.withAlpha (0.2f));
     g.drawHorizontalLine (getHeight() / 4, 0.0f, (float) getWidth());
     g.drawHorizontalLine (getHeight() * 3 / 4, 0.0f, (float) getWidth());
 
@@ -63,7 +63,7 @@ void WaveformView::paint (juce::Graphics& g)
     }
     else
     {
-        g.setColour (Theme::foreground.withAlpha (0.25f));
+        g.setColour (getTheme().foreground.withAlpha (0.25f));
         g.setFont (juce::Font (18.0f));
         g.drawText ("DROP AUDIO FILE", getLocalBounds(), juce::Justification::centred);
     }
@@ -71,7 +71,7 @@ void WaveformView::paint (juce::Graphics& g)
 
 void WaveformView::drawWaveform (juce::Graphics& g)
 {
-    g.setColour (Theme::waveformOrange.withAlpha (0.9f));
+    g.setColour (getTheme().waveformOrange.withAlpha (0.9f));
     int cy = getHeight() / 2;
     float scale = getHeight() * 0.48f;
 
@@ -102,7 +102,7 @@ void WaveformView::drawSlices (juce::Graphics& g)
         if (i == sel)
         {
             // Selected: purple overlay
-            g.setColour (Theme::purpleOverlay.withAlpha (0.22f));
+            g.setColour (getTheme().purpleOverlay.withAlpha (0.22f));
             g.fillRect (x1, 0, sw, getHeight());
 
             // White markers with triangle handles at bottom
@@ -160,7 +160,7 @@ void WaveformView::drawPlaybackCursors (juce::Graphics& g)
                 if (i == VoicePool::kMaxVoices - 1 && processor.lazyChop.isActive())
                     g.setColour (juce::Colour (0xFFCC4444));  // red for preview
                 else
-                    g.setColour (Theme::accent.withAlpha (0.7f));  // yellow
+                    g.setColour (getTheme().accent.withAlpha (0.7f));  // yellow
 
                 g.drawVerticalLine (px, 0.0f, (float) getHeight());
             }

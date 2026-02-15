@@ -9,11 +9,20 @@ static constexpr int kSliceCtrlH = 56;
 static constexpr int kActionH    = 28;
 static constexpr int kMargin     = 8;
 
-static juce::File getUserSettingsFile()
+static juce::File getSettingsDir()
 {
     return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-               .getChildFile ("INTERSECT")
-               .getChildFile ("settings.yaml");
+               .getChildFile ("INTERSECT");
+}
+
+static juce::File getUserSettingsFile()
+{
+    return getSettingsDir().getChildFile ("settings.yaml");
+}
+
+static juce::File getThemesDir()
+{
+    return getSettingsDir().getChildFile ("themes");
 }
 
 IntersectEditor::IntersectEditor (IntersectProcessor& p)
@@ -35,16 +44,18 @@ IntersectEditor::IntersectEditor (IntersectProcessor& p)
     addAndMakeVisible (sliceControlBar);
     addAndMakeVisible (actionPanel);
 
-    // If the APVTS scale is still at default (1.0), try loading from user settings
+    // Write default theme files if they don't exist
+    ensureDefaultThemes();
+
+    // Load user settings (scale + theme)
+    loadUserSettings();
+
+    // If the APVTS scale is still at default (1.0), apply loaded user scale
     float apvtsScale = processor.apvts.getRawParameterValue (ParamIds::uiScale)->load();
-    if (apvtsScale == 1.0f)
+    if (apvtsScale == 1.0f && savedScale > 0.0f && savedScale != apvtsScale)
     {
-        float userScale = loadUserScale();
-        if (userScale > 0.0f && userScale != apvtsScale)
-        {
-            if (auto* p = processor.apvts.getParameter (ParamIds::uiScale))
-                p->setValueNotifyingHost (p->convertTo0to1 (userScale));
-        }
+        if (auto* param = processor.apvts.getParameter (ParamIds::uiScale))
+            param->setValueNotifyingHost (param->convertTo0to1 (savedScale));
     }
 
     setSize (kBaseW, kBaseH);
@@ -58,7 +69,7 @@ IntersectEditor::~IntersectEditor()
 
 void IntersectEditor::paint (juce::Graphics& g)
 {
-    g.fillAll (Theme::background);
+    g.fillAll (getTheme().background);
 }
 
 void IntersectEditor::resized()
@@ -94,35 +105,108 @@ void IntersectEditor::timerCallback()
     {
         lastScale = scale;
         setTransform (juce::AffineTransform::scale (scale));
-        saveUserScale (scale);
+        saveUserSettings (scale, getTheme().name);
     }
 
     repaint();
 }
 
-void IntersectEditor::saveUserScale (float scale)
+void IntersectEditor::ensureDefaultThemes()
+{
+    auto dir = getThemesDir();
+    dir.createDirectory();
+
+    auto darkFile = dir.getChildFile ("dark.yaml");
+    if (! darkFile.existsAsFile())
+        darkFile.replaceWithText (ThemeData::darkTheme().toYaml());
+
+    auto lightFile = dir.getChildFile ("light.yaml");
+    if (! lightFile.existsAsFile())
+        lightFile.replaceWithText (ThemeData::lightTheme().toYaml());
+}
+
+juce::StringArray IntersectEditor::getAvailableThemes()
+{
+    juce::StringArray names;
+    auto dir = getThemesDir();
+    for (auto& f : dir.findChildFiles (juce::File::findFiles, false, "*.yaml"))
+    {
+        auto content = f.loadFileAsString();
+        auto theme = ThemeData::fromYaml (content);
+        if (theme.name.isNotEmpty())
+            names.add (theme.name);
+    }
+    if (names.isEmpty())
+    {
+        names.add ("dark");
+        names.add ("light");
+    }
+    return names;
+}
+
+void IntersectEditor::applyTheme (const juce::String& themeName)
+{
+    auto dir = getThemesDir();
+    for (auto& f : dir.findChildFiles (juce::File::findFiles, false, "*.yaml"))
+    {
+        auto content = f.loadFileAsString();
+        auto theme = ThemeData::fromYaml (content);
+        if (theme.name == themeName)
+        {
+            setTheme (theme);
+            float scale = processor.apvts.getRawParameterValue (ParamIds::uiScale)->load();
+            saveUserSettings (scale, themeName);
+            repaint();
+            return;
+        }
+    }
+
+    // Fallback to built-in
+    if (themeName == "light")
+        setTheme (ThemeData::lightTheme());
+    else
+        setTheme (ThemeData::darkTheme());
+
+    float scale = processor.apvts.getRawParameterValue (ParamIds::uiScale)->load();
+    saveUserSettings (scale, themeName);
+    repaint();
+}
+
+void IntersectEditor::saveUserSettings (float scale, const juce::String& themeName)
 {
     auto file = getUserSettingsFile();
     file.getParentDirectory().createDirectory();
-    file.replaceWithText ("uiScale: " + juce::String (scale, 2) + "\n");
+    juce::String content;
+    content << "uiScale: " << juce::String (scale, 2) << "\n";
+    content << "theme: " << themeName << "\n";
+    file.replaceWithText (content);
 }
 
-float IntersectEditor::loadUserScale()
+void IntersectEditor::loadUserSettings()
 {
-    auto file = getUserSettingsFile();
-    if (! file.existsAsFile())
-        return -1.0f;
+    savedScale = -1.0f;
+    juce::String themeName = "dark";
 
-    auto content = file.loadFileAsString();
-    for (auto line : juce::StringArray::fromLines (content))
+    auto file = getUserSettingsFile();
+    if (file.existsAsFile())
     {
-        line = line.trim();
-        if (line.startsWith ("uiScale:"))
+        auto content = file.loadFileAsString();
+        for (auto line : juce::StringArray::fromLines (content))
         {
-            float val = line.fromFirstOccurrenceOf (":", false, false).trim().getFloatValue();
-            if (val >= 0.5f && val <= 3.0f)
-                return val;
+            line = line.trim();
+            if (line.startsWith ("uiScale:"))
+            {
+                float val = line.fromFirstOccurrenceOf (":", false, false).trim().getFloatValue();
+                if (val >= 0.5f && val <= 3.0f)
+                    savedScale = val;
+            }
+            else if (line.startsWith ("theme:"))
+            {
+                themeName = line.fromFirstOccurrenceOf (":", false, false).trim();
+            }
         }
     }
-    return -1.0f;
+
+    // Apply theme
+    applyTheme (themeName);
 }

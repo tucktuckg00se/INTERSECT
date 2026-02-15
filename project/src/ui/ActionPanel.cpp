@@ -6,34 +6,11 @@
 ActionPanel::ActionPanel (IntersectProcessor& p, WaveformView& wv)
     : processor (p), waveformView (wv)
 {
-    addAndMakeVisible (loadBtn);
     addAndMakeVisible (addSliceBtn);
     addAndMakeVisible (lazyChopBtn);
     addAndMakeVisible (dupBtn);
+    addAndMakeVisible (splitBtn);
     addAndMakeVisible (deleteBtn);
-
-    loadBtn.onClick = [this] {
-        fileChooser = std::make_unique<juce::FileChooser> (
-            "Load Audio File",
-            juce::File(),
-            "*.wav;*.ogg;*.aiff;*.flac;*.mp3");
-
-        fileChooser->launchAsync (juce::FileBrowserComponent::openMode
-                                    | juce::FileBrowserComponent::canSelectFiles,
-            [this] (const juce::FileChooser& fc)
-            {
-                auto result = fc.getResult();
-                if (result.existsAsFile())
-                {
-                    IntersectProcessor::Command cmd;
-                    cmd.type = IntersectProcessor::CmdLoadFile;
-                    cmd.fileParam = result;
-                    processor.pushCommand (cmd);
-                    processor.zoom.store (1.0f);
-                    processor.scroll.store (0.0f);
-                }
-            });
-    };
 
     addSliceBtn.onClick = [this] {
         waveformView.sliceDrawMode = ! waveformView.sliceDrawMode;
@@ -57,6 +34,29 @@ ActionPanel::ActionPanel (IntersectProcessor& p, WaveformView& wv)
         repaint();
     };
 
+    splitBtn.onClick = [this] {
+        auto* aw = new juce::AlertWindow ("Split Slice", "Number of slices:",
+                                           juce::MessageBoxIconType::NoIcon);
+        aw->addTextEditor ("count", "16");
+        aw->addButton ("OK", 1);
+        aw->addButton ("Cancel", 0);
+        aw->enterModalState (true, juce::ModalCallbackFunction::create (
+            [this, aw] (int result) {
+                if (result == 1)
+                {
+                    int count = aw->getTextEditorContents ("count").getIntValue();
+                    if (count >= 2 && count <= 128)
+                    {
+                        IntersectProcessor::Command cmd;
+                        cmd.type = IntersectProcessor::CmdSplitSlice;
+                        cmd.intParam1 = count;
+                        processor.pushCommand (cmd);
+                    }
+                }
+                delete aw;
+            }));
+    };
+
     deleteBtn.onClick = [this] {
         int sel = processor.sliceManager.selectedSlice;
         if (sel >= 0)
@@ -77,10 +77,10 @@ void ActionPanel::resized()
     int btnW = (getWidth() - totalGap) / numBtns;
     int btnH = getHeight();
 
-    loadBtn.setBounds (0, 0, btnW, btnH);
-    addSliceBtn.setBounds (btnW + gap, 0, btnW, btnH);
-    lazyChopBtn.setBounds (2 * (btnW + gap), 0, btnW, btnH);
-    dupBtn.setBounds (3 * (btnW + gap), 0, btnW, btnH);
+    addSliceBtn.setBounds (0, 0, btnW, btnH);
+    lazyChopBtn.setBounds (btnW + gap, 0, btnW, btnH);
+    dupBtn.setBounds (2 * (btnW + gap), 0, btnW, btnH);
+    splitBtn.setBounds (3 * (btnW + gap), 0, btnW, btnH);
     deleteBtn.setBounds (4 * (btnW + gap), 0, btnW, btnH);
 }
 
@@ -89,7 +89,7 @@ void ActionPanel::paint (juce::Graphics& g)
     // Highlight +SLC if in draw mode
     if (waveformView.sliceDrawMode)
     {
-        g.setColour (Theme::accent.withAlpha (0.25f));
+        g.setColour (getTheme().accent.withAlpha (0.25f));
         g.fillRect (addSliceBtn.getBounds());
     }
 

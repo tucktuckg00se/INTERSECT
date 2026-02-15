@@ -1,25 +1,60 @@
 #include "HeaderBar.h"
 #include "IntersectLookAndFeel.h"
 #include "../PluginProcessor.h"
-#include "../audio/WsolaEngine.h"
+#include "../PluginEditor.h"
+#include "../audio/GrainEngine.h"
 #include <cmath>
 
 HeaderBar::HeaderBar (IntersectProcessor& p) : processor (p)
 {
+    addAndMakeVisible (loadBtn);
     addAndMakeVisible (scaleDownBtn);
     addAndMakeVisible (scaleUpBtn);
+    addAndMakeVisible (themeBtn);
+    loadBtn.setAlwaysOnTop (true);
     scaleDownBtn.setAlwaysOnTop (true);
     scaleUpBtn.setAlwaysOnTop (true);
+    themeBtn.setAlwaysOnTop (true);
+
+    loadBtn.onClick = [this] {
+        fileChooser = std::make_unique<juce::FileChooser> (
+            "Load Audio File",
+            juce::File(),
+            "*.wav;*.ogg;*.aiff;*.flac;*.mp3");
+
+        fileChooser->launchAsync (juce::FileBrowserComponent::openMode
+                                    | juce::FileBrowserComponent::canSelectFiles,
+            [this] (const juce::FileChooser& fc)
+            {
+                auto result = fc.getResult();
+                if (result.existsAsFile())
+                {
+                    IntersectProcessor::Command cmd;
+                    cmd.type = IntersectProcessor::CmdLoadFile;
+                    cmd.fileParam = result;
+                    processor.pushCommand (cmd);
+                    processor.zoom.store (1.0f);
+                    processor.scroll.store (0.0f);
+                }
+            });
+    };
+
     scaleDownBtn.onClick = [this] { adjustScale (-0.25f); };
     scaleUpBtn.onClick   = [this] { adjustScale (0.25f); };
+
+    themeBtn.onClick = [this] { showThemePopup(); };
 }
 
 void HeaderBar::resized()
 {
     int btnW = 20;
     int btnH = 16;
-    scaleDownBtn.setBounds (getWidth() - btnW * 2 - 6, 4, btnW, btnH);
-    scaleUpBtn.setBounds   (getWidth() - btnW - 4, 4, btnW, btnH);
+    int right = getWidth();
+
+    scaleUpBtn.setBounds   (right - btnW - 4, 4, btnW, btnH);
+    scaleDownBtn.setBounds (right - btnW * 2 - 6, 4, btnW, btnH);
+    themeBtn.setBounds     (right - btnW * 3 - 10, 4, btnW + 4, btnH);
+    loadBtn.setBounds      (right - btnW * 3 - 10 - 42, 4, 38, btnH);
 }
 
 void HeaderBar::adjustScale (float delta)
@@ -34,7 +69,7 @@ void HeaderBar::adjustScale (float delta)
 
 void HeaderBar::paint (juce::Graphics& g)
 {
-    g.fillAll (Theme::tealHeader);
+    g.fillAll (getTheme().tealHeader);
     headerCells.clear();
 
     if (processor.sampleData.isLoaded())
@@ -45,7 +80,7 @@ void HeaderBar::paint (juce::Graphics& g)
         g.drawText ("SAMPLE A", 8, 4, 70, 16, juce::Justification::centredLeft);
 
         g.setFont (juce::Font (11.0f));
-        g.setColour (Theme::foreground.withAlpha (0.9f));
+        g.setColour (getTheme().foreground.withAlpha (0.9f));
 
         int x = 90;
         int row1y = 2;
@@ -62,10 +97,10 @@ void HeaderBar::paint (juce::Graphics& g)
 
         // SET BPM (sample-level) — right after BPM
         g.setFont (juce::Font (9.0f));
-        g.setColour (Theme::accent);
+        g.setColour (getTheme().accent);
         g.drawText ("SET BPM", x, row1y + 4, 50, 14, juce::Justification::centredLeft);
         headerCells.push_back ({ x, row1y, 50, row1h, juce::String(), 0.0f, 0.0f, 0.0f, false, false, false, true });
-        g.setColour (Theme::foreground.withAlpha (0.9f));
+        g.setColour (getTheme().foreground.withAlpha (0.9f));
         x += 55;
 
         // PITCH — may be read-only in Repitch+Stretch mode
@@ -75,7 +110,7 @@ void HeaderBar::paint (juce::Graphics& g)
             bool pitchReadOnly = (algo == 0 && stretchOn);
 
             g.setFont (juce::Font (9.0f));
-            g.setColour (pitchReadOnly ? Theme::foreground.withAlpha (0.5f) : Theme::foreground.withAlpha (0.9f));
+            g.setColour (pitchReadOnly ? getTheme().foreground.withAlpha (0.5f) : getTheme().foreground.withAlpha (0.9f));
             g.drawText ("PITCH", x, row1y, 60, 10, juce::Justification::centredLeft);
             g.setFont (juce::Font (12.0f));
 
@@ -85,14 +120,14 @@ void HeaderBar::paint (juce::Graphics& g)
                 float calcPitch = (dawBpm > 0.0f && bpm > 0.0f)
                     ? 12.0f * std::log2 (dawBpm / bpm) : 0.0f;
                 juce::String pitchStr = (calcPitch >= 0 ? "+" : "") + juce::String (calcPitch, 1) + "st";
-                g.setColour (Theme::foreground.withAlpha (0.5f));
+                g.setColour (getTheme().foreground.withAlpha (0.5f));
                 g.drawText (pitchStr, x, row1y + 10, 60, 12, juce::Justification::centredLeft);
                 headerCells.push_back ({ x, row1y, 60, row1h, ParamIds::defaultPitch, -24.0f, 24.0f, 0.1f, false, false, true, false });
             }
             else
             {
                 float pitch = processor.apvts.getRawParameterValue (ParamIds::defaultPitch)->load();
-                g.setColour (Theme::foreground.withAlpha (0.9f));
+                g.setColour (getTheme().foreground.withAlpha (0.9f));
                 g.drawText (juce::String (pitch, 1), x, row1y + 10, 60, 12, juce::Justification::centredLeft);
                 headerCells.push_back ({ x, row1y, 60, row1h, ParamIds::defaultPitch, -24.0f, 24.0f, 0.1f, false, false, false, false });
             }
@@ -101,7 +136,7 @@ void HeaderBar::paint (juce::Graphics& g)
 
         // ALGORITHM
         g.setFont (juce::Font (9.0f));
-        g.setColour (Theme::foreground.withAlpha (0.9f));
+        g.setColour (getTheme().foreground.withAlpha (0.9f));
         g.drawText ("ALGO", x, row1y, 60, 10, juce::Justification::centredLeft);
         g.setFont (juce::Font (12.0f));
         int algo = (int) processor.apvts.getRawParameterValue (ParamIds::defaultAlgorithm)->load();
@@ -114,7 +149,7 @@ void HeaderBar::paint (juce::Graphics& g)
         {
             // TONAL — only for Stretch (Signalsmith)
             g.setFont (juce::Font (9.0f));
-            g.setColour (Theme::foreground.withAlpha (0.9f));
+            g.setColour (getTheme().foreground.withAlpha (0.9f));
             g.drawText ("TONAL", x, row1y, 55, 10, juce::Justification::centredLeft);
             g.setFont (juce::Font (12.0f));
             float tonal = processor.apvts.getRawParameterValue (ParamIds::defaultTonality)->load();
@@ -124,7 +159,7 @@ void HeaderBar::paint (juce::Graphics& g)
 
             // FMNT
             g.setFont (juce::Font (9.0f));
-            g.setColour (Theme::foreground.withAlpha (0.9f));
+            g.setColour (getTheme().foreground.withAlpha (0.9f));
             g.drawText ("FMNT", x, row1y, 55, 10, juce::Justification::centredLeft);
             g.setFont (juce::Font (12.0f));
             float fmnt = processor.apvts.getRawParameterValue (ParamIds::defaultFormant)->load();
@@ -134,11 +169,11 @@ void HeaderBar::paint (juce::Graphics& g)
 
             // FMNT C
             g.setFont (juce::Font (9.0f));
-            g.setColour (Theme::foreground.withAlpha (0.9f));
+            g.setColour (getTheme().foreground.withAlpha (0.9f));
             g.drawText ("FMNT C", x, row1y, 50, 10, juce::Justification::centredLeft);
             g.setFont (juce::Font (12.0f));
             bool fmntC = processor.apvts.getRawParameterValue (ParamIds::defaultFormantComp)->load() > 0.5f;
-            g.setColour (fmntC ? Theme::lockGold : Theme::foreground.withAlpha (0.5f));
+            g.setColour (fmntC ? getTheme().lockGold : getTheme().foreground.withAlpha (0.5f));
             g.drawText (fmntC ? "ON" : "OFF", x, row1y + 10, 50, 12, juce::Justification::centredLeft);
             headerCells.push_back ({ x, row1y, 50, row1h, ParamIds::defaultFormantComp, 0.0f, 1.0f, 1.0f, false, true, false, false });
             x += 55;
@@ -147,7 +182,7 @@ void HeaderBar::paint (juce::Graphics& g)
         {
             // GRAIN — only for Bungee
             g.setFont (juce::Font (9.0f));
-            g.setColour (Theme::foreground.withAlpha (0.9f));
+            g.setColour (getTheme().foreground.withAlpha (0.9f));
             g.drawText ("GRAIN", x, row1y, 60, 10, juce::Justification::centredLeft);
             g.setFont (juce::Font (12.0f));
             int gm = (int) processor.apvts.getRawParameterValue (ParamIds::defaultGrainMode)->load();
@@ -159,12 +194,12 @@ void HeaderBar::paint (juce::Graphics& g)
 
         // Slice count (right side of row 1, before scale buttons)
         g.setFont (juce::Font (10.0f));
-        g.setColour (Theme::foreground.withAlpha (0.5f));
+        g.setColour (getTheme().foreground.withAlpha (0.5f));
         g.drawText ("Slices: " + juce::String (processor.sliceManager.getNumSlices()),
                      getWidth() - 130, row1y + 6, 80, 14, juce::Justification::centredRight);
 
         // --- Separator line between rows ---
-        g.setColour (Theme::separator);
+        g.setColour (getTheme().separator);
         g.drawHorizontalLine (24, 8.0f, (float) getWidth() - 8.0f);
 
         // --- Row 2: ATK / DEC / SUS / REL / PP / MUTE / STRETCH ---
@@ -174,7 +209,7 @@ void HeaderBar::paint (juce::Graphics& g)
 
         // ATK
         g.setFont (juce::Font (9.0f));
-        g.setColour (Theme::foreground.withAlpha (0.9f));
+        g.setColour (getTheme().foreground.withAlpha (0.9f));
         g.drawText ("ATK", x, row2y, 50, 10, juce::Justification::centredLeft);
         g.setFont (juce::Font (11.0f));
         float atk = processor.apvts.getRawParameterValue (ParamIds::defaultAttack)->load();
@@ -184,7 +219,7 @@ void HeaderBar::paint (juce::Graphics& g)
 
         // DEC
         g.setFont (juce::Font (9.0f));
-        g.setColour (Theme::foreground.withAlpha (0.9f));
+        g.setColour (getTheme().foreground.withAlpha (0.9f));
         g.drawText ("DEC", x, row2y, 55, 10, juce::Justification::centredLeft);
         g.setFont (juce::Font (11.0f));
         float dec = processor.apvts.getRawParameterValue (ParamIds::defaultDecay)->load();
@@ -194,7 +229,7 @@ void HeaderBar::paint (juce::Graphics& g)
 
         // SUS
         g.setFont (juce::Font (9.0f));
-        g.setColour (Theme::foreground.withAlpha (0.9f));
+        g.setColour (getTheme().foreground.withAlpha (0.9f));
         g.drawText ("SUS", x, row2y, 50, 10, juce::Justification::centredLeft);
         g.setFont (juce::Font (11.0f));
         float sus = processor.apvts.getRawParameterValue (ParamIds::defaultSustain)->load();
@@ -204,7 +239,7 @@ void HeaderBar::paint (juce::Graphics& g)
 
         // REL
         g.setFont (juce::Font (9.0f));
-        g.setColour (Theme::foreground.withAlpha (0.9f));
+        g.setColour (getTheme().foreground.withAlpha (0.9f));
         g.drawText ("REL", x, row2y, 55, 10, juce::Justification::centredLeft);
         g.setFont (juce::Font (11.0f));
         float rel = processor.apvts.getRawParameterValue (ParamIds::defaultRelease)->load();
@@ -214,18 +249,18 @@ void HeaderBar::paint (juce::Graphics& g)
 
         // PP
         g.setFont (juce::Font (9.0f));
-        g.setColour (Theme::foreground.withAlpha (0.9f));
+        g.setColour (getTheme().foreground.withAlpha (0.9f));
         g.drawText ("PP", x, row2y, 40, 10, juce::Justification::centredLeft);
         g.setFont (juce::Font (11.0f));
         bool pp = processor.apvts.getRawParameterValue (ParamIds::defaultPingPong)->load() > 0.5f;
-        g.setColour (pp ? Theme::lockGold : Theme::foreground.withAlpha (0.5f));
+        g.setColour (pp ? getTheme().lockGold : getTheme().foreground.withAlpha (0.5f));
         g.drawText (pp ? "ON" : "OFF", x, row2y + 10, 40, 12, juce::Justification::centredLeft);
         headerCells.push_back ({ x, row2y, 40, row2h, ParamIds::defaultPingPong, 0.0f, 1.0f, 1.0f, false, true, false, false });
         x += 45;
 
         // MUTE GROUP
         g.setFont (juce::Font (9.0f));
-        g.setColour (Theme::foreground.withAlpha (0.9f));
+        g.setColour (getTheme().foreground.withAlpha (0.9f));
         g.drawText ("MUTE", x, row2y, 45, 10, juce::Justification::centredLeft);
         g.setFont (juce::Font (11.0f));
         float muteGrp = processor.apvts.getRawParameterValue (ParamIds::defaultMuteGroup)->load();
@@ -235,18 +270,18 @@ void HeaderBar::paint (juce::Graphics& g)
 
         // STRETCH toggle
         g.setFont (juce::Font (9.0f));
-        g.setColour (Theme::foreground.withAlpha (0.9f));
+        g.setColour (getTheme().foreground.withAlpha (0.9f));
         g.drawText ("STRETCH", x, row2y, 55, 10, juce::Justification::centredLeft);
         g.setFont (juce::Font (11.0f));
         bool strOn = processor.apvts.getRawParameterValue (ParamIds::defaultStretchEnabled)->load() > 0.5f;
-        g.setColour (strOn ? Theme::accent : Theme::foreground.withAlpha (0.5f));
+        g.setColour (strOn ? getTheme().accent : getTheme().foreground.withAlpha (0.5f));
         g.drawText (strOn ? "ON" : "OFF", x, row2y + 10, 55, 12, juce::Justification::centredLeft);
         headerCells.push_back ({ x, row2y, 55, row2h, ParamIds::defaultStretchEnabled, 0.0f, 1.0f, 1.0f, false, true, false, false });
         x += 60;
 
         // VOL
         g.setFont (juce::Font (9.0f));
-        g.setColour (Theme::foreground.withAlpha (0.9f));
+        g.setColour (getTheme().foreground.withAlpha (0.9f));
         g.drawText ("VOL", x, row2y, 50, 10, juce::Justification::centredLeft);
         g.setFont (juce::Font (11.0f));
         float vol = processor.apvts.getRawParameterValue (ParamIds::masterVolume)->load();
@@ -261,7 +296,7 @@ void HeaderBar::paint (juce::Graphics& g)
         g.drawText ("INTERSECT", 8, 16, 140, 16, juce::Justification::centredLeft);
 
         g.setFont (juce::Font (11.0f));
-        g.setColour (Theme::foreground.withAlpha (0.6f));
+        g.setColour (getTheme().foreground.withAlpha (0.6f));
         g.drawText ("DROP AUDIO FILE", 160, 18, 300, 14,
                      juce::Justification::centredLeft);
     }
@@ -389,9 +424,9 @@ void HeaderBar::showTextEditor (const HeaderCell& cell)
     addAndMakeVisible (*textEditor);
     textEditor->setBounds (cell.x, cell.y + 8, cell.w, 16);
     textEditor->setFont (juce::Font (12.0f));
-    textEditor->setColour (juce::TextEditor::backgroundColourId, Theme::tealHeader.brighter (0.2f));
+    textEditor->setColour (juce::TextEditor::backgroundColourId, getTheme().tealHeader.brighter (0.2f));
     textEditor->setColour (juce::TextEditor::textColourId, juce::Colours::white);
-    textEditor->setColour (juce::TextEditor::outlineColourId, Theme::accent);
+    textEditor->setColour (juce::TextEditor::outlineColourId, getTheme().accent);
 
     float currentVal = processor.apvts.getRawParameterValue (cell.paramId)->load();
     juce::String displayVal = cell.step >= 1.0f ? juce::String ((int) currentVal)
@@ -431,19 +466,20 @@ void HeaderBar::showTextEditor (const HeaderCell& cell)
 void HeaderBar::showSetBpmPopup (bool forSampleDefault)
 {
     juce::PopupMenu menu;
-    menu.addItem (1, "4 bars");
-    menu.addItem (2, "2 bars");
-    menu.addItem (3, "1 bar");
-    menu.addItem (4, "1/2 bar");
-    menu.addItem (5, "1/4 bar");
-    menu.addItem (6, "1/8 bar");
-    menu.addItem (7, "1/16 bar");
-    menu.addItem (8, "1/32 bar");
+    menu.addItem (1, "16 bars");
+    menu.addItem (2, "8 bars");
+    menu.addItem (3, "4 bars");
+    menu.addItem (4, "2 bars");
+    menu.addItem (5, "1 bar");
+    menu.addItem (6, "1/2 note");
+    menu.addItem (7, "1/4 note");
+    menu.addItem (8, "1/8 note");
+    menu.addItem (9, "1/16 note");
 
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this),
         [this, forSampleDefault] (int result) {
             if (result <= 0) return;
-            float bars[] = { 0.0f, 4.0f, 2.0f, 1.0f, 0.5f, 0.25f, 0.125f, 0.0625f, 0.03125f };
+            float bars[] = { 0.0f, 16.0f, 8.0f, 4.0f, 2.0f, 1.0f, 0.5f, 0.25f, 0.125f, 0.0625f };
 
             // Determine start/end from selected slice or full sample
             int startS = 0;
@@ -459,7 +495,7 @@ void HeaderBar::showSetBpmPopup (bool forSampleDefault)
             if (forSampleDefault)
             {
                 // Set sample-level BPM
-                float newBpm = WsolaEngine::calcStretchBpm (startS, endS, bars[result], processor.getSampleRate());
+                float newBpm = GrainEngine::calcStretchBpm (startS, endS, bars[result], processor.getSampleRate());
                 if (auto* p = processor.apvts.getParameter (ParamIds::defaultBpm))
                     p->setValueNotifyingHost (p->convertTo0to1 (newBpm));
             }
@@ -472,5 +508,25 @@ void HeaderBar::showSetBpmPopup (bool forSampleDefault)
                 processor.pushCommand (cmd);
             }
             repaint();
+        });
+}
+
+void HeaderBar::showThemePopup()
+{
+    auto* editor = dynamic_cast<IntersectEditor*> (getParentComponent());
+    if (editor == nullptr)
+        return;
+
+    auto themes = editor->getAvailableThemes();
+    auto currentName = getTheme().name;
+
+    juce::PopupMenu menu;
+    for (int i = 0; i < themes.size(); ++i)
+        menu.addItem (i + 1, themes[i], true, themes[i] == currentName);
+
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&themeBtn),
+        [editor, themes] (int result) {
+            if (result > 0 && result <= themes.size())
+                editor->applyTheme (themes[result - 1]);
         });
 }

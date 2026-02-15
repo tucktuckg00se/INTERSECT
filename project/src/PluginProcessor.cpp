@@ -1,6 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
-#include "audio/WsolaEngine.h"
+#include "audio/GrainEngine.h"
 
 IntersectProcessor::IntersectProcessor()
     : AudioProcessor (BusesProperties()
@@ -86,7 +86,7 @@ void IntersectProcessor::handleCommand (const Command& cmd)
             if (sel >= 0 && sel < sliceManager.getNumSlices())
             {
                 auto& s = sliceManager.getSlice (sel);
-                float newBpm = WsolaEngine::calcStretchBpm (
+                float newBpm = GrainEngine::calcStretchBpm (
                     s.startSample, s.endSample, cmd.floatParam1, currentSampleRate);
                 s.bpm = newBpm;
                 s.lockMask |= kLockBpm;
@@ -172,6 +172,35 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                     // midiNote is already assigned by createSlice
                     sliceManager.selectedSlice = newIdx;
                 }
+            }
+            break;
+        }
+
+        case CmdSplitSlice:
+        {
+            int sel = sliceManager.selectedSlice;
+            if (sel >= 0 && sel < sliceManager.getNumSlices())
+            {
+                const auto& src = sliceManager.getSlice (sel);
+                int startS = src.startSample;
+                int endS = src.endSample;
+                int count = juce::jlimit (2, 128, cmd.intParam1);
+                int len = endS - startS;
+
+                sliceManager.deleteSlice (sel);
+
+                int firstNew = -1;
+                for (int i = 0; i < count; ++i)
+                {
+                    int s = startS + i * len / count;
+                    int e = startS + (i + 1) * len / count;
+                    int idx = sliceManager.createSlice (s, e);
+                    if (i == 0) firstNew = idx;
+                }
+
+                sliceManager.rebuildMidiMap();
+                if (firstNew >= 0)
+                    sliceManager.selectedSlice = firstNew;
             }
             break;
         }

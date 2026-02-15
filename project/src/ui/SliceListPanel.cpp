@@ -11,7 +11,7 @@ void SliceListPanel::paint (juce::Graphics& g)
 
     // Label
     g.setFont (juce::Font (9.0f));
-    g.setColour (Theme::foreground.withAlpha (0.4f));
+    g.setColour (getTheme().foreground.withAlpha (0.4f));
     g.drawText ("SLICES", 0, 0, kBtnW, 10, juce::Justification::centredLeft);
 
     int y = 12;
@@ -24,9 +24,9 @@ void SliceListPanel::paint (juce::Graphics& g)
         int btnY = y + i * (kBtnH + 2);
 
         if (i == sel)
-            g.setColour (Theme::slicePinkSel);
+            g.setColour (getTheme().slicePinkSel);
         else
-            g.setColour (Theme::slicePink.withAlpha (0.7f));
+            g.setColour (getTheme().slicePink.withAlpha (0.7f));
 
         g.fillRect (0, btnY, kBtnW, kBtnH);
 
@@ -37,7 +37,7 @@ void SliceListPanel::paint (juce::Graphics& g)
 
     if (num > maxVisible)
     {
-        g.setColour (Theme::foreground.withAlpha (0.4f));
+        g.setColour (getTheme().foreground.withAlpha (0.4f));
         g.setFont (juce::Font (10.0f));
         g.drawText ("+" + juce::String (num - maxVisible) + " more",
                      0, y + maxVisible * (kBtnH + 2), kBtnW, 14,

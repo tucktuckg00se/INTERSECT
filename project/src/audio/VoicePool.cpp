@@ -1,5 +1,5 @@
 #include "VoicePool.h"
-#include "WsolaEngine.h"
+#include "GrainEngine.h"
 
 // Include Signalsmith Stretch
 #include "signalsmith-stretch.h"
@@ -473,7 +473,7 @@ void VoicePool::processSample (const SampleData& sample, double sampleRate,
         }
         else if (v.wsolaActive)
         {
-            WsolaEngine::processVoice (v, sample, sampleRate, voiceL, voiceR);
+            GrainEngine::processVoice (v, sample, sampleRate, voiceL, voiceR);
             voicePositions[i].store ((float) v.position, std::memory_order_relaxed);
         }
         else
