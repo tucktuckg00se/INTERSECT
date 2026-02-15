@@ -31,6 +31,7 @@ private:
     void showSetBpmPopup (bool forSampleDefault);
     void showThemePopup();
     void adjustScale (float delta);
+    void openFileBrowser();
 
     IntersectProcessor& processor;
     juce::TextButton loadBtn { "LOAD" };
@@ -45,4 +46,7 @@ private:
 
     // Text editor overlay
     std::unique_ptr<juce::TextEditor> textEditor;
+
+    // Sample info area bounds for click-to-relink
+    juce::Rectangle<int> sampleInfoBounds;
 };

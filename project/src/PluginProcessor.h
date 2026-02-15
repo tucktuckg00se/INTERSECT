@@ -100,6 +100,10 @@ public:
     // MIDI-selects-slice toggle
     std::atomic<bool> midiSelectsSlice { false };
 
+    // Missing sample state (for relink UI)
+    std::atomic<bool> sampleMissing { false };
+    juce::String missingFilePath;
+
 private:
     void drainCommands();
     void handleCommand (const Command& cmd);

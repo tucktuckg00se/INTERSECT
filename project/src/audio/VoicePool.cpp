@@ -43,9 +43,9 @@ int VoicePool::allocate()
     return best;
 }
 
-static void initStretcher (Voice& v, float pitchSemis, double sr,
-                           float tonalityHz, float formantSemis, bool formantComp,
-                           const SampleData& sample)
+void VoicePool::initStretcher (Voice& v, float pitchSemis, double sr,
+                               float tonalityHz, float formantSemis, bool formantComp,
+                               const SampleData& sample)
 {
     int blockSize = std::max (256, (int)(sr * 0.023));   // ~1024 @ 44.1k (~23ms)
     int interval  = std::max (64,  (int)(sr * 0.006));   // ~256 @ 44.1k (~6ms)
@@ -85,7 +85,7 @@ static void initStretcher (Voice& v, float pitchSemis, double sr,
     }
 }
 
-static void initBungee (Voice& v, float pitchSemis, double sr, int grainMode)
+void VoicePool::initBungee (Voice& v, float pitchSemis, double sr, int grainMode)
 {
     Bungee::SampleRates rates;
     rates.input  = (int) sr;

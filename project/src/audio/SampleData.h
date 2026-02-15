@@ -18,6 +18,9 @@ public:
     const juce::String& getFileName() const { return loadedFileName; }
     void setFileName (const juce::String& name) { loadedFileName = name; }
 
+    const juce::String& getFilePath() const { return loadedFilePath; }
+    void setFilePath (const juce::String& path) { loadedFilePath = path; }
+
     void loadFromBuffer (juce::AudioBuffer<float>&& buf)
     {
         buffer = std::move (buf);
@@ -28,5 +31,6 @@ private:
     juce::AudioBuffer<float> buffer;  // always stereo
     juce::AudioFormatManager formatManager;
     juce::String loadedFileName;
+    juce::String loadedFilePath;
     bool loaded = false;
 };

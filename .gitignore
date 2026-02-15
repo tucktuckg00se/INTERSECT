@@ -20,6 +20,7 @@ desktop.ini
 
 # Claude Code
 .claude/
+CLAUDE.md
 
 # Compiled objects
 *.o

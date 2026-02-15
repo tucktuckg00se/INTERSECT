@@ -1,13 +1,15 @@
 #include "LazyChopEngine.h"
 #include <cmath>
 
-void LazyChopEngine::start (int sampleLen, SliceManager& sliceMgr)
+void LazyChopEngine::start (int sampleLen, SliceManager& sliceMgr,
+                            const PreviewStretchParams& params)
 {
     active = true;
     playing = false;
     chopPos = 0;
     sampleLength = sampleLen;
     lastNote = -1;
+    cachedParams = params;
 
     nextMidiNote = sliceMgr.rootNote.load();
     int num = sliceMgr.getNumSlices();
@@ -26,7 +28,6 @@ void LazyChopEngine::startPreview (VoicePool& voicePool, int fromPos)
     v.active      = true;
     v.sliceIdx    = -1;
     v.position    = (double) fromPos;
-    v.speed       = 1.0;
     v.direction   = 1;
     v.velocity    = 1.0f;
     v.midiNote    = -1;
@@ -36,9 +37,75 @@ void LazyChopEngine::startPreview (VoicePool& voicePool, int fromPos)
     v.muteGroup   = 0;
     v.wsolaActive = false;
     v.stretchActive = false;
+    v.bungeeActive  = false;
     v.pitchRatio  = 1.0f;
     v.age         = 0;
     v.looping     = true;
+    v.volume      = 1.0f;
+    v.speed       = 1.0;
+
+    // Apply stretch from cached sample-level params
+    const auto& p = cachedParams;
+    int algo = p.algorithm;
+
+    if (p.stretchEnabled && p.dawBpm > 0.0f && p.bpm > 0.0f)
+    {
+        float speedRatio = p.dawBpm / p.bpm;
+
+        if (algo == 0)
+        {
+            // Repitch: speed change (pitch is consequence)
+            v.speed = speedRatio;
+        }
+        else if (algo == 2 && p.sample != nullptr)
+        {
+            // Bungee
+            v.bungeeActive = true;
+            v.speed = 1.0;
+            v.bungeeSpeed = (double) speedRatio;
+            v.bungeeSrcPos = fromPos;
+            int hopAdj = juce::jlimit (-1, 1, p.grainMode - 1);
+            VoicePool::initBungee (v, p.pitch, p.sampleRate, hopAdj);
+        }
+        else if (p.sample != nullptr)
+        {
+            // Signalsmith Stretch
+            v.stretchActive = true;
+            v.speed = 1.0;
+            v.stretchTimeRatio = speedRatio;
+            v.stretchPitchSemis = p.pitch;
+            v.stretchSrcPos = fromPos;
+            VoicePool::initStretcher (v, p.pitch, p.sampleRate,
+                                      p.tonality, p.formant, p.formantComp, *p.sample);
+        }
+    }
+    else if (algo == 1 && p.sample != nullptr)
+    {
+        // Stretch algo, no stretch enabled — pitch only via Signalsmith
+        v.stretchActive = true;
+        v.speed = 1.0;
+        v.stretchTimeRatio = 1.0f;
+        v.stretchPitchSemis = p.pitch;
+        v.stretchSrcPos = fromPos;
+        VoicePool::initStretcher (v, p.pitch, p.sampleRate,
+                                  p.tonality, p.formant, p.formantComp, *p.sample);
+    }
+    else if (algo == 2 && p.sample != nullptr)
+    {
+        // Bungee algo, no stretch — pitch only
+        v.bungeeActive = true;
+        v.speed = 1.0;
+        v.bungeeSpeed = 1.0;
+        v.bungeeSrcPos = fromPos;
+        int hopAdj = juce::jlimit (-1, 1, p.grainMode - 1);
+        VoicePool::initBungee (v, p.pitch, p.sampleRate, hopAdj);
+    }
+    else
+    {
+        // Repitch: apply pitch ratio to speed
+        v.pitchRatio = std::pow (2.0f, p.pitch / 12.0f);
+        v.speed = v.pitchRatio;
+    }
 
     // Sustain at half volume
     v.envelope.noteOn (0.0f, 0.0f, 0.5f, 0.02f);
@@ -49,6 +116,10 @@ void LazyChopEngine::stop (VoicePool& voicePool, SliceManager& /*sliceMgr*/)
     // Stop preview voice
     auto& v = voicePool.getVoice (getPreviewVoiceIndex());
     v.active = false;
+    v.stretchActive = false;
+    v.bungeeActive = false;
+    v.stretcher.reset();
+    v.bungeeStretcher.reset();
 
     active = false;
     playing = false;

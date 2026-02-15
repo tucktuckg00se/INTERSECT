@@ -30,8 +30,15 @@ public:
                         float& outL, float& outR);
 
     void setSampleRate (double sr) { sampleRate = sr; }
+    double getSampleRate() const { return sampleRate; }
 
     Voice& getVoice (int idx) { return voices[idx]; }
+
+    // Public helpers so LazyChopEngine can initialise stretch on preview voice
+    static void initStretcher (Voice& v, float pitchSemis, double sr,
+                               float tonalityHz, float formantSemis, bool formantComp,
+                               const SampleData& sample);
+    static void initBungee (Voice& v, float pitchSemis, double sr, int grainMode);
 
     // Atomic voice positions for UI cursor display
     std::array<std::atomic<float>, kMaxVoices> voicePositions;

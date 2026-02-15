@@ -82,8 +82,8 @@ void ActionPanel::resized()
 
     addSliceBtn.setBounds (0, 0, btnW, btnH);
     lazyChopBtn.setBounds (btnW + gap, 0, btnW, btnH);
-    dupBtn.setBounds (2 * (btnW + gap), 0, btnW, btnH);
-    splitBtn.setBounds (3 * (btnW + gap), 0, btnW, btnH);
+    splitBtn.setBounds (2 * (btnW + gap), 0, btnW, btnH);
+    dupBtn.setBounds (3 * (btnW + gap), 0, btnW, btnH);
     deleteBtn.setBounds (4 * (btnW + gap), 0, btnW, btnH);
 }
 

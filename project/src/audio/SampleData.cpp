@@ -55,6 +55,7 @@ bool SampleData::loadFromFile (const juce::File& file, double projectSampleRate)
     }
 
     loadedFileName = file.getFileName();
+    loadedFilePath = file.getFullPathName();
     loaded = true;
     return true;
 }

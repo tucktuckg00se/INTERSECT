@@ -49,6 +49,9 @@ void IntersectProcessor::drainCommands()
         handleCommand (commandBuffer[(size_t) (scope.startIndex1 + i)]);
     for (int i = 0; i < scope.blockSize2; ++i)
         handleCommand (commandBuffer[(size_t) (scope.startIndex2 + i)]);
+
+    if (scope.blockSize1 + scope.blockSize2 > 0)
+        updateHostDisplay (ChangeDetails().withNonParameterStateChanged (true));
 }
 
 void IntersectProcessor::handleCommand (const Command& cmd)
@@ -58,8 +61,9 @@ void IntersectProcessor::handleCommand (const Command& cmd)
         case CmdLoadFile:
             if (sampleData.loadFromFile (cmd.fileParam, currentSampleRate))
             {
-                // Clear existing slices but don't create a default one
                 sliceManager.clearAll();
+                sampleMissing.store (false);
+                missingFilePath.clear();
             }
             break;
 
@@ -73,7 +77,21 @@ void IntersectProcessor::handleCommand (const Command& cmd)
 
         case CmdLazyChopStart:
             if (sampleData.isLoaded())
-                lazyChop.start (sampleData.getNumFrames(), sliceManager);
+            {
+                PreviewStretchParams psp;
+                psp.stretchEnabled = stretchParam->load() > 0.5f;
+                psp.algorithm      = (int) algoParam->load();
+                psp.bpm            = bpmParam->load();
+                psp.pitch          = pitchParam->load();
+                psp.dawBpm         = dawBpm.load();
+                psp.tonality       = tonalityParam->load();
+                psp.formant        = formantParam->load();
+                psp.formantComp    = formantCompParam->load() > 0.5f;
+                psp.grainMode      = (int) grainModeParam->load();
+                psp.sampleRate     = currentSampleRate;
+                psp.sample         = &sampleData;
+                lazyChop.start (sampleData.getNumFrames(), sliceManager, psp);
+            }
             break;
 
         case CmdLazyChopStop:
@@ -321,7 +339,7 @@ void IntersectProcessor::getStateInformation (juce::MemoryBlock& destData)
     juce::MemoryOutputStream stream (destData, false);
 
     // Version
-    stream.writeInt (8);
+    stream.writeInt (9);
 
     // APVTS state
     auto state = apvts.copyState();
@@ -368,20 +386,8 @@ void IntersectProcessor::getStateInformation (juce::MemoryBlock& destData)
         stream.writeFloat (s.volume);
     }
 
-    // Audio PCM data (stereo interleaved floats)
-    int numFrames = sampleData.getNumFrames();
-    stream.writeInt (numFrames);
-    if (numFrames > 0)
-    {
-        const auto& buf = sampleData.getBuffer();
-        for (int f = 0; f < numFrames; ++f)
-        {
-            stream.writeFloat (buf.getSample (0, f));
-            stream.writeFloat (buf.getSample (1, f));
-        }
-    }
-
-    // v8: sample filename
+    // v9: store file path only (no PCM)
+    stream.writeString (sampleData.getFilePath());
     stream.writeString (sampleData.getFileName());
 }
 
@@ -460,21 +466,47 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
         }
     }
 
-    // Audio PCM
-    int numFrames = stream.readInt();
-    if (numFrames > 0)
+    if (version >= 9)
     {
-        juce::AudioBuffer<float> restoredBuf (2, numFrames);
-        for (int f = 0; f < numFrames; ++f)
-        {
-            restoredBuf.setSample (0, f, stream.readFloat());
-            restoredBuf.setSample (1, f, stream.readFloat());
-        }
-        sampleData.loadFromBuffer (std::move (restoredBuf));
-    }
+        // v9: path-only restore
+        auto filePath = stream.readString();
+        auto fileName = stream.readString();
 
-    if (version >= 8)
-        sampleData.setFileName (stream.readString());
+        if (filePath.isNotEmpty())
+        {
+            juce::File f (filePath);
+            double sr = currentSampleRate > 0 ? currentSampleRate : 44100.0;
+            if (f.existsAsFile() && sampleData.loadFromFile (f, sr))
+            {
+                sampleMissing.store (false);
+            }
+            else
+            {
+                sampleMissing.store (true);
+                missingFilePath = filePath;
+                sampleData.setFileName (fileName);
+                sampleData.setFilePath (filePath);
+            }
+        }
+    }
+    else
+    {
+        // v8 and earlier: PCM restore (backward compat)
+        int numFrames = stream.readInt();
+        if (numFrames > 0)
+        {
+            juce::AudioBuffer<float> restoredBuf (2, numFrames);
+            for (int f = 0; f < numFrames; ++f)
+            {
+                restoredBuf.setSample (0, f, stream.readFloat());
+                restoredBuf.setSample (1, f, stream.readFloat());
+            }
+            sampleData.loadFromBuffer (std::move (restoredBuf));
+        }
+
+        if (version >= 8)
+            sampleData.setFileName (stream.readString());
+    }
 
     sliceManager.rebuildMidiMap();
 }

@@ -12,28 +12,7 @@ HeaderBar::HeaderBar (IntersectProcessor& p) : processor (p)
     loadBtn.setAlwaysOnTop (true);
     themeBtn.setAlwaysOnTop (true);
 
-    loadBtn.onClick = [this] {
-        fileChooser = std::make_unique<juce::FileChooser> (
-            "Load Audio File",
-            juce::File(),
-            "*.wav;*.ogg;*.aiff;*.flac;*.mp3");
-
-        fileChooser->launchAsync (juce::FileBrowserComponent::openMode
-                                    | juce::FileBrowserComponent::canSelectFiles,
-            [this] (const juce::FileChooser& fc)
-            {
-                auto result = fc.getResult();
-                if (result.existsAsFile())
-                {
-                    IntersectProcessor::Command cmd;
-                    cmd.type = IntersectProcessor::CmdLoadFile;
-                    cmd.fileParam = result;
-                    processor.pushCommand (cmd);
-                    processor.zoom.store (1.0f);
-                    processor.scroll.store (0.0f);
-                }
-            });
-    };
+    loadBtn.onClick = [this] { openFileBrowser(); };
 
     themeBtn.onClick = [this] { showThemePopup(); };
 }
@@ -182,17 +161,36 @@ void HeaderBar::paint (juce::Graphics& g)
         // Filename and sample info (right-aligned, left of LOAD button)
         {
             int rightEdge = loadBtn.getX() - 6;
+            bool isMissing = processor.sampleMissing.load();
+
             g.setFont (juce::Font (9.0f));
-            g.setColour (getTheme().foreground.withAlpha (0.35f));
-            g.drawText ("SAMPLE", x, row1y, rightEdge - x, 10, juce::Justification::right);
+            if (isMissing)
+                g.setColour (juce::Colours::orange);
+            else
+                g.setColour (getTheme().foreground.withAlpha (0.35f));
+            g.drawText (isMissing ? "MISSING" : "SAMPLE", x, row1y, rightEdge - x, 10, juce::Justification::right);
+
             g.setFont (juce::Font (11.0f));
-            g.setColour (getTheme().foreground.withAlpha (0.7f));
+            if (isMissing)
+                g.setColour (juce::Colours::orange.withAlpha (0.9f));
+            else
+                g.setColour (getTheme().foreground.withAlpha (0.7f));
+
             juce::String fname = processor.sampleData.getFileName();
-            double srate = processor.getSampleRate();
-            if (srate <= 0) srate = 44100.0;
-            double lenSec = processor.sampleData.getNumFrames() / srate;
-            g.drawText (fname + " (" + juce::String (lenSec, 2) + "s)",
-                        x, row1y + 10, rightEdge - x, 12, juce::Justification::right);
+            if (isMissing)
+            {
+                g.drawText (fname + " (click to relink)", x, row1y + 10, rightEdge - x, 12, juce::Justification::right);
+            }
+            else
+            {
+                double srate = processor.getSampleRate();
+                if (srate <= 0) srate = 44100.0;
+                double lenSec = processor.sampleData.getNumFrames() / srate;
+                g.drawText (fname + " (" + juce::String (lenSec, 2) + "s)",
+                            x, row1y + 10, rightEdge - x, 12, juce::Justification::right);
+            }
+
+            sampleInfoBounds = { x, row1y, rightEdge - x, row1h };
         }
 
         // --- Separator line between rows ---
@@ -286,8 +284,29 @@ void HeaderBar::paint (juce::Graphics& g)
         headerCells.push_back ({ x, row2y, 50, row2h, ParamIds::masterVolume, 0.0f, 1.0f, 0.01f, false, false, false, false });
         x += 55;
     }
+    else if (processor.sampleMissing.load())
+    {
+        // Sample is missing — show MISSING indicator with filename
+        g.setColour (juce::Colours::white.withAlpha (0.8f));
+        g.setFont (juce::Font (14.0f).boldened());
+        g.drawText ("INTERSECT", 8, 6, 140, 16, juce::Justification::centredLeft);
+
+        int rightEdge = loadBtn.getX() - 6;
+        g.setFont (juce::Font (9.0f));
+        g.setColour (juce::Colours::orange);
+        g.drawText ("MISSING", 160, 2, rightEdge - 160, 10, juce::Justification::right);
+
+        g.setFont (juce::Font (11.0f));
+        g.setColour (juce::Colours::orange.withAlpha (0.9f));
+        juce::String fname = processor.sampleData.getFileName();
+        g.drawText (fname + " (click to relink)", 160, 12, rightEdge - 160, 12, juce::Justification::right);
+
+        sampleInfoBounds = { 160, 2, rightEdge - 160, 22 };
+    }
     else
     {
+        sampleInfoBounds = {};
+
         g.setColour (juce::Colours::white.withAlpha (0.8f));
         g.setFont (juce::Font (14.0f).boldened());
         g.drawText ("INTERSECT", 8, 16, 140, 16, juce::Justification::centredLeft);
@@ -305,6 +324,13 @@ void HeaderBar::mouseDown (const juce::MouseEvent& e)
         textEditor.reset();
 
     auto pos = e.getPosition();
+
+    // Click on sample info area opens file browser (relink)
+    if (sampleInfoBounds.contains (pos))
+    {
+        openFileBrowser();
+        return;
+    }
 
     for (int i = 0; i < (int) headerCells.size(); ++i)
     {
@@ -539,5 +565,29 @@ void HeaderBar::showThemePopup()
                 adjustScale (0.25f);
             else if (result > 0 && result <= themes.size())
                 editor->applyTheme (themes[result - 1]);
+        });
+}
+
+void HeaderBar::openFileBrowser()
+{
+    fileChooser = std::make_unique<juce::FileChooser> (
+        "Load Audio File",
+        juce::File(),
+        "*.wav;*.ogg;*.aiff;*.flac;*.mp3");
+
+    fileChooser->launchAsync (juce::FileBrowserComponent::openMode
+                                | juce::FileBrowserComponent::canSelectFiles,
+        [this] (const juce::FileChooser& fc)
+        {
+            auto result = fc.getResult();
+            if (result.existsAsFile())
+            {
+                IntersectProcessor::Command cmd;
+                cmd.type = IntersectProcessor::CmdLoadFile;
+                cmd.fileParam = result;
+                processor.pushCommand (cmd);
+                processor.zoom.store (1.0f);
+                processor.scroll.store (0.0f);
+            }
         });
 }
