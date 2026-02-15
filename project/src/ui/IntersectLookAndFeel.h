@@ -28,7 +28,12 @@ public:
 
     juce::Typeface::Ptr getTypefaceForFont (const juce::Font& f) override;
 
+    static juce::Font makeFont (float pointSize, bool bold = false);
+
 private:
+    static juce::Typeface::Ptr sRegularTypeface;
+    static juce::Typeface::Ptr sBoldTypeface;
+
     juce::Typeface::Ptr regularTypeface;
     juce::Typeface::Ptr boldTypeface;
 };

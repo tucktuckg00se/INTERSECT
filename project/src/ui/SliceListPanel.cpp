@@ -10,14 +10,14 @@ void SliceListPanel::paint (juce::Graphics& g)
     int sel = processor.sliceManager.selectedSlice;
 
     // Label
-    g.setFont (juce::Font (9.0f));
+    g.setFont (IntersectLookAndFeel::makeFont (9.0f));
     g.setColour (getTheme().foreground.withAlpha (0.4f));
     g.drawText ("SLICES", 0, 0, kBtnW, 10, juce::Justification::centredLeft);
 
     int y = 12;
     int maxVisible = (getHeight() - 24) / (kBtnH + 2);
 
-    g.setFont (juce::Font (11.0f));
+    g.setFont (IntersectLookAndFeel::makeFont (11.0f));
 
     for (int i = 0; i < num && i < maxVisible; ++i)
     {
@@ -38,7 +38,7 @@ void SliceListPanel::paint (juce::Graphics& g)
     if (num > maxVisible)
     {
         g.setColour (getTheme().foreground.withAlpha (0.4f));
-        g.setFont (juce::Font (10.0f));
+        g.setFont (IntersectLookAndFeel::makeFont (10.0f));
         g.drawText ("+" + juce::String (num - maxVisible) + " more",
                      0, y + maxVisible * (kBtnH + 2), kBtnW, 14,
                      juce::Justification::centred);

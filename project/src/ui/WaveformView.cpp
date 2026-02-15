@@ -102,7 +102,7 @@ void WaveformView::paint (juce::Graphics& g)
     else
     {
         g.setColour (getTheme().foreground.withAlpha (0.25f));
-        g.setFont (juce::Font (22.0f));
+        g.setFont (IntersectLookAndFeel::makeFont (22.0f));
         g.drawText ("DROP AUDIO FILE", getLocalBounds(), juce::Justification::centred);
     }
 }
@@ -164,14 +164,14 @@ void WaveformView::drawSlices (juce::Graphics& g)
             g.fillPath (triE);
 
             // "S" and "E" labels near handles
-            g.setFont (juce::Font (10.0f).boldened());
+            g.setFont (IntersectLookAndFeel::makeFont (10.0f, true));
             g.setColour (juce::Colours::white.withAlpha (0.7f));
             g.drawText ("S", x1 + 2, getHeight() - 24, 12, 12, juce::Justification::centredLeft);
             g.drawText ("E", x2 - 14, getHeight() - 24, 12, 12, juce::Justification::centredRight);
 
             // Label
             g.setColour (juce::Colours::white.withAlpha (0.85f));
-            g.setFont (juce::Font (13.0f).boldened());
+            g.setFont (IntersectLookAndFeel::makeFont (13.0f, true));
             g.drawText ("Slice " + juce::String (i + 1), x1 + 3, 3, 70, 14,
                          juce::Justification::centredLeft);
         }

@@ -66,7 +66,7 @@ void ScrollZoomBar::paint (juce::Graphics& g)
             g.drawVerticalLine (tx, 1.0f, (float) h * 0.5f);
 
             // Label
-            g.setFont (juce::Font (10.0f));
+            g.setFont (IntersectLookAndFeel::makeFont (10.0f));
             g.setColour (getTheme().foreground.withAlpha (0.45f));
             juce::String label;
             if (majorStep >= 1.0f)

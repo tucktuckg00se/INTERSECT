@@ -6,7 +6,7 @@ SliceLane::SliceLane (IntersectProcessor& p) : processor (p) {}
 
 void SliceLane::paint (juce::Graphics& g)
 {
-    g.fillAll (getTheme().darkBar);
+    g.fillAll (getTheme().darkBar.brighter (0.04f));
 
     int numFrames = processor.sampleData.getNumFrames();
     if (numFrames <= 0)
@@ -77,7 +77,7 @@ void SliceLane::paint (juce::Graphics& g)
         if (sw > 14)
         {
             juce::String label = juce::String (si.idx + 1);
-            g.setFont (juce::Font (12.0f).boldened());
+            g.setFont (IntersectLookAndFeel::makeFont (12.0f, true));
             int labelW = (int) g.getCurrentFont().getStringWidthFloat (label) + 6;
             int labelX = si.x1 + 3;
 
