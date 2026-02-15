@@ -26,13 +26,6 @@ A time-stretching intersecting sample slicer plugin with independent per-slice p
 
 Requires CMake 3.22+ and a C++20 compiler.
 
-```bash
-git clone --recursive git@github.com:tucktuckg00se/INTERSECT.git
-cd INTERSECT
-cmake -B build -S project
-cmake --build build --config Release
-```
-
 ### Windows
 
 **Prerequisites:** [Visual Studio 2022](https://visualstudio.microsoft.com/) (Desktop development with C++ workload), [CMake 3.22+](https://cmake.org/download/)
@@ -114,4 +107,4 @@ This plugin is 100% vibe-coded
 
 ## License
 
-All rights reserved.
+This project is licensed under the [GNU General Public License v3.0](LICENSE).
