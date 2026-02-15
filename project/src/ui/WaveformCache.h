@@ -13,11 +13,6 @@ public:
     const std::vector<Peak>& getPeaks() const { return peaks; }
     int getNumPeaks() const { return (int) peaks.size(); }
 
-    int getVisibleStart() const { return visibleStart; }
-    int getVisibleLen() const { return visibleLen; }
-
 private:
     std::vector<Peak> peaks;
-    int visibleStart = 0;
-    int visibleLen   = 0;
 };

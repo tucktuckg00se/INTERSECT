@@ -12,7 +12,6 @@ public:
     int  createSlice (int start, int end);
     void deleteSlice (int idx);
     void clearAll();
-    void createDefaultSlice (int sampleLen);
     void rebuildMidiMap();
     int  midiNoteToSlice (int note) const;
 

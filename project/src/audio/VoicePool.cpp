@@ -331,12 +331,6 @@ static void fillBungeeBlock (Voice& v, const SampleData& sample)
     for (int i = 0; i < numFrames; ++i)
     {
         double pos = inputChunk.begin + i;
-        int muteHead = 0, muteTail = 0;
-
-        if (pos < v.startSample)
-            muteHead = std::max (muteHead, (int)(v.startSample - inputChunk.begin));
-        if (pos >= v.endSample)
-            muteTail = std::max (muteTail, (int)(inputChunk.end - v.endSample));
 
         float sL = 0.0f, sR = 0.0f;
         if (pos >= v.startSample && pos < v.endSample)

@@ -11,7 +11,7 @@ public:
     void stop (VoicePool& voicePool, SliceManager& sliceMgr);
     void onNote (int note, VoicePool& voicePool, SliceManager& sliceMgr);
 
-    int getPreviewVoiceIndex() const { return VoicePool::kMaxVoices - 1; }
+    static int getPreviewVoiceIndex() { return VoicePool::kMaxVoices - 1; }
 
 private:
     void startPreview (VoicePool& voicePool, int fromPos);

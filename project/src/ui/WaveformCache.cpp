@@ -11,8 +11,8 @@ void WaveformCache::rebuild (const juce::AudioBuffer<float>& buffer, int numFram
         return;
     }
 
-    visibleLen = (int) (numFrames / zoom);
-    visibleStart = (int) (scroll * (numFrames - visibleLen));
+    int visibleLen = (int) (numFrames / zoom);
+    int visibleStart = (int) (scroll * (numFrames - visibleLen));
     visibleStart = std::max (0, std::min (visibleStart, numFrames - visibleLen));
 
     peaks.resize ((size_t) widthPixels);

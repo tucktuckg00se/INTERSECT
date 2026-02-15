@@ -101,20 +101,6 @@ void SliceManager::clearAll()
     rebuildMidiMap();
 }
 
-void SliceManager::createDefaultSlice (int sampleLen)
-{
-    if (sampleLen <= 0)
-        return;
-
-    // Reset all slices
-    numSlices = 0;
-    for (auto& s : slices)
-        s.active = false;
-
-    createSlice (0, sampleLen);
-    selectedSlice = 0;
-}
-
 void SliceManager::rebuildMidiMap()
 {
     midiMap.fill (-1);

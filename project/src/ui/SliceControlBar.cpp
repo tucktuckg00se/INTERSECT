@@ -700,8 +700,8 @@ void SliceControlBar::showSetBpmPopup()
 
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this),
         [this] (int result) {
-            if (result <= 0) return;
-            float bars[] = { 0.0f, 16.0f, 8.0f, 4.0f, 2.0f, 1.0f, 0.5f, 0.25f, 0.125f, 0.0625f };
+            if (result <= 0 || result > 9) return;
+            const float bars[] = { 0.0f, 16.0f, 8.0f, 4.0f, 2.0f, 1.0f, 0.5f, 0.25f, 0.125f, 0.0625f };
 
             IntersectProcessor::Command cmd;
             cmd.type = IntersectProcessor::CmdStretch;
