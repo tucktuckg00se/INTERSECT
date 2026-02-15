@@ -7,7 +7,7 @@ class LazyChopEngine
 public:
     bool isActive() const { return active; }
 
-    void start (int sampleLen);
+    void start (int sampleLen, SliceManager& sliceMgr);
     void stop (VoicePool& voicePool, SliceManager& sliceMgr);
     void onNote (int note, VoicePool& voicePool, SliceManager& sliceMgr);
 

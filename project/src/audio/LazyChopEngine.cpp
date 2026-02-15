@@ -1,14 +1,23 @@
 #include "LazyChopEngine.h"
 #include <cmath>
 
-void LazyChopEngine::start (int sampleLen)
+void LazyChopEngine::start (int sampleLen, SliceManager& sliceMgr)
 {
     active = true;
     playing = false;
     chopPos = 0;
-    nextMidiNote = 36;
     sampleLength = sampleLen;
     lastNote = -1;
+
+    nextMidiNote = sliceMgr.rootNote.load();
+    int num = sliceMgr.getNumSlices();
+    for (int i = 0; i < num; ++i)
+    {
+        const auto& s = sliceMgr.getSlice (i);
+        if (s.active && s.midiNote >= nextMidiNote)
+            nextMidiNote = s.midiNote + 1;
+    }
+    nextMidiNote = std::min (nextMidiNote, 127);
 }
 
 void LazyChopEngine::startPreview (VoicePool& voicePool, int fromPos)
@@ -63,7 +72,6 @@ void LazyChopEngine::onNote (int note, VoicePool& voicePool, SliceManager& slice
     {
         startPreview (voicePool, 0);
         chopPos = 0;
-        nextMidiNote = 36;
         lastNote = note;
         playing = true;
         return;

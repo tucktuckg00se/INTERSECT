@@ -45,7 +45,7 @@ int SliceManager::createSlice (int start, int end)
     s.active      = true;
     s.startSample = start;
     s.endSample   = end;
-    s.midiNote    = std::min (36 + idx, 127);
+    s.midiNote    = std::min (rootNote.load() + idx, 127);
     s.lockMask    = 0;
 
     // Default override values
@@ -76,7 +76,7 @@ void SliceManager::deleteSlice (int idx)
     for (int i = idx; i < numSlices - 1; ++i)
     {
         slices[i] = slices[i + 1];
-        slices[i].midiNote = std::min (36 + i, 127);
+        slices[i].midiNote = std::min (rootNote.load() + i, 127);
     }
 
     // Deactivate last

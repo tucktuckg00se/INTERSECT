@@ -15,6 +15,8 @@ public:
     bool isLoaded() const { return loaded; }
 
     const juce::AudioBuffer<float>& getBuffer() const { return buffer; }
+    const juce::String& getFileName() const { return loadedFileName; }
+    void setFileName (const juce::String& name) { loadedFileName = name; }
 
     void loadFromBuffer (juce::AudioBuffer<float>&& buf)
     {
@@ -25,5 +27,6 @@ public:
 private:
     juce::AudioBuffer<float> buffer;  // always stereo
     juce::AudioFormatManager formatManager;
+    juce::String loadedFileName;
     bool loaded = false;
 };

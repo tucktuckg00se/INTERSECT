@@ -15,9 +15,9 @@ private:
     IntersectProcessor& processor;
     WaveformView& waveformView;
 
-    juce::TextButton addSliceBtn  { "+SLC" };
-    juce::TextButton lazyChopBtn  { "LZY" };
-    juce::TextButton dupBtn       { "DUP" };
-    juce::TextButton splitBtn     { "SPLT" };
+    juce::TextButton addSliceBtn  { "ADD" };
+    juce::TextButton lazyChopBtn  { "LAZY" };
+    juce::TextButton dupBtn       { "COPY" };
+    juce::TextButton splitBtn     { "AUTO" };
     juce::TextButton deleteBtn    { "DEL" };
 };

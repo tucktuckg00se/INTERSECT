@@ -54,6 +54,7 @@ bool SampleData::loadFromFile (const juce::File& file, double projectSampleRate)
         buffer.copyFrom (1, 0, sourceBuffer, 0, 0, numFrames);
     }
 
+    loadedFileName = file.getFileName();
     loaded = true;
     return true;
 }

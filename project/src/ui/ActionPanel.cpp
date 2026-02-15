@@ -14,6 +14,9 @@ ActionPanel::ActionPanel (IntersectProcessor& p, WaveformView& wv)
 
     addSliceBtn.onClick = [this] {
         waveformView.sliceDrawMode = ! waveformView.sliceDrawMode;
+        waveformView.setMouseCursor (waveformView.sliceDrawMode
+            ? juce::MouseCursor::IBeamCursor
+            : juce::MouseCursor::NormalCursor);
         repaint();
     };
 
@@ -102,6 +105,6 @@ void ActionPanel::paint (juce::Graphics& g)
     }
     else
     {
-        lazyChopBtn.setButtonText ("LZY");
+        lazyChopBtn.setButtonText ("LAZY");
     }
 }

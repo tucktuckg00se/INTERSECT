@@ -57,11 +57,37 @@ void SliceControlBar::paint (juce::Graphics& g)
     int idx = processor.sliceManager.selectedSlice;
     int numSlices = processor.sliceManager.getNumSlices();
 
+    // Root note display (always visible)
+    {
+        int rn = processor.sliceManager.rootNote.load();
+        bool editable = (numSlices == 0);
+        int rnX = getWidth() - 60;
+        int rnY = 28;
+        rootNoteArea = { rnX, rnY, 50, 24 };
+
+        g.setFont (juce::Font (9.0f));
+        g.setColour (editable ? getTheme().accent.withAlpha (0.7f)
+                              : getTheme().foreground.withAlpha (0.45f));
+        g.drawText ("ROOT", rnX, rnY + 1, 50, 10, juce::Justification::centredLeft);
+        g.setFont (juce::Font (11.0f));
+        g.setColour (editable ? getTheme().foreground
+                              : getTheme().foreground.withAlpha (0.8f));
+        g.drawText (juce::String (rn), rnX, rnY + 11, 50, 12, juce::Justification::centredLeft);
+    }
+
     if (idx < 0 || idx >= numSlices)
     {
         g.setFont (juce::Font (12.0f));
         g.setColour (getTheme().foreground.withAlpha (0.35f));
         g.drawText ("No slice selected", 8, 20, 200, 16, juce::Justification::centredLeft);
+
+        // Show slice count even when no slice is selected
+        g.setFont (juce::Font (9.0f));
+        g.setColour (getTheme().foreground.withAlpha (0.45f));
+        g.drawText ("SLICES", getWidth() - 120, 28 + 1, 50, 10, juce::Justification::centredLeft);
+        g.setFont (juce::Font (11.0f));
+        g.setColour (getTheme().foreground.withAlpha (0.8f));
+        g.drawText (juce::String (numSlices), getWidth() - 120, 28 + 11, 50, 12, juce::Justification::centredLeft);
         return;
     }
 
@@ -232,6 +258,14 @@ void SliceControlBar::paint (juce::Graphics& g)
     g.drawText (juce::String (s.startSample) + "-" + juce::String (s.endSample) +
                 " (" + juce::String (lenSec, 2) + "s)",
                 x, row2y + 6, 200, 12, juce::Justification::centredLeft);
+
+    // Slice count (right side of row 2)
+    g.setFont (juce::Font (9.0f));
+    g.setColour (getTheme().foreground.withAlpha (0.45f));
+    g.drawText ("SLICES", getWidth() - 120, row2y + 1, 50, 10, juce::Justification::centredLeft);
+    g.setFont (juce::Font (11.0f));
+    g.setColour (getTheme().foreground.withAlpha (0.8f));
+    g.drawText (juce::String (numSlices), getWidth() - 120, row2y + 11, 50, 12, juce::Justification::centredLeft);
 }
 
 void SliceControlBar::mouseDown (const juce::MouseEvent& e)
@@ -239,7 +273,17 @@ void SliceControlBar::mouseDown (const juce::MouseEvent& e)
     if (textEditor != nullptr)
         textEditor.reset();
 
+    draggingRootNote = false;
     auto pos = e.getPosition();
+
+    // Root note drag (only editable when no slices exist)
+    if (processor.sliceManager.getNumSlices() == 0 && rootNoteArea.contains (pos))
+    {
+        draggingRootNote = true;
+        dragStartY = pos.y;
+        dragStartValue = (float) processor.sliceManager.rootNote.load();
+        return;
+    }
 
     for (int i = 0; i < (int) cells.size(); ++i)
     {
@@ -402,6 +446,16 @@ void SliceControlBar::mouseDown (const juce::MouseEvent& e)
 
 void SliceControlBar::mouseDrag (const juce::MouseEvent& e)
 {
+    if (draggingRootNote)
+    {
+        float deltaY = (float) (dragStartY - e.y);
+        int newVal = (int) (dragStartValue + deltaY * (127.0f / 200.0f));
+        newVal = juce::jlimit (0, 127, newVal);
+        processor.sliceManager.rootNote.store (newVal);
+        repaint();
+        return;
+    }
+
     if (activeDragCell < 0 || activeDragCell >= (int) cells.size())
         return;
 
@@ -426,6 +480,33 @@ void SliceControlBar::mouseDrag (const juce::MouseEvent& e)
 void SliceControlBar::mouseDoubleClick (const juce::MouseEvent& e)
 {
     auto pos = e.getPosition();
+
+    // Root note text entry (only when no slices)
+    if (processor.sliceManager.getNumSlices() == 0 && rootNoteArea.contains (pos))
+    {
+        textEditor = std::make_unique<juce::TextEditor>();
+        addAndMakeVisible (*textEditor);
+        textEditor->setBounds (rootNoteArea.getX(), rootNoteArea.getY() + 10,
+                               rootNoteArea.getWidth(), 14);
+        textEditor->setFont (juce::Font (11.0f));
+        textEditor->setColour (juce::TextEditor::backgroundColourId, getTheme().darkBar.brighter (0.15f));
+        textEditor->setColour (juce::TextEditor::textColourId, getTheme().foreground);
+        textEditor->setColour (juce::TextEditor::outlineColourId, getTheme().accent);
+        textEditor->setText (juce::String (processor.sliceManager.rootNote.load()), false);
+        textEditor->selectAll();
+        textEditor->grabKeyboardFocus();
+
+        textEditor->onReturnKey = [this] {
+            if (textEditor == nullptr) return;
+            int val = juce::jlimit (0, 127, textEditor->getText().getIntValue());
+            processor.sliceManager.rootNote.store (val);
+            textEditor.reset();
+            repaint();
+        };
+        textEditor->onEscapeKey = [this] { textEditor.reset(); repaint(); };
+        textEditor->onFocusLost = [this] { textEditor.reset(); repaint(); };
+        return;
+    }
 
     for (int i = 0; i < (int) cells.size(); ++i)
     {

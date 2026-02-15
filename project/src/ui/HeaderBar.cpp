@@ -8,12 +8,8 @@
 HeaderBar::HeaderBar (IntersectProcessor& p) : processor (p)
 {
     addAndMakeVisible (loadBtn);
-    addAndMakeVisible (scaleDownBtn);
-    addAndMakeVisible (scaleUpBtn);
     addAndMakeVisible (themeBtn);
     loadBtn.setAlwaysOnTop (true);
-    scaleDownBtn.setAlwaysOnTop (true);
-    scaleUpBtn.setAlwaysOnTop (true);
     themeBtn.setAlwaysOnTop (true);
 
     loadBtn.onClick = [this] {
@@ -39,22 +35,16 @@ HeaderBar::HeaderBar (IntersectProcessor& p) : processor (p)
             });
     };
 
-    scaleDownBtn.onClick = [this] { adjustScale (-0.25f); };
-    scaleUpBtn.onClick   = [this] { adjustScale (0.25f); };
-
     themeBtn.onClick = [this] { showThemePopup(); };
 }
 
 void HeaderBar::resized()
 {
-    int btnW = 20;
     int btnH = 16;
     int right = getWidth();
 
-    scaleUpBtn.setBounds   (right - btnW - 4, 4, btnW, btnH);
-    scaleDownBtn.setBounds (right - btnW * 2 - 6, 4, btnW, btnH);
-    themeBtn.setBounds     (right - btnW * 3 - 10, 4, btnW + 4, btnH);
-    loadBtn.setBounds      (right - btnW * 3 - 10 - 42, 4, 38, btnH);
+    themeBtn.setBounds     (right - 28, 4, 24, btnH);
+    loadBtn.setBounds      (right - 28 - 42, 4, 38, btnH);
 }
 
 void HeaderBar::adjustScale (float delta)
@@ -75,14 +65,10 @@ void HeaderBar::paint (juce::Graphics& g)
     if (processor.sampleData.isLoaded())
     {
         // --- Row 1: SAMPLE A | BPM | SET BPM | PITCH | ALGO | TONAL | FMNT | FMNT C | slice count | scale btns ---
-        g.setColour (juce::Colours::white);
-        g.setFont (juce::Font (14.0f).boldened());
-        g.drawText ("SAMPLE A", 8, 4, 70, 16, juce::Justification::centredLeft);
-
         g.setFont (juce::Font (11.0f));
         g.setColour (getTheme().foreground.withAlpha (0.9f));
 
-        int x = 90;
+        int x = 8;
         int row1y = 2;
         int row1h = 22;
 
@@ -98,10 +84,11 @@ void HeaderBar::paint (juce::Graphics& g)
         // SET BPM (sample-level) — right after BPM
         g.setFont (juce::Font (9.0f));
         g.setColour (getTheme().accent);
-        g.drawText ("SET BPM", x, row1y + 4, 50, 14, juce::Justification::centredLeft);
-        headerCells.push_back ({ x, row1y, 50, row1h, juce::String(), 0.0f, 0.0f, 0.0f, false, false, false, true });
+        g.drawText ("SET", x + 2, row1y, 30, 10, juce::Justification::centredLeft);
+        g.drawText ("BPM", x + 2, row1y + 10, 30, 10, juce::Justification::centredLeft);
+        headerCells.push_back ({ x, row1y, 34, row1h, juce::String(), 0.0f, 0.0f, 0.0f, false, false, false, true });
         g.setColour (getTheme().foreground.withAlpha (0.9f));
-        x += 55;
+        x += 38;
 
         // PITCH — may be read-only in Repitch+Stretch mode
         {
@@ -192,11 +179,20 @@ void HeaderBar::paint (juce::Graphics& g)
             x += 65;
         }
 
-        // Slice count (right side of row 1, before scale buttons)
-        g.setFont (juce::Font (10.0f));
-        g.setColour (getTheme().foreground.withAlpha (0.5f));
-        g.drawText ("Slices: " + juce::String (processor.sliceManager.getNumSlices()),
-                     getWidth() - 130, row1y + 6, 80, 14, juce::Justification::centredRight);
+        // Filename and sample info (right side of row 1, before buttons)
+        {
+            g.setFont (juce::Font (9.0f));
+            g.setColour (getTheme().foreground.withAlpha (0.35f));
+            g.drawText ("SAMPLE", x, row1y, 50, 10, juce::Justification::centredLeft);
+            g.setFont (juce::Font (11.0f));
+            g.setColour (getTheme().foreground.withAlpha (0.7f));
+            juce::String fname = processor.sampleData.getFileName();
+            double srate = processor.getSampleRate();
+            if (srate <= 0) srate = 44100.0;
+            double lenSec = processor.sampleData.getNumFrames() / srate;
+            g.drawText (fname + " (" + juce::String (lenSec, 2) + "s)",
+                        x, row1y + 10, getWidth() - x - 74, 12, juce::Justification::centredLeft);
+        }
 
         // --- Separator line between rows ---
         g.setColour (getTheme().separator);
@@ -521,12 +517,26 @@ void HeaderBar::showThemePopup()
     auto currentName = getTheme().name;
 
     juce::PopupMenu menu;
+
+    // Scale section
+    menu.addSectionHeader ("Scale");
+    float currentScale = processor.apvts.getRawParameterValue (ParamIds::uiScale)->load();
+    menu.addItem (100, "Scale Down (" + juce::String (currentScale, 2) + "x)");
+    menu.addItem (101, "Scale Up");
+    menu.addSeparator();
+
+    // Theme section
+    menu.addSectionHeader ("Theme");
     for (int i = 0; i < themes.size(); ++i)
         menu.addItem (i + 1, themes[i], true, themes[i] == currentName);
 
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&themeBtn),
-        [editor, themes] (int result) {
-            if (result > 0 && result <= themes.size())
+        [this, editor, themes] (int result) {
+            if (result == 100)
+                adjustScale (-0.25f);
+            else if (result == 101)
+                adjustScale (0.25f);
+            else if (result > 0 && result <= themes.size())
                 editor->applyTheme (themes[result - 1]);
         });
 }

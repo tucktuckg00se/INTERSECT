@@ -73,7 +73,7 @@ void IntersectProcessor::handleCommand (const Command& cmd)
 
         case CmdLazyChopStart:
             if (sampleData.isLoaded())
-                lazyChop.start (sampleData.getNumFrames());
+                lazyChop.start (sampleData.getNumFrames(), sliceManager);
             break;
 
         case CmdLazyChopStop:
@@ -321,7 +321,7 @@ void IntersectProcessor::getStateInformation (juce::MemoryBlock& destData)
     juce::MemoryOutputStream stream (destData, false);
 
     // Version
-    stream.writeInt (7);
+    stream.writeInt (8);
 
     // APVTS state
     auto state = apvts.copyState();
@@ -334,6 +334,7 @@ void IntersectProcessor::getStateInformation (juce::MemoryBlock& destData)
     stream.writeFloat (scroll.load());
     stream.writeInt (sliceManager.selectedSlice);
     stream.writeBool (midiSelectsSlice.load());
+    stream.writeInt (sliceManager.rootNote.load());
 
     // Slice data
     int numSlices = sliceManager.getNumSlices();
@@ -379,6 +380,9 @@ void IntersectProcessor::getStateInformation (juce::MemoryBlock& destData)
             stream.writeFloat (buf.getSample (1, f));
         }
     }
+
+    // v8: sample filename
+    stream.writeString (sampleData.getFileName());
 }
 
 void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
@@ -402,6 +406,10 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
     if (version >= 4)
     {
         midiSelectsSlice.store (stream.readBool());
+    }
+    if (version >= 8)
+    {
+        sliceManager.rootNote.store (stream.readInt());
     }
 
     // Sample bounds (version 2/3 — read and discard for backward compat)
@@ -464,6 +472,9 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
         }
         sampleData.loadFromBuffer (std::move (restoredBuf));
     }
+
+    if (version >= 8)
+        sampleData.setFileName (stream.readString());
 
     sliceManager.rebuildMidiMap();
 }

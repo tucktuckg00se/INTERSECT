@@ -34,9 +34,7 @@ private:
 
     IntersectProcessor& processor;
     juce::TextButton loadBtn { "LOAD" };
-    juce::TextButton scaleDownBtn { juce::String::charToString (0x2212) };  // minus
-    juce::TextButton scaleUpBtn   { "+" };
-    juce::TextButton themeBtn { "THM" };
+    juce::TextButton themeBtn { "UI" };
 
     std::unique_ptr<juce::FileChooser> fileChooser;
 

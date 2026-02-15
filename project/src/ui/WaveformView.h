@@ -43,6 +43,7 @@ private:
     DragMode dragMode = None;
     int dragSliceIdx = -1;
     int drawStart = 0;
+    int drawEnd = 0;
     int dragOffset = 0;    // for MoveSlice: offset from mouse to slice start
     int dragSliceLen = 0;  // for MoveSlice: original slice length
 

@@ -41,6 +41,10 @@ private:
     float dragStartValue = 0.0f;
     int dragStartY = 0;
 
+    // Root note cell (editable when no slices exist)
+    juce::Rectangle<int> rootNoteArea;
+    bool draggingRootNote = false;
+
     // Text editor overlay
     std::unique_ptr<juce::TextEditor> textEditor;
 };

@@ -24,6 +24,7 @@ public:
     void setNumSlices (int n) { numSlices = juce::jlimit (0, kMaxSlices, n); }
 
     int  selectedSlice = -1;
+    std::atomic<int> rootNote { 36 };
 
     static const juce::Colour slicePalette[16];
 

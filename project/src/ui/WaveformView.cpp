@@ -59,6 +59,22 @@ void WaveformView::paint (juce::Graphics& g)
         rebuildCacheIfNeeded();
         drawWaveform (g);
         drawSlices (g);
+
+        // Draw slice preview while dragging in +SLC mode
+        if (dragMode == DrawSlice)
+        {
+            int x1 = sampleToPixel (std::min (drawStart, drawEnd));
+            int x2 = sampleToPixel (std::max (drawStart, drawEnd));
+            if (x2 > x1)
+            {
+                g.setColour (getTheme().accent.withAlpha (0.2f));
+                g.fillRect (x1, 0, x2 - x1, getHeight());
+                g.setColour (getTheme().accent.withAlpha (0.6f));
+                g.drawVerticalLine (x1, 0.0f, (float) getHeight());
+                g.drawVerticalLine (x2, 0.0f, (float) getHeight());
+            }
+        }
+
         drawPlaybackCursors (g);
     }
     else
@@ -202,6 +218,7 @@ void WaveformView::mouseDown (const juce::MouseEvent& e)
     if (sliceDrawMode)
     {
         drawStart = samplePos;
+        drawEnd = samplePos;
         dragMode = DrawSlice;
         return;
     }
@@ -274,6 +291,13 @@ void WaveformView::mouseDrag (const juce::MouseEvent& e)
 
     int samplePos = std::max (0, std::min (pixelToSample (e.x), processor.sampleData.getNumFrames()));
 
+    if (dragMode == DrawSlice)
+    {
+        drawEnd = samplePos;
+        repaint();
+        return;
+    }
+
     if (dragMode == DragEdgeLeft && dragSliceIdx >= 0)
     {
         auto& s = processor.sliceManager.getSlice (dragSliceIdx);
@@ -322,6 +346,7 @@ void WaveformView::mouseUp (const juce::MouseEvent& e)
             cmd.intParam2 = endPos;
             processor.pushCommand (cmd);
             sliceDrawMode = false;
+            setMouseCursor (juce::MouseCursor::NormalCursor);
         }
         // If click without dragging (< 64 samples), keep draw mode active
     }
@@ -336,6 +361,16 @@ void WaveformView::mouseUp (const juce::MouseEvent& e)
 
 void WaveformView::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w)
 {
+    if (w.deltaX != 0.0f)
+    {
+        float sc = processor.scroll.load();
+        sc -= w.deltaX * 0.05f;
+        processor.scroll.store (juce::jlimit (0.0f, 1.0f, sc));
+        prevWidth = -1;
+        repaint();
+        return;
+    }
+
     if (e.mods.isShiftDown())
     {
         // Scroll
