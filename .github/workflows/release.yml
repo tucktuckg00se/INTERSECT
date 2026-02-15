@@ -21,7 +21,10 @@ jobs:
 
       - name: Package
         run: |
-          7z a INTERSECT-Windows.zip ./build/Intersect_artefacts/Release/VST3/INTERSECT.vst3 ./build/Intersect_artefacts/Release/Standalone/INTERSECT.exe
+          mkdir staging
+          cp -r build/Intersect_artefacts/Release/VST3/INTERSECT.vst3 staging/
+          cp build/Intersect_artefacts/Release/Standalone/INTERSECT.exe staging/
+          cd staging && 7z a ../INTERSECT-Windows.zip *
 
       - uses: actions/upload-artifact@v4
         with:
@@ -48,7 +51,10 @@ jobs:
 
       - name: Package
         run: |
-          zip -r INTERSECT-Linux.zip build/Intersect_artefacts/Release/VST3/INTERSECT.vst3 build/Intersect_artefacts/Release/Standalone/INTERSECT
+          mkdir staging
+          cp -r build/Intersect_artefacts/Release/VST3/INTERSECT.vst3 staging/
+          cp build/Intersect_artefacts/Release/Standalone/INTERSECT staging/
+          cd staging && zip -r ../INTERSECT-Linux.zip .
 
       - uses: actions/upload-artifact@v4
         with:
@@ -70,7 +76,11 @@ jobs:
 
       - name: Package
         run: |
-          zip -r INTERSECT-macOS.zip build/Intersect_artefacts/Release/VST3/INTERSECT.vst3 build/Intersect_artefacts/Release/Standalone/INTERSECT.app build/Intersect_artefacts/Release/AU/INTERSECT.component
+          mkdir staging
+          cp -r build/Intersect_artefacts/Release/VST3/INTERSECT.vst3 staging/
+          cp -r build/Intersect_artefacts/Release/Standalone/INTERSECT.app staging/
+          cp -r build/Intersect_artefacts/Release/AU/INTERSECT.component staging/
+          cd staging && zip -r ../INTERSECT-macOS.zip .
 
       - uses: actions/upload-artifact@v4
         with:

@@ -22,6 +22,48 @@ A time-stretching intersecting sample slicer plugin with independent per-slice p
 - **Full state recall** — all parameters, slices, and audio data saved/restored with the DAW session
 - **Dark industrial theme** — styled popup menus and controls
 
+## Install
+
+Download the latest release zip for your platform from the [Releases](https://github.com/tucktuckg00se/INTERSECT/releases) page and extract it.
+
+### Windows
+
+Copy `INTERSECT.vst3` to your VST3 folder:
+
+```
+C:\Program Files\Common Files\VST3\
+```
+
+Or run `INTERSECT.exe` as a standalone app.
+
+### macOS
+
+Copy `INTERSECT.vst3` to your VST3 folder:
+
+```
+~/Library/Audio/Plug-Ins/VST3/
+```
+
+For AU, copy `INTERSECT.component` to:
+
+```
+~/Library/Audio/Plug-Ins/Components/
+```
+
+Or run `INTERSECT.app` as a standalone app.
+
+### Linux
+
+Copy `INTERSECT.vst3` to your VST3 folder:
+
+```
+~/.vst3/
+```
+
+Or run the `INTERSECT` standalone binary directly.
+
+After installing, rescan plugins in your DAW to pick up INTERSECT.
+
 ## Build
 
 Requires CMake 3.22+ and a C++20 compiler.
