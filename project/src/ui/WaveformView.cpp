@@ -75,6 +75,28 @@ void WaveformView::paint (juce::Graphics& g)
             }
         }
 
+        // Draw lazy chop preview: highlight between chopPos and playhead
+        if (processor.lazyChop.isActive() && processor.lazyChop.isPlaying()
+            && processor.lazyChop.getChopPos() >= 0)
+        {
+            int previewIdx = LazyChopEngine::getPreviewVoiceIndex();
+            float playhead = processor.voicePool.voicePositions[previewIdx].load (std::memory_order_relaxed);
+            if (playhead > 0.0f)
+            {
+                int chopSample = processor.lazyChop.getChopPos();
+                int headSample = (int) playhead;
+                int x1 = sampleToPixel (std::min (chopSample, headSample));
+                int x2 = sampleToPixel (std::max (chopSample, headSample));
+                if (x2 > x1)
+                {
+                    g.setColour (juce::Colour (0xFFCC4444).withAlpha (0.15f));
+                    g.fillRect (x1, 0, x2 - x1, getHeight());
+                    g.setColour (juce::Colour (0xFFCC4444).withAlpha (0.5f));
+                    g.drawVerticalLine (sampleToPixel (chopSample), 0.0f, (float) getHeight());
+                }
+            }
+        }
+
         drawPlaybackCursors (g);
     }
     else

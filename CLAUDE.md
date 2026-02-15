@@ -20,6 +20,7 @@ cmake --build build --config Release
 ```bash
 cd "C:\Users\m_t_w\Documents\claude-projects\tuckers-sampler" && "C:\Program Files\CMake\bin\cmake.exe" --build build --config Release
 ```
+cppcheck location: C:\Program Files\Cppcheck\cppcheck.exe
 
 On Windows, cmake is not on PATH — always use the full path: `"C:\Program Files\CMake\bin\cmake.exe"`
 

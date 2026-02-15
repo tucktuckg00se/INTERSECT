@@ -6,6 +6,8 @@ class LazyChopEngine
 {
 public:
     bool isActive() const { return active; }
+    bool isPlaying() const { return playing; }
+    int  getChopPos() const { return chopPos; }
 
     void start (int sampleLen, SliceManager& sliceMgr);
     void stop (VoicePool& voicePool, SliceManager& sliceMgr);
