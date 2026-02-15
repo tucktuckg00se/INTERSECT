@@ -1,6 +1,6 @@
 # INTERSECT
 
-A time-stretching intersecting sample slicer plugin with independent per-slice parameter control.
+A nondestructive, time-stretching, and intersecting sample slicer plugin with independent per-slice parameter control.
 
 ![INTERSECT screenshot](docs/screenshot.png)
 
