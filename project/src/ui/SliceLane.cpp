@@ -2,25 +2,7 @@
 #include "IntersectLookAndFeel.h"
 #include "../PluginProcessor.h"
 
-SliceLane::SliceLane (IntersectProcessor& p) : processor (p)
-{
-    addAndMakeVisible (midiSelectBtn);
-    midiSelectBtn.setTooltip ("MIDI selects slice");
-    midiSelectBtn.onClick = [this] {
-        bool current = processor.midiSelectsSlice.load();
-        bool newState = ! current;
-        processor.midiSelectsSlice.store (newState);
-        updateMidiButtonAppearance (newState);
-        repaint();
-    };
-    updateMidiButtonAppearance (false);
-}
-
-void SliceLane::resized()
-{
-    int btnW = 20;
-    midiSelectBtn.setBounds (getWidth() - btnW - 2, 2, btnW, getHeight() - 4);
-}
+SliceLane::SliceLane (IntersectProcessor& p) : processor (p) {}
 
 void SliceLane::paint (juce::Graphics& g)
 {
@@ -116,9 +98,6 @@ void SliceLane::paint (juce::Graphics& g)
         }
     }
 
-    // Sync M button appearance with current state
-    updateMidiButtonAppearance (processor.midiSelectsSlice.load());
-
     // Bottom separator line
     g.setColour (getTheme().separator);
     g.drawHorizontalLine (h - 1, 0.0f, (float) w);
@@ -170,21 +149,5 @@ void SliceLane::mouseDown (const juce::MouseEvent& e)
         {
             processor.sliceManager.selectedSlice = overlapping.front();
         }
-    }
-}
-
-void SliceLane::updateMidiButtonAppearance (bool active)
-{
-    if (active)
-    {
-        midiSelectBtn.setColour (juce::TextButton::textColourOnId, getTheme().accent);
-        midiSelectBtn.setColour (juce::TextButton::textColourOffId, getTheme().accent);
-        midiSelectBtn.setColour (juce::TextButton::buttonColourId, getTheme().accent.withAlpha (0.2f));
-    }
-    else
-    {
-        midiSelectBtn.setColour (juce::TextButton::textColourOnId, getTheme().foreground);
-        midiSelectBtn.setColour (juce::TextButton::textColourOffId, getTheme().foreground);
-        midiSelectBtn.setColour (juce::TextButton::buttonColourId, getTheme().button);
     }
 }

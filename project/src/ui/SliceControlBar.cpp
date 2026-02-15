@@ -3,7 +3,42 @@
 #include "../PluginProcessor.h"
 #include "../audio/GrainEngine.h"
 
-SliceControlBar::SliceControlBar (IntersectProcessor& p) : processor (p) {}
+SliceControlBar::SliceControlBar (IntersectProcessor& p) : processor (p)
+{
+    addAndMakeVisible (midiSelectBtn);
+    midiSelectBtn.setAlwaysOnTop (true);
+    midiSelectBtn.setTooltip ("MIDI selects slice");
+    midiSelectBtn.onClick = [this] {
+        bool current = processor.midiSelectsSlice.load();
+        bool newState = ! current;
+        processor.midiSelectsSlice.store (newState);
+        updateMidiButtonAppearance (newState);
+        repaint();
+    };
+    updateMidiButtonAppearance (false);
+}
+
+void SliceControlBar::resized()
+{
+    int btnW = 20;
+    midiSelectBtn.setBounds (getWidth() - btnW - 4, 2, btnW, 22);
+}
+
+void SliceControlBar::updateMidiButtonAppearance (bool active)
+{
+    if (active)
+    {
+        midiSelectBtn.setColour (juce::TextButton::textColourOnId, getTheme().accent);
+        midiSelectBtn.setColour (juce::TextButton::textColourOffId, getTheme().accent);
+        midiSelectBtn.setColour (juce::TextButton::buttonColourId, getTheme().accent.withAlpha (0.2f));
+    }
+    else
+    {
+        midiSelectBtn.setColour (juce::TextButton::textColourOnId, getTheme().foreground);
+        midiSelectBtn.setColour (juce::TextButton::textColourOffId, getTheme().foreground);
+        midiSelectBtn.setColour (juce::TextButton::buttonColourId, getTheme().button);
+    }
+}
 
 void SliceControlBar::drawLockIcon (juce::Graphics& g, int x, int y, bool locked)
 {
@@ -54,14 +89,18 @@ void SliceControlBar::paint (juce::Graphics& g)
     g.fillAll (getTheme().darkBar);
     cells.clear();
 
+    // Sync M button appearance
+    updateMidiButtonAppearance (processor.midiSelectsSlice.load());
+
     int idx = processor.sliceManager.selectedSlice;
     int numSlices = processor.sliceManager.getNumSlices();
+    int rightEdge = midiSelectBtn.getX() - 4;  // right boundary for painted content
 
     // Root note display (always visible)
     {
         int rn = processor.sliceManager.rootNote.load();
         bool editable = (numSlices == 0);
-        int rnX = getWidth() - 60;
+        int rnX = rightEdge - 50;
         int rnY = 28;
         rootNoteArea = { rnX, rnY, 50, 24 };
 
@@ -84,10 +123,10 @@ void SliceControlBar::paint (juce::Graphics& g)
         // Show slice count even when no slice is selected
         g.setFont (juce::Font (9.0f));
         g.setColour (getTheme().foreground.withAlpha (0.45f));
-        g.drawText ("SLICES", getWidth() - 120, 28 + 1, 50, 10, juce::Justification::centredLeft);
+        g.drawText ("SLICES", rightEdge - 110, 28 + 1, 50, 10, juce::Justification::centredLeft);
         g.setFont (juce::Font (11.0f));
         g.setColour (getTheme().foreground.withAlpha (0.8f));
-        g.drawText (juce::String (numSlices), getWidth() - 120, 28 + 11, 50, 12, juce::Justification::centredLeft);
+        g.drawText (juce::String (numSlices), rightEdge - 110, 28 + 11, 50, 12, juce::Justification::centredLeft);
         return;
     }
 
@@ -108,15 +147,15 @@ void SliceControlBar::paint (juce::Graphics& g)
     int cw;
     using F = IntersectProcessor;
 
-    // ====== Row 1 (y=2): Slice N | BPM | SET BPM | PITCH | ALGO | TONAL | FMNT | FMNT C ======
+    // ====== Row 1 (y=2): BPM | SET BPM | PITCH | ALGO | ... | SLICE N (right) ======
     int row1y = 2;
     int x = 8;
 
-    // Slice label
+    // Slice label (right side of row 1, left of M button, right-aligned, ALL CAPS)
     g.setFont (juce::Font (13.0f).boldened());
     g.setColour (getTheme().accent);
-    g.drawText ("Slice " + juce::String (idx + 1), x, row1y + 4, 55, 16, juce::Justification::centredLeft);
-    x = 70;
+    g.drawText ("SLICE " + juce::String (idx + 1), rightEdge - 65, row1y + 4, 60, 16,
+                juce::Justification::centredRight);
 
     // BPM
     bool locked = s.lockMask & kLockBpm;
@@ -262,10 +301,10 @@ void SliceControlBar::paint (juce::Graphics& g)
     // Slice count (right side of row 2)
     g.setFont (juce::Font (9.0f));
     g.setColour (getTheme().foreground.withAlpha (0.45f));
-    g.drawText ("SLICES", getWidth() - 120, row2y + 1, 50, 10, juce::Justification::centredLeft);
+    g.drawText ("SLICES", rightEdge - 110, row2y + 1, 50, 10, juce::Justification::centredLeft);
     g.setFont (juce::Font (11.0f));
     g.setColour (getTheme().foreground.withAlpha (0.8f));
-    g.drawText (juce::String (numSlices), getWidth() - 120, row2y + 11, 50, 12, juce::Justification::centredLeft);
+    g.drawText (juce::String (numSlices), rightEdge - 110, row2y + 11, 50, 12, juce::Justification::centredLeft);
 }
 
 void SliceControlBar::mouseDown (const juce::MouseEvent& e)

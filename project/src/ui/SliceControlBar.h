@@ -8,6 +8,7 @@ class SliceControlBar : public juce::Component
 public:
     explicit SliceControlBar (IntersectProcessor& p);
     void paint (juce::Graphics& g) override;
+    void resized() override;
     void mouseDown (const juce::MouseEvent& e) override;
     void mouseDrag (const juce::MouseEvent& e) override;
     void mouseDoubleClick (const juce::MouseEvent& e) override;
@@ -34,7 +35,10 @@ private:
     void showTextEditor (const ParamCell& cell, float currentValue);
     void showSetBpmPopup();
 
+    void updateMidiButtonAppearance (bool active);
+
     IntersectProcessor& processor;
+    juce::TextButton midiSelectBtn { "M" };
 
     // Drag state
     int activeDragCell = -1;

@@ -179,11 +179,12 @@ void HeaderBar::paint (juce::Graphics& g)
             x += 65;
         }
 
-        // Filename and sample info (right side of row 1, before buttons)
+        // Filename and sample info (right-aligned, left of LOAD button)
         {
+            int rightEdge = loadBtn.getX() - 6;
             g.setFont (juce::Font (9.0f));
             g.setColour (getTheme().foreground.withAlpha (0.35f));
-            g.drawText ("SAMPLE", x, row1y, 50, 10, juce::Justification::centredLeft);
+            g.drawText ("SAMPLE", x, row1y, rightEdge - x, 10, juce::Justification::right);
             g.setFont (juce::Font (11.0f));
             g.setColour (getTheme().foreground.withAlpha (0.7f));
             juce::String fname = processor.sampleData.getFileName();
@@ -191,7 +192,7 @@ void HeaderBar::paint (juce::Graphics& g)
             if (srate <= 0) srate = 44100.0;
             double lenSec = processor.sampleData.getNumFrames() / srate;
             g.drawText (fname + " (" + juce::String (lenSec, 2) + "s)",
-                        x, row1y + 10, getWidth() - x - 74, 12, juce::Justification::centredLeft);
+                        x, row1y + 10, rightEdge - x, 12, juce::Justification::right);
         }
 
         // --- Separator line between rows ---
