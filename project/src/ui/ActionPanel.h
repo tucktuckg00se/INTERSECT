@@ -15,9 +15,12 @@ private:
     IntersectProcessor& processor;
     WaveformView& waveformView;
 
+    void updateMidiButtonAppearance (bool active);
+
     juce::TextButton addSliceBtn  { "ADD" };
     juce::TextButton lazyChopBtn  { "LAZY" };
     juce::TextButton dupBtn       { "COPY" };
     juce::TextButton splitBtn     { "AUTO" };
     juce::TextButton deleteBtn    { "DEL" };
+    juce::TextButton midiSelectBtn { "M" };
 };

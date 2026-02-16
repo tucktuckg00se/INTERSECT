@@ -22,6 +22,7 @@ IntersectProcessor::IntersectProcessor()
     formantParam   = apvts.getRawParameterValue (ParamIds::defaultFormant);
     formantCompParam = apvts.getRawParameterValue (ParamIds::defaultFormantComp);
     grainModeParam   = apvts.getRawParameterValue (ParamIds::defaultGrainMode);
+    releaseTailParam = apvts.getRawParameterValue (ParamIds::defaultReleaseTail);
 }
 
 void IntersectProcessor::prepareToPlay (double sampleRate, int /*samplesPerBlock*/)
@@ -151,6 +152,7 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                     case FieldFormantComp: s.formantComp = val > 0.5f; s.lockMask |= kLockFormantComp; break;
                     case FieldGrainMode:  s.grainMode = (int) val;   s.lockMask |= kLockGrainMode;  break;
                     case FieldVolume:     s.volume = val;            s.lockMask |= kLockVolume;    break;
+                    case FieldReleaseTail: s.releaseTail = val > 0.5f; s.lockMask |= kLockReleaseTail; break;
                     case FieldMidiNote:
                         s.midiNote = juce::jlimit (0, 127, (int) val);
                         sliceManager.rebuildMidiMap();
@@ -185,6 +187,7 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                     dst.formantComp     = src.formantComp;
                     dst.grainMode       = src.grainMode;
                     dst.volume          = src.volume;
+                    dst.releaseTail     = src.releaseTail;
                     dst.lockMask        = src.lockMask;
                     dst.colour          = src.colour;
                     // midiNote is already assigned by createSlice
@@ -222,6 +225,15 @@ void IntersectProcessor::handleCommand (const Command& cmd)
             }
             break;
         }
+
+        case CmdRelinkFile:
+            if (sampleData.loadFromFile (cmd.fileParam, currentSampleRate))
+            {
+                sampleMissing.store (false);
+                missingFilePath.clear();
+                sliceManager.rebuildMidiMap();
+            }
+            break;
 
         case CmdNone:
             break;
@@ -279,6 +291,7 @@ void IntersectProcessor::processMidi (juce::MidiBuffer& midi)
                                           formantCompParam->load() > 0.5f,
                                           (int) grainModeParam->load(),
                                           masterVolParam->load(),
+                                          releaseTailParam->load() > 0.5f,
                                           sampleData);
                 }
             }
@@ -339,7 +352,7 @@ void IntersectProcessor::getStateInformation (juce::MemoryBlock& destData)
     juce::MemoryOutputStream stream (destData, false);
 
     // Version
-    stream.writeInt (9);
+    stream.writeInt (10);
 
     // APVTS state
     auto state = apvts.copyState();
@@ -384,6 +397,8 @@ void IntersectProcessor::getStateInformation (juce::MemoryBlock& destData)
         stream.writeInt (s.grainMode);
         // v7 fields
         stream.writeFloat (s.volume);
+        // v10 fields
+        stream.writeBool (s.releaseTail);
     }
 
     // v9: store file path only (no PCM)
@@ -396,13 +411,25 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
     juce::MemoryInputStream stream (data, (size_t) sizeInBytes, false);
 
     int version = stream.readInt();
-    if (version < 9)
+    if (version < 9 || version > 10)
         return;
 
     // APVTS state
     auto xmlString = stream.readString();
     if (auto xml = juce::parseXML (xmlString))
         apvts.replaceState (juce::ValueTree::fromXml (*xml));
+
+    // v9 -> v10 migration: convert APVTS masterVolume from linear (0-1) to dB
+    if (version == 9)
+    {
+        float oldLinVol = masterVolParam->load();
+        // Old range was 0-1, but APVTS loaded it as-is into new -100..+24 range
+        // So the stored value will be the raw 0-1 value. Convert to dB.
+        float dbVal = (oldLinVol <= 0.0f) ? -100.0f : 20.0f * std::log10 (oldLinVol);
+        dbVal = juce::jlimit (-100.0f, 24.0f, dbVal);
+        if (auto* p = apvts.getParameter (ParamIds::masterVolume))
+            p->setValueNotifyingHost (p->convertTo0to1 (dbVal));
+    }
 
     // UI state
     zoom.store (stream.readFloat());
@@ -439,6 +466,21 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
         s.formantComp     = stream.readBool();
         s.grainMode = stream.readInt();
         s.volume = stream.readFloat();
+
+        if (version >= 10)
+        {
+            s.releaseTail = stream.readBool();
+        }
+
+        // v9 -> v10 migration: convert linear volume (0-1) to dB
+        if (version == 9)
+        {
+            float linVol = s.volume;
+            if (linVol <= 0.0f)
+                s.volume = -100.0f;
+            else
+                s.volume = 20.0f * std::log10 (linVol);
+        }
     }
 
     // Path-based sample restore

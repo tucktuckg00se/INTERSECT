@@ -5,18 +5,18 @@ juce::AudioProcessorValueTreeState::ParameterLayout ParamLayout::createLayout()
 {
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
 
-    // Master Volume: 0..1, default 1.0
+    // Master Gain: -100..+24 dB, default 0 dB (unity)
     params.push_back (std::make_unique<juce::AudioParameterFloat> (
         juce::ParameterID { ParamIds::masterVolume, 1 },
-        "Master Volume",
-        juce::NormalisableRange<float> (0.0f, 1.0f, 0.01f),
-        1.0f));
+        "Master Gain",
+        juce::NormalisableRange<float> (-100.0f, 24.0f, 0.1f),
+        0.0f));
 
     // Default BPM: 20..999, default 120
     params.push_back (std::make_unique<juce::AudioParameterFloat> (
         juce::ParameterID { ParamIds::defaultBpm, 1 },
         "Default BPM",
-        juce::NormalisableRange<float> (20.0f, 999.0f, 0.1f),
+        juce::NormalisableRange<float> (20.0f, 999.0f, 0.01f),
         120.0f));
 
     // Default Pitch: -24..+24 semitones, default 0
@@ -105,6 +105,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout ParamLayout::createLayout()
         "Default Grain Mode",
         juce::StringArray { "Fast", "Normal", "Smooth" },
         1));  // default = Normal
+
+    // Default Release Tail: off/on
+    params.push_back (std::make_unique<juce::AudioParameterBool> (
+        juce::ParameterID { ParamIds::defaultReleaseTail, 1 },
+        "Default Release Tail",
+        false));
 
     // UI Scale: 0.5..3.0, default 1.0, step 0.25
     params.push_back (std::make_unique<juce::AudioParameterFloat> (

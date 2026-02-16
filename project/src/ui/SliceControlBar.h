@@ -35,10 +35,7 @@ private:
     void showTextEditor (const ParamCell& cell, float currentValue);
     void showSetBpmPopup();
 
-    void updateMidiButtonAppearance (bool active);
-
     IntersectProcessor& processor;
-    juce::TextButton midiSelectBtn { "M" };
 
     // Drag state
     int activeDragCell = -1;

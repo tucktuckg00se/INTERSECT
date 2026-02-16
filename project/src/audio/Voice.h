@@ -30,6 +30,8 @@ struct Voice
     int          age          = 0;
     bool         looping      = false;
     float        volume       = 1.0f;
+    bool         releaseTail  = false;
+    int          sampleEnd    = 0;       // actual end of sample buffer (for release tail)
 
     // WSOLA fields (legacy, still used for basic WSOLA fallback)
     bool         wsolaActive  = false;

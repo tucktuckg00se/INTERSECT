@@ -5,39 +5,10 @@
 
 SliceControlBar::SliceControlBar (IntersectProcessor& p) : processor (p)
 {
-    addAndMakeVisible (midiSelectBtn);
-    midiSelectBtn.setAlwaysOnTop (true);
-    midiSelectBtn.setTooltip ("MIDI selects slice");
-    midiSelectBtn.onClick = [this] {
-        bool current = processor.midiSelectsSlice.load();
-        bool newState = ! current;
-        processor.midiSelectsSlice.store (newState);
-        updateMidiButtonAppearance (newState);
-        repaint();
-    };
-    updateMidiButtonAppearance (false);
 }
 
 void SliceControlBar::resized()
 {
-    int btnW = 24;
-    midiSelectBtn.setBounds (getWidth() - btnW - 4, 2, btnW, 28);
-}
-
-void SliceControlBar::updateMidiButtonAppearance (bool active)
-{
-    if (active)
-    {
-        midiSelectBtn.setColour (juce::TextButton::textColourOnId, getTheme().accent);
-        midiSelectBtn.setColour (juce::TextButton::textColourOffId, getTheme().accent);
-        midiSelectBtn.setColour (juce::TextButton::buttonColourId, getTheme().accent.withAlpha (0.2f));
-    }
-    else
-    {
-        midiSelectBtn.setColour (juce::TextButton::textColourOnId, getTheme().foreground);
-        midiSelectBtn.setColour (juce::TextButton::textColourOffId, getTheme().foreground);
-        midiSelectBtn.setColour (juce::TextButton::buttonColourId, getTheme().button);
-    }
 }
 
 void SliceControlBar::drawLockIcon (juce::Graphics& g, int x, int y, bool locked)
@@ -89,12 +60,9 @@ void SliceControlBar::paint (juce::Graphics& g)
     g.fillAll (getTheme().darkBar);
     cells.clear();
 
-    // Sync M button appearance
-    updateMidiButtonAppearance (processor.midiSelectsSlice.load());
-
     int idx = processor.sliceManager.selectedSlice;
     int numSlices = processor.sliceManager.getNumSlices();
-    int rightEdge = midiSelectBtn.getX() - 4;  // right boundary for painted content
+    int rightEdge = getWidth() - 4;  // right boundary for painted content
 
     int row1y = 2;
     int row2y = 36;
@@ -154,33 +122,41 @@ void SliceControlBar::paint (juce::Graphics& g)
     // ====== Row 1 (y=2): BPM | SET BPM | PITCH | ALGO | ... | S-E | SLICES | ROOT | SLICE N | M ======
     int x = 8;
 
-    // Row 1 right side: SLICE N label, then S-E info to its left
+    // Row 1 right side: SLICE N (12pt label) over S-E info (14pt value), like SAMPLE/filename
     {
-        // SLICE N — right-aligned at rightEdge
-        juce::String sliceLabel = "SLICE " + juce::String (idx + 1);
-        g.setFont (IntersectLookAndFeel::makeFont (17.0f, true));
-        int sliceLabelW = (int) g.getCurrentFont().getStringWidthFloat (sliceLabel) + 8;
-        int sliceLabelX = rightEdge - sliceLabelW;
-        g.setColour (getTheme().accent);
-        g.drawText (sliceLabel, sliceLabelX, row1y + 4, sliceLabelW, 20,
-                    juce::Justification::centredRight);
+        int infoW = rightEdge - 8;  // available width for right-aligned info
 
-        // S-E info — right-aligned, 8px gap left of SLICE N
+        // Top line: "SLICE N" in 12pt, accent color, right-aligned
+        juce::String sliceLabel = "SLICE " + juce::String (idx + 1);
         g.setFont (IntersectLookAndFeel::makeFont (12.0f));
-        g.setColour (getTheme().foreground.withAlpha (0.35f));
+        g.setColour (getTheme().accent.withAlpha (0.7f));
+        g.drawText (sliceLabel, 8, row1y + 2, infoW, 13, juce::Justification::right);
+
+        // Bottom line: S-E info in 14pt, dim foreground, right-aligned
+        g.setFont (IntersectLookAndFeel::makeFont (14.0f));
+        g.setColour (getTheme().foreground.withAlpha (0.5f));
         double srate = processor.getSampleRate();
         if (srate <= 0) srate = 44100.0;
         double lenSec = (s.endSample - s.startSample) / srate;
         juce::String seText = juce::String (s.startSample) + "-" + juce::String (s.endSample) +
                               " (" + juce::String (lenSec, 2) + "s)";
-        int seW = (int) g.getCurrentFont().getStringWidthFloat (seText) + 8;
-        g.drawText (seText, sliceLabelX - seW - 8, row1y + 8, seW, 14, juce::Justification::centredRight);
+        g.drawText (seText, 8, row1y + 15, infoW, 14, juce::Justification::right);
     }
 
     // BPM
     bool locked = s.lockMask & kLockBpm;
-    juce::String val = juce::String ((int) (locked ? s.bpm : gBpm));
-    drawParamCell (g, x, row1y, "BPM", val, locked, kLockBpm, F::FieldBpm, 20.0f, 999.0f, 1.0f, false, false, cw);
+    float bpmVal = locked ? s.bpm : gBpm;
+    juce::String val;
+    {
+        juce::String bpmStr = juce::String (bpmVal, 2);
+        if (bpmStr.contains ("."))
+        {
+            while (bpmStr.endsWith ("0")) bpmStr = bpmStr.dropLastCharacters (1);
+            if (bpmStr.endsWith (".")) bpmStr = bpmStr.dropLastCharacters (1);
+        }
+        val = bpmStr;
+    }
+    drawParamCell (g, x, row1y, "BPM", val, locked, kLockBpm, F::FieldBpm, 20.0f, 999.0f, 0.01f, false, false, cw);
     x += cw + 4;
 
     // SET BPM (slice-level)
@@ -290,11 +266,21 @@ void SliceControlBar::paint (juce::Graphics& g)
     drawParamCell (g, x, row2y, "STRETCH", strOn ? "ON" : "OFF", locked, kLockStretch, F::FieldStretchEnabled, 0.0f, 1.0f, 1.0f, true, false, cw);
     x += cw + 4;
 
-    // VOL
-    float gVol = processor.apvts.getRawParameterValue (ParamIds::masterVolume)->load();
+    // GAIN (dB)
+    float gGainDb = processor.apvts.getRawParameterValue (ParamIds::masterVolume)->load();
     locked = s.lockMask & kLockVolume;
-    float volVal = locked ? s.volume : gVol;
-    drawParamCell (g, x, row2y, "VOL", juce::String ((int) (volVal * 100.0f)) + "%", locked, kLockVolume, F::FieldVolume, 0.0f, 1.0f, 0.01f, false, false, cw);
+    float gainVal = locked ? s.volume : gGainDb;
+    {
+        juce::String gainStr = (gainVal >= 0.0f ? "+" : "") + juce::String (gainVal, 1) + "dB";
+        drawParamCell (g, x, row2y, "GAIN", gainStr, locked, kLockVolume, F::FieldVolume, -100.0f, 24.0f, 0.1f, false, false, cw);
+    }
+    x += cw + 4;
+
+    // TAIL (release tail)
+    bool gTail = processor.apvts.getRawParameterValue (ParamIds::defaultReleaseTail)->load() > 0.5f;
+    locked = s.lockMask & kLockReleaseTail;
+    bool tailVal = locked ? s.releaseTail : gTail;
+    drawParamCell (g, x, row2y, "TAIL", tailVal ? "ON" : "OFF", locked, kLockReleaseTail, F::FieldReleaseTail, 0.0f, 1.0f, 1.0f, true, false, cw);
     x += cw + 4;
 
     // MIDI note (not lockable)
@@ -378,6 +364,11 @@ void SliceControlBar::mouseDown (const juce::MouseEvent& e)
                         bool gFC = processor.apvts.getRawParameterValue (ParamIds::defaultFormantComp)->load() > 0.5f;
                         currentVal = sliceLocked ? s.formantComp : gFC;
                     }
+                    else if (cell.fieldId == IntersectProcessor::FieldReleaseTail)
+                    {
+                        bool gTail = processor.apvts.getRawParameterValue (ParamIds::defaultReleaseTail)->load() > 0.5f;
+                        currentVal = sliceLocked ? s.releaseTail : gTail;
+                    }
 
                     IntersectProcessor::Command cmd;
                     cmd.type = IntersectProcessor::CmdSetSliceParam;
@@ -405,7 +396,9 @@ void SliceControlBar::mouseDown (const juce::MouseEvent& e)
                     menu.addItem (2, "Stretch");
                     menu.addItem (3, "Bungee");
                 }
-                menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this),
+                auto* topLvl = getTopLevelComponent();
+                menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this)
+                                        .withParentComponent (topLvl),
                     [this, fieldId = cell.fieldId] (int result) {
                         if (result > 0)
                         {
@@ -473,6 +466,9 @@ void SliceControlBar::mouseDown (const juce::MouseEvent& e)
                     case IntersectProcessor::FieldVolume:
                         dragStartValue = (s.lockMask & kLockVolume) ? s.volume :
                             processor.apvts.getRawParameterValue (ParamIds::masterVolume)->load();
+                        break;
+                    case IntersectProcessor::FieldReleaseTail:
+                        // Boolean — handled by toggle, shouldn't reach here
                         break;
                     default:
                         dragStartValue = 0.0f;
@@ -606,8 +602,8 @@ void SliceControlBar::mouseDoubleClick (const juce::MouseEvent& e)
                             processor.apvts.getRawParameterValue (ParamIds::defaultFormant)->load();
                         break;
                     case IntersectProcessor::FieldVolume:
-                        currentVal = ((s.lockMask & kLockVolume) ? s.volume :
-                            processor.apvts.getRawParameterValue (ParamIds::masterVolume)->load()) * 100.0f;
+                        currentVal = (s.lockMask & kLockVolume) ? s.volume :
+                            processor.apvts.getRawParameterValue (ParamIds::masterVolume)->load();
                         break;
                     default: break;
                 }
@@ -635,9 +631,12 @@ void SliceControlBar::showTextEditor (const ParamCell& cell, float currentValue)
         cell.fieldId == IntersectProcessor::FieldDecay ||
         cell.fieldId == IntersectProcessor::FieldRelease)
         displayVal = juce::String ((int) currentValue);
-    else if (cell.fieldId == IntersectProcessor::FieldSustain ||
-             cell.fieldId == IntersectProcessor::FieldVolume)
+    else if (cell.fieldId == IntersectProcessor::FieldSustain)
         displayVal = juce::String ((int) currentValue);
+    else if (cell.fieldId == IntersectProcessor::FieldVolume)
+        displayVal = juce::String (currentValue, 1);
+    else if (cell.fieldId == IntersectProcessor::FieldBpm)
+        displayVal = juce::String (currentValue, 2);
     else if (cell.step >= 1.0f)
         displayVal = juce::String ((int) currentValue);
     else
@@ -655,14 +654,14 @@ void SliceControlBar::showTextEditor (const ParamCell& cell, float currentValue)
         if (textEditor == nullptr) return;
         float val = textEditor->getText().getFloatValue();
 
-        // Convert ms to seconds for ATK/DEC/REL, percent to fraction for SUS/VOL
+        // Convert ms to seconds for ATK/DEC/REL, percent to fraction for SUS
         if (fieldId == IntersectProcessor::FieldAttack ||
             fieldId == IntersectProcessor::FieldDecay ||
             fieldId == IntersectProcessor::FieldRelease)
             val /= 1000.0f;
-        else if (fieldId == IntersectProcessor::FieldSustain ||
-                 fieldId == IntersectProcessor::FieldVolume)
+        else if (fieldId == IntersectProcessor::FieldSustain)
             val /= 100.0f;
+        // Volume is now in dB — no conversion needed
 
         val = juce::jlimit (minV, maxV, val);
 
@@ -699,7 +698,9 @@ void SliceControlBar::showSetBpmPopup()
     menu.addItem (8, "1/8 note");
     menu.addItem (9, "1/16 note");
 
-    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this),
+    auto* topLvl = getTopLevelComponent();
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this)
+                            .withParentComponent (topLvl),
         [this] (int result) {
             if (result <= 0 || result > 9) return;
             const float bars[] = { 0.0f, 16.0f, 8.0f, 4.0f, 2.0f, 1.0f, 0.5f, 0.25f, 0.125f, 0.0625f };

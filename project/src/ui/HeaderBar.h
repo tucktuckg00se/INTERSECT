@@ -32,6 +32,7 @@ private:
     void showThemePopup();
     void adjustScale (float delta);
     void openFileBrowser();
+    void openRelinkBrowser();
 
     IntersectProcessor& processor;
     juce::TextButton loadBtn { "LOAD" };

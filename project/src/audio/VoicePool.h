@@ -21,6 +21,7 @@ public:
                      bool globalStretchEnabled, float dawBpm,
                      float globalTonality, float globalFormant, bool globalFormantComp,
                      int globalGrainMode, float globalVolume,
+                     bool globalReleaseTail,
                      const SampleData& sample);
 
     void releaseNote (int note);

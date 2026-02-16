@@ -20,8 +20,7 @@ A nondestructive, time-stretching, and intersecting sample slicer plugin with in
 - **Duplicate slice** — clone a slice with all its locked parameters
 - **Hi-DPI scaling** — adjustable UI scale factor (0.5x to 3x)
 - **Full state recall** — all parameters, slices, and audio data saved/restored with the DAW session
-- **Dark industrial theme** — styled popup menus and controls
-
+- **Theming** — Dark and light themes
 ## Usage
 
 ### Getting Started
@@ -53,10 +52,11 @@ These are the defaults inherited by all slices:
 - **PITCH** — pitch shift in semitones (-24 to +24)
 - **ALGO** — Repitch (speed=pitch), Stretch (independent pitch/time), or Bungee (granular)
 - **ATK / DEC / SUS / REL** — ADSR amplitude envelope
-- **PP** — ping-pong (reverse) playback
+- **PP** — ping-pong (bounce) playback — works in all algorithm modes (Repitch, Stretch, Bungee)
 - **MUTE** — mute group (voices in the same group cut each other off)
 - **STRETCH** — enable time-stretching (syncs playback to DAW tempo)
-- **VOL** — master volume
+- **GAIN** — master gain in dB (-100 to +24 dB)
+- **TAIL** — release tail — when enabled, audio continues reading past the slice boundary during the release phase
 
 ### Slice Controls (second bar)
 

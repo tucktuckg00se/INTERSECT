@@ -11,6 +11,12 @@
 
 static constexpr int kStretchBlockSize = 128;
 
+static inline float dbToLinear (float dB)
+{
+    if (dB <= -100.0f) return 0.0f;
+    return std::pow (10.0f, dB / 20.0f);
+}
+
 VoicePool::VoicePool()
 {
     for (auto& p : voicePositions)
@@ -112,6 +118,7 @@ void VoicePool::startVoice (int voiceIdx, int sliceIdx, float velocity, int note
                             bool globalStretchEnabled, float dawBpmVal,
                             float globalTonality, float globalFormant, bool globalFormantComp,
                             int globalGrainMode, float globalVolume,
+                            bool globalReleaseTail,
                             const SampleData& sample)
 {
     auto& v = voices[voiceIdx];
@@ -161,7 +168,12 @@ void VoicePool::startVoice (int voiceIdx, int sliceIdx, float velocity, int note
     // Convert grainMode choice index (0=Fast, 1=Normal, 2=Smooth) to log2 hop adjust (-1, 0, +1)
     int hopAdj = grainMode - 1;
 
-    v.volume = sm.resolveParam (sliceIdx, kLockVolume, s.volume, globalVolume);
+    v.volume = dbToLinear (sm.resolveParam (sliceIdx, kLockVolume, s.volume, globalVolume));
+
+    v.releaseTail = sm.resolveParam (sliceIdx, kLockReleaseTail,
+                                      s.releaseTail ? 1.0f : 0.0f,
+                                      globalReleaseTail ? 1.0f : 0.0f) > 0.5f;
+    v.sampleEnd = sample.getNumFrames();
 
     // Reset stretch state
     v.stretchActive = false;
@@ -260,17 +272,23 @@ static void fillStretchBlock (Voice& v, const SampleData& sample)
     for (int i = 0; i < inputSamples; ++i)
     {
         double pos = v.stretchSrcPos;
+        // Clamp to sample buffer bounds for safety
+        pos = juce::jlimit (0.0, (double) v.sampleEnd - 1, pos);
         v.stretchInBufL[(size_t) i] = sample.getInterpolatedSample (pos, 0);
         v.stretchInBufR[(size_t) i] = sample.getInterpolatedSample (pos, 1);
-        v.stretchSrcPos += 1.0;
+        v.stretchSrcPos += (double) v.direction;
 
         // Check bounds
-        if (v.stretchSrcPos >= v.endSample)
+        if (v.direction > 0 && v.stretchSrcPos >= v.endSample)
         {
             if (v.pingPong)
             {
                 v.stretchSrcPos = v.endSample - 1;
-                // For simplicity, just clamp — ping-pong with stretch is edge case
+                v.direction = -1;
+            }
+            else if (v.releaseTail && v.stretchSrcPos < v.sampleEnd)
+            {
+                // Continue reading beyond slice end during release tail
             }
             else
             {
@@ -284,6 +302,14 @@ static void fillStretchBlock (Voice& v, const SampleData& sample)
                 }
                 v.stretchSrcPos = v.endSample;
                 break;
+            }
+        }
+        else if (v.direction < 0 && v.stretchSrcPos <= v.startSample)
+        {
+            if (v.pingPong)
+            {
+                v.stretchSrcPos = v.startSample;
+                v.direction = 1;
             }
         }
     }
@@ -304,6 +330,21 @@ static void fillBungeeBlock (Voice& v, const SampleData& sample)
 {
     if (! v.bungeeStretcher)
         return;
+
+    // Ping pong boundary checks before requesting next grain
+    if (v.pingPong)
+    {
+        if (v.bungeeSpeed > 0.0 && v.bungeeSrcPos >= v.endSample)
+        {
+            v.bungeeSrcPos = v.endSample - 1;
+            v.bungeeSpeed = -std::abs (v.bungeeSpeed);
+        }
+        else if (v.bungeeSpeed < 0.0 && v.bungeeSrcPos <= v.startSample)
+        {
+            v.bungeeSrcPos = v.startSample;
+            v.bungeeSpeed = std::abs (v.bungeeSpeed);
+        }
+    }
 
     auto& stretcher = *v.bungeeStretcher;
 
@@ -327,13 +368,16 @@ static void fillBungeeBlock (Voice& v, const SampleData& sample)
     int maxIn = stretcher.maxInputFrameCount();
     v.bungeeInputBuf.resize ((size_t) maxIn * 2);
 
+    // Determine effective end for reading (release tail allows reading past slice end)
+    int effectiveEnd = v.releaseTail && !v.pingPong ? v.sampleEnd : v.endSample;
+
     // Fill input buffer (non-interleaved: ch0 then ch1)
     for (int i = 0; i < numFrames; ++i)
     {
         double pos = inputChunk.begin + i;
 
         float sL = 0.0f, sR = 0.0f;
-        if (pos >= v.startSample && pos < v.endSample)
+        if (pos >= v.startSample && pos < effectiveEnd)
         {
             sL = sample.getInterpolatedSample (pos, 0);
             sR = sample.getInterpolatedSample (pos, 1);
@@ -346,8 +390,8 @@ static void fillBungeeBlock (Voice& v, const SampleData& sample)
     int muteHead = 0, muteTail = 0;
     if (inputChunk.begin < v.startSample)
         muteHead = v.startSample - inputChunk.begin;
-    if (inputChunk.end > v.endSample)
-        muteTail = inputChunk.end - v.endSample;
+    if (inputChunk.end > effectiveEnd)
+        muteTail = inputChunk.end - effectiveEnd;
 
     stretcher.analyseGrain (v.bungeeInputBuf.data(), (intptr_t) maxIn, muteHead, muteTail);
 
@@ -407,10 +451,24 @@ void VoicePool::processSample (const SampleData& sample, double sampleRate,
             // Fill output buffer if empty
             if (v.stretchOutReadPos >= v.stretchOutAvail)
             {
-                if (v.stretchSrcPos >= v.endSample && !v.pingPong)
+                bool pastEnd = (v.direction > 0)
+                    ? (v.stretchSrcPos >= v.endSample)
+                    : (v.stretchSrcPos <= v.startSample);
+
+                if (pastEnd && !v.pingPong)
                 {
-                    if (v.envelope.getState() != AdsrEnvelope::Release)
-                        v.envelope.noteOff();
+                    if (v.releaseTail && v.stretchSrcPos < v.sampleEnd && v.stretchSrcPos >= 0)
+                    {
+                        // Release tail: trigger noteOff but keep filling
+                        if (v.envelope.getState() != AdsrEnvelope::Release)
+                            v.envelope.noteOff();
+                        fillStretchBlock (v, sample);
+                    }
+                    else
+                    {
+                        if (v.envelope.getState() != AdsrEnvelope::Release)
+                            v.envelope.noteOff();
+                    }
                 }
                 else
                 {
@@ -444,10 +502,23 @@ void VoicePool::processSample (const SampleData& sample, double sampleRate,
             // Fill output buffer if empty
             if (v.bungeeOutReadPos >= v.bungeeOutAvail)
             {
-                if (v.bungeeSrcPos >= v.endSample && !v.pingPong)
+                bool pastEnd = (v.bungeeSpeed > 0.0)
+                    ? (v.bungeeSrcPos >= v.endSample)
+                    : (v.bungeeSrcPos <= v.startSample);
+
+                if (pastEnd && !v.pingPong)
                 {
-                    if (v.envelope.getState() != AdsrEnvelope::Release)
-                        v.envelope.noteOff();
+                    if (v.releaseTail && v.bungeeSrcPos < v.sampleEnd && v.bungeeSrcPos >= 0)
+                    {
+                        if (v.envelope.getState() != AdsrEnvelope::Release)
+                            v.envelope.noteOff();
+                        fillBungeeBlock (v, sample);
+                    }
+                    else
+                    {
+                        if (v.envelope.getState() != AdsrEnvelope::Release)
+                            v.envelope.noteOff();
+                    }
                 }
                 else
                 {
@@ -516,6 +587,12 @@ void VoicePool::processSample (const SampleData& sample, double sampleRate,
                             newPos = v.startSample + std::fmod (newPos - v.startSample, len);
                         if (newPos < v.startSample)
                             newPos += len;
+                    }
+                    else if (v.releaseTail && newPos >= v.endSample && newPos < v.sampleEnd)
+                    {
+                        // Release tail: trigger noteOff but keep reading beyond slice end
+                        if (v.envelope.getState() != AdsrEnvelope::Release)
+                            v.envelope.noteOff();
                     }
                     else
                     {

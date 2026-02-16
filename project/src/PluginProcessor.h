@@ -48,6 +48,7 @@ public:
         CmdSetSliceParam,
         CmdDuplicateSlice,
         CmdSplitSlice,
+        CmdRelinkFile,
     };
 
     // Param field identifiers for CmdSetSliceParam
@@ -69,6 +70,7 @@ public:
         FieldFormantComp,
         FieldGrainMode,
         FieldVolume,
+        FieldReleaseTail,
     };
 
     struct Command
@@ -132,6 +134,7 @@ private:
     std::atomic<float>* formantParam    = nullptr;
     std::atomic<float>* formantCompParam = nullptr;
     std::atomic<float>* grainModeParam   = nullptr;
+    std::atomic<float>* releaseTailParam = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (IntersectProcessor)
 };
