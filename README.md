@@ -6,6 +6,7 @@ A nondestructive, time-stretching, and intersecting sample slicer plugin with in
 
 ## Features
 
+- **Intersecting sample slicing** — Place slices freely on the waveform, independant of the other slices.
 - **Drag-and-drop sample loading** — WAV, OGG, AIFF, FLAC, MP3
 - **Slice-based playback** — create regions with start/end points, each mapped to a MIDI note
 - **Parameter inheritance** — slices inherit sample-level defaults (BPM, pitch, ADSR, mute group, etc.) unless individually overridden
@@ -71,11 +72,10 @@ These are the defaults inherited by all slices:
 - **STRETCH** — enable time-stretching (syncs playback to DAW tempo)
 - **GAIN** — master gain in dB (-100 to +24 dB)
 - **TAIL** — release tail — when enabled, audio continues reading past the slice boundary during the release phase
-- **<** / **>** — undo / redo
 
 ### Slice Controls (second bar)
 
-Per-slice overrides. Each parameter has a **lock icon** — click it to override the sample default for that slice. Unlocked parameters inherit from the sample controls above.
+Per-slice overrides. Each parameter has a **override button** — click it to override the sample default for that slice.
 
 ### SET BPM
 
@@ -89,9 +89,9 @@ Click the **FM** button to toggle. When active, playing a MIDI note automaticall
 
 Download the latest release zip for your platform from the [Releases](https://github.com/tucktuckg00se/INTERSECT/releases) page and extract it.
 
-### Windows
+Copy `INTERSECT.vst3` to your VST3 folder or run INTERSECT as a standalone app:
 
-Copy `INTERSECT.vst3` to your VST3 folder:
+### Windows
 
 ```
 C:\Program Files\Common Files\VST3\
@@ -100,8 +100,6 @@ C:\Program Files\Common Files\VST3\
 Or run `INTERSECT.exe` as a standalone app.
 
 ### macOS
-
-Copy `INTERSECT.vst3` to your VST3 folder:
 
 ```
 ~/Library/Audio/Plug-Ins/VST3/
@@ -113,17 +111,11 @@ For AU, copy `INTERSECT.component` to:
 ~/Library/Audio/Plug-Ins/Components/
 ```
 
-Or run `INTERSECT.app` as a standalone app.
-
 ### Linux
-
-Copy `INTERSECT.vst3` to your VST3 folder:
 
 ```
 ~/.vst3/
 ```
-
-Or run the `INTERSECT` standalone binary directly.
 
 After installing, rescan plugins in your DAW to pick up INTERSECT.
 
