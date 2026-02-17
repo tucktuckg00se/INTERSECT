@@ -54,9 +54,11 @@ void VoicePool::setMaxActiveVoices (int n)
     n = juce::jlimit (1, kMaxVoices, n);
     if (n < maxActive)
     {
-        // Kill voices beyond new limit
+        // Kill voices beyond new limit (but preserve preview voice)
+        constexpr int previewIdx = kMaxVoices - 1;
         for (int i = n; i < maxActive; ++i)
         {
+            if (i == previewIdx) continue;
             voices[i].active = false;
             voices[i].stretcher.reset();
             voices[i].bungeeStretcher.reset();
@@ -695,6 +697,17 @@ void VoicePool::processSample (const SampleData& sample, double sr,
     {
         float vL = 0.0f, vR = 0.0f;
         processVoiceSample (i, sample, sr, vL, vR);
+        outL += vL;
+        outR += vR;
+    }
+
+    // Always process the preview voice (used by LazyChopEngine)
+    // even if it's outside the maxActive range
+    constexpr int previewIdx = kMaxVoices - 1;
+    if (previewIdx >= maxActive && voices[previewIdx].active)
+    {
+        float vL = 0.0f, vR = 0.0f;
+        processVoiceSample (previewIdx, sample, sr, vL, vR);
         outL += vL;
         outR += vR;
     }

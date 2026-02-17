@@ -414,6 +414,7 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     else
     {
         // Multi-out: route each voice to its assigned bus
+        constexpr int previewIdx = VoicePool::kMaxVoices - 1;
         for (int i = 0; i < buffer.getNumSamples(); ++i)
         {
             for (int vi = 0; vi < voicePool.getMaxActiveVoices(); ++vi)
@@ -425,6 +426,16 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 if (bus < 0 || bus >= numActiveBuses) bus = 0;
                 if (busL[bus]) busL[bus][i] += vL;
                 if (busR[bus]) busR[bus][i] += vR;
+            }
+
+            // Always process preview voice (LazyChopEngine) on main bus
+            if (previewIdx >= voicePool.getMaxActiveVoices()
+                && voicePool.getVoice (previewIdx).active)
+            {
+                float vL = 0.0f, vR = 0.0f;
+                voicePool.processVoiceSample (previewIdx, sampleData, currentSampleRate, vL, vR);
+                if (busL[0]) busL[0][i] += vL;
+                if (busR[0]) busR[0][i] += vR;
             }
         }
     }

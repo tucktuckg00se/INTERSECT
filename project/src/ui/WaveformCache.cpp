@@ -28,17 +28,32 @@ void WaveformCache::rebuild (const juce::AudioBuffer<float>& buffer, int numFram
         sStart = std::max (0, sStart);
         sEnd   = std::min (sEnd, numFrames);
 
-        float peakMax = -1.0f;
-        float peakMin = 1.0f;
-
-        int step = std::max (1, (sEnd - sStart) / 256);
-        for (int s = sStart; s < sEnd; s += step)
+        if (sStart >= sEnd)
         {
-            float val = (dataL[s] + dataR[s]) * 0.5f;
-            if (val > peakMax) peakMax = val;
-            if (val < peakMin) peakMin = val;
+            // Sub-sample zoom: interpolate at the exact fractional position
+            float exactPos = visibleStart + px * samplesPerPixel;
+            int ipos = (int) exactPos;
+            float frac = exactPos - ipos;
+            ipos = std::max (0, std::min (ipos, numFrames - 2));
+            float valL = dataL[ipos] + (dataL[ipos + 1] - dataL[ipos]) * frac;
+            float valR = dataR[ipos] + (dataR[ipos + 1] - dataR[ipos]) * frac;
+            float val = (valL + valR) * 0.5f;
+            peaks[(size_t) px] = { val, val };
         }
+        else
+        {
+            float peakMax = -1.0f;
+            float peakMin = 1.0f;
 
-        peaks[(size_t) px] = { peakMax, peakMin };
+            int step = std::max (1, (sEnd - sStart) / 256);
+            for (int s = sStart; s < sEnd; s += step)
+            {
+                float val = (dataL[s] + dataR[s]) * 0.5f;
+                if (val > peakMax) peakMax = val;
+                if (val < peakMin) peakMin = val;
+            }
+
+            peaks[(size_t) px] = { peakMax, peakMin };
+        }
     }
 }

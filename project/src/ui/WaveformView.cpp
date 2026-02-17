@@ -114,11 +114,61 @@ void WaveformView::drawWaveform (juce::Graphics& g)
     float scale = getHeight() * 0.48f;
 
     auto& peaks = cache.getPeaks();
-    for (int px = 0; px < cache.getNumPeaks() && px < getWidth(); ++px)
+    int numPeaks = std::min (cache.getNumPeaks(), getWidth());
+
+    // Determine if we're in sub-sample zoom (peaks are single points, not ranges)
+    int numFrames = processor.sampleData.getNumFrames();
+    float z = processor.zoom.load();
+    int visLen = (int) (numFrames / z);
+    float samplesPerPixel = (visLen > 0 && getWidth() > 0) ? (float) visLen / (float) getWidth() : 1.0f;
+
+    if (samplesPerPixel < 1.0f)
     {
-        float yMax = cy - peaks[(size_t) px].maxVal * scale;
-        float yMin = cy - peaks[(size_t) px].minVal * scale;
-        g.drawVerticalLine (px, yMax, yMin);
+        // Sub-sample zoom: draw connected lines between sample points
+        juce::Path path;
+        bool pathStarted = false;
+
+        for (int px = 0; px < numPeaks; ++px)
+        {
+            float y = (float) cy - peaks[(size_t) px].maxVal * scale;
+            if (! pathStarted)
+            {
+                path.startNewSubPath ((float) px, y);
+                pathStarted = true;
+            }
+            else
+            {
+                path.lineTo ((float) px, y);
+            }
+        }
+
+        g.strokePath (path, juce::PathStrokeType (1.5f));
+
+        // Draw sample dots when zoomed in very far (> 8 pixels per sample)
+        if (samplesPerPixel < 0.125f)
+        {
+            float dotR = 2.5f;
+            for (int px = 0; px < numPeaks; ++px)
+            {
+                float exactPos = (float) pixelToSample (0) + px * samplesPerPixel;
+                float fractional = exactPos - std::floor (exactPos);
+                if (fractional < samplesPerPixel)
+                {
+                    float y = (float) cy - peaks[(size_t) px].maxVal * scale;
+                    g.fillEllipse ((float) px - dotR, y - dotR, dotR * 2.0f, dotR * 2.0f);
+                }
+            }
+        }
+    }
+    else
+    {
+        // Normal zoom: draw vertical lines for peak ranges
+        for (int px = 0; px < numPeaks; ++px)
+        {
+            float yMax = cy - peaks[(size_t) px].maxVal * scale;
+            float yMin = cy - peaks[(size_t) px].minVal * scale;
+            g.drawVerticalLine (px, yMax, yMin);
+        }
     }
 }
 
