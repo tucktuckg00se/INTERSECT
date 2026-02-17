@@ -21,7 +21,7 @@ private:
 
     juce::Slider sensitivitySlider;
     juce::TextEditor divisionsEditor;
-    juce::TextButton splitEqualBtn { "Split Equal" };
-    juce::TextButton detectBtn     { "Detect Transients" };
-    juce::TextButton cancelBtn     { "Cancel" };
+    juce::TextButton splitEqualBtn { "SPLIT EQUAL" };
+    juce::TextButton detectBtn     { "SPLIT TRANSIENTS" };
+    juce::TextButton cancelBtn     { "CANCEL" };
 };

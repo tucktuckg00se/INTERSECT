@@ -61,15 +61,16 @@ ActionPanel::ActionPanel (IntersectProcessor& p, WaveformView& wv)
 
         autoChopPanel = std::make_unique<AutoChopPanel> (processor, waveformView);
 
-        // Add to editor (top-level) so it overlays the waveform
-        if (auto* editor = getTopLevelComponent())
+        // Position as a bar at the bottom of the waveform area, full width
+        // Use waveformView's parent (the editor) so coordinates match
+        if (auto* editor = waveformView.getParentComponent())
         {
-            int panelW = 340;
-            int panelH = 130;
             auto wfBounds = waveformView.getBoundsInParent();
-            int cx = wfBounds.getCentreX() - panelW / 2;
-            int cy = wfBounds.getCentreY() - panelH / 2;
-            autoChopPanel->setBounds (cx, cy, panelW, panelH);
+            int panelH = 34;
+            int panelX = wfBounds.getX();
+            int panelW = wfBounds.getWidth();
+            int panelY = wfBounds.getBottom() - panelH;
+            autoChopPanel->setBounds (panelX, panelY, panelW, panelH);
             editor->addAndMakeVisible (*autoChopPanel);
         }
     };

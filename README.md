@@ -37,11 +37,11 @@ A nondestructive, time-stretching, and intersecting sample slicer plugin with in
 
 - **ADD** — click the button, then click and drag on the waveform to draw a slice region
 - **LAZY** — starts continuous playback; press any MIDI key to place a slice boundary at the current playhead. Click **STOP** when done. The final slice closes at the end of the sample
-- **AUTO** — opens the Auto Chop panel over the waveform:
-  - **Sensitivity slider** (0-100%) — adjusts transient detection sensitivity with live preview lines on the waveform
-  - **Divisions field** — number of equal parts for time-based splitting (2-128)
-  - **Split Equal** — splits the selected slice into equal divisions
-  - **Detect Transients** — splits at detected transient positions
+- **AUTO** — opens the Auto Chop bar at the bottom of the waveform:
+  - **SENS** slider (0-100%) — adjusts transient detection sensitivity with live preview lines on the waveform
+  - **SPLIT TRANSIENTS** — splits the selected slice at detected transient positions
+  - **DIV** field — number of equal parts for time-based splitting (2-128)
+  - **SPLIT EQUAL** — splits the selected slice into equal divisions
 - **COPY** — duplicates the selected slice with all its parameters
 - **DEL** — deletes the selected slice
 

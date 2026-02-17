@@ -16,7 +16,7 @@ AutoChopPanel::AutoChopPanel (IntersectProcessor& p, WaveformView& wv)
     sensitivitySlider.setRange (0.0, 100.0, 1.0);
     sensitivitySlider.setValue (50.0, juce::dontSendNotification);
     sensitivitySlider.setSliderStyle (juce::Slider::LinearHorizontal);
-    sensitivitySlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 36, 20);
+    sensitivitySlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 32, 20);
     sensitivitySlider.setColour (juce::Slider::trackColourId, getTheme().accent);
     sensitivitySlider.setColour (juce::Slider::thumbColourId, getTheme().foreground);
     sensitivitySlider.setColour (juce::Slider::backgroundColourId, getTheme().darkBar);
@@ -31,6 +31,7 @@ AutoChopPanel::AutoChopPanel (IntersectProcessor& p, WaveformView& wv)
     divisionsEditor.setColour (juce::TextEditor::textColourId, getTheme().foreground);
     divisionsEditor.setColour (juce::TextEditor::outlineColourId, getTheme().separator);
     divisionsEditor.setFont (IntersectLookAndFeel::makeFont (13.0f));
+    divisionsEditor.setJustification (juce::Justification::centred);
 
     for (auto* btn : { &splitEqualBtn, &detectBtn, &cancelBtn })
     {
@@ -88,42 +89,61 @@ AutoChopPanel::~AutoChopPanel()
 void AutoChopPanel::paint (juce::Graphics& g)
 {
     g.setColour (getTheme().darkBar.withAlpha (0.95f));
-    g.fillRoundedRectangle (getLocalBounds().toFloat(), 6.0f);
+    g.fillRect (getLocalBounds());
 
     g.setColour (getTheme().separator);
-    g.drawRoundedRectangle (getLocalBounds().toFloat().reduced (0.5f), 6.0f, 1.0f);
+    g.drawRect (getLocalBounds(), 1);
 
-    g.setFont (IntersectLookAndFeel::makeFont (14.0f, true));
-    g.setColour (getTheme().foreground);
-    g.drawText ("Auto Chop", 12, 8, 120, 18, juce::Justification::centredLeft);
-
-    // Separator between header and content
-    g.setColour (getTheme().separator.withAlpha (0.5f));
-    g.drawHorizontalLine (30, 12.0f, (float) getWidth() - 12.0f);
+    // Labels drawn inline before their controls
+    g.setFont (IntersectLookAndFeel::makeFont (11.0f));
+    g.setColour (getTheme().foreground.withAlpha (0.6f));
+    g.drawText ("SENS", 4, 0, 30, getHeight(), juce::Justification::centredLeft);
+    g.drawText ("DIV", divisionsEditor.getX() - 26, 0, 24, getHeight(), juce::Justification::centredLeft);
 }
 
 void AutoChopPanel::resized()
 {
-    int w = getWidth();
-    int pad = 12;
-    int contentW = w - pad * 2;
-    int halfW = (contentW - 8) / 2;  // 8px gap between columns
-    int leftX = pad;
-    int rightX = pad + halfW + 8;
-    int btnH = 24;
-    int rowH = 22;
+    int h = getHeight();
+    int pad = 4;
+    int btnH = h - pad * 2;
+    int gap = 6;
 
-    // Left column: Sensitivity + Detect Transients
-    sensitivitySlider.setBounds (leftX, 36, halfW, rowH);
-    detectBtn.setBounds         (leftX, 36 + rowH + 6, halfW, btnH);
+    // Layout: SENS [===slider===] [SPLIT TRANSIENTS] | DIV [16] [SPLIT EQUAL] | [CANCEL]
+    // Right-to-left: place CANCEL, then work left-to-right for the rest
 
-    // Right column: Divisions + Split Equal
-    divisionsEditor.setBounds   (rightX, 36, halfW, rowH);
-    splitEqualBtn.setBounds     (rightX, 36 + rowH + 6, halfW, btnH);
+    int cancelW = 60;
+    cancelBtn.setBounds (getWidth() - cancelW - pad, pad, cancelW, btnH);
 
-    // Cancel centered at bottom
-    int cancelW = 80;
-    cancelBtn.setBounds ((w - cancelW) / 2, 36 + rowH + 6 + btnH + 10, cancelW, btnH);
+    // Left-to-right
+    int x = pad;
+
+    // SENS label (drawn in paint at x=4, 32px wide)
+    x += 34;
+
+    // Sensitivity slider
+    int sliderW = 200;
+    sensitivitySlider.setBounds (x, pad, sliderW, btnH);
+    x += sliderW + gap;
+
+    // SPLIT TRANSIENTS button
+    int transBtnW = 148;
+    detectBtn.setBounds (x, pad, transBtnW, btnH);
+    x += transBtnW + gap;
+
+    // Separator gap between the two sections
+    x += 16;
+
+    // DIV label (drawn in paint, 26px)
+    x += 26;
+
+    // Divisions editor
+    int divW = 38;
+    divisionsEditor.setBounds (x, pad, divW, btnH);
+    x += divW + gap;
+
+    // SPLIT EQUAL button
+    int equalBtnW = 96;
+    splitEqualBtn.setBounds (x, pad, equalBtnW, btnH);
 }
 
 void AutoChopPanel::updatePreview()

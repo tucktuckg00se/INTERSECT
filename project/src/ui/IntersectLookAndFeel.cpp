@@ -60,7 +60,8 @@ void IntersectLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& 
                                        ? juce::TextButton::textColourOnId
                                        : juce::TextButton::textColourOffId);
     g.setColour (textCol.isTransparent() ? getTheme().foreground : textCol);
-    g.setFont (makeFont (15.0f));
+    float fontSize = button.getHeight() < 20 ? 10.0f : 15.0f;
+    g.setFont (makeFont (fontSize));
     g.drawText (button.getButtonText(), button.getLocalBounds(),
                 juce::Justification::centred);
 }
