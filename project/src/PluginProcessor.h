@@ -1,9 +1,11 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
+#include <vector>
 #include "audio/SampleData.h"
 #include "audio/SliceManager.h"
 #include "audio/VoicePool.h"
 #include "audio/LazyChopEngine.h"
+#include "UndoManager.h"
 #include "params/ParamIds.h"
 #include "params/ParamLayout.h"
 
@@ -49,7 +51,10 @@ public:
         CmdSetSliceParam,
         CmdDuplicateSlice,
         CmdSplitSlice,
+        CmdTransientChop,
         CmdRelinkFile,
+        CmdUndo,
+        CmdRedo,
     };
 
     // Param field identifiers for CmdSetSliceParam
@@ -83,6 +88,7 @@ public:
         int intParam2 = 0;
         float floatParam1 = 0.0f;
         juce::File fileParam;
+        std::vector<int> positions;
     };
 
     void pushCommand (Command cmd);
@@ -105,6 +111,12 @@ public:
     // MIDI-selects-slice toggle
     std::atomic<bool> midiSelectsSlice { false };
 
+    // Snap-to-zero-crossing toggle
+    std::atomic<bool> snapToZeroCrossing { false };
+
+    // Undo/redo
+    UndoManager undoMgr;
+
     // Missing sample state (for relink UI)
     std::atomic<bool> sampleMissing { false };
     juce::String missingFilePath;
@@ -113,6 +125,8 @@ private:
     void drainCommands();
     void handleCommand (const Command& cmd);
     void processMidi (juce::MidiBuffer& midi);
+    void captureSnapshot();
+    void restoreSnapshot (const UndoManager::Snapshot& snap);
 
     // Command FIFO
     static constexpr int kFifoSize = 64;

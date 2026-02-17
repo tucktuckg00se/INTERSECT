@@ -1,4 +1,5 @@
 #pragma once
+#include <juce_audio_basics/juce_audio_basics.h>
 #include "VoicePool.h"
 #include "SliceManager.h"
 
@@ -24,7 +25,8 @@ public:
     bool isPlaying() const { return playing; }
     int  getChopPos() const { return chopPos; }
 
-    void start (int sampleLen, SliceManager& sliceMgr, const PreviewStretchParams& params);
+    void start (int sampleLen, SliceManager& sliceMgr, const PreviewStretchParams& params,
+                bool snap = false, const juce::AudioBuffer<float>* buf = nullptr);
     void stop (VoicePool& voicePool, SliceManager& sliceMgr);
     void onNote (int note, VoicePool& voicePool, SliceManager& sliceMgr);
 
@@ -41,4 +43,7 @@ private:
     int  lastNote     = -1;
 
     PreviewStretchParams cachedParams;
+
+    bool snapEnabled = false;
+    const juce::AudioBuffer<float>* sampleBuffer = nullptr;
 };

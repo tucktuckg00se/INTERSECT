@@ -82,6 +82,7 @@ target_sources(Intersect PRIVATE
     src/ui/ScrollZoomBar.cpp
     src/ui/SliceLane.cpp
     src/ui/ActionPanel.cpp
+    src/ui/AutoChopPanel.cpp
 )
 
 target_include_directories(Intersect PRIVATE

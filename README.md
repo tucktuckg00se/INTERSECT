@@ -2,7 +2,7 @@
 
 A nondestructive, time-stretching, and intersecting sample slicer plugin with independent per-slice parameter control.
 
-![INTERSECT screenshot](docs/screenshot.png)
+![INTERSECT screenshot](.github/assets/screenshot.png)
 
 ## Features
 
@@ -14,13 +14,17 @@ A nondestructive, time-stretching, and intersecting sample slicer plugin with in
   - **Stretch** — independent pitch and time control via [Signalsmith Stretch](https://github.com/Signalsmith-Audio/signalsmith-stretch), with tonality, formant shift, and formant compensation controls
   - **Bungee** — grain-based time-stretch via [Bungee](https://github.com/bungee-audio-stretch/bungee), with adjustable grain mode (Fast / Normal / Smooth)
 - **Lazy chop** — play the sample continuously and place slice boundaries in real time by pressing MIDI keys
+- **Auto chop** — split slices equally (2-128 divisions) or detect transients with adjustable sensitivity and live preview
+- **Snap-to-zero-crossing** — click-free slice boundaries (ZX button)
+- **Undo/redo** — snapshot-based undo/redo for all slice and parameter changes
 - **SET BPM** — calculate BPM from a slice length and a musical time unit (4 bars down to 1/32 bar)
 - **Mute groups** — voices in the same group cut each other off
-- **MIDI-selects-slice** — optionally auto-select a slice in the UI when its MIDI note is played
+- **Follow MIDI** — optionally auto-select a slice in the UI when its MIDI note is played (FM button)
 - **Duplicate slice** — clone a slice with all its locked parameters
 - **Hi-DPI scaling** — adjustable UI scale factor (0.5x to 3x)
 - **Full state recall** — all parameters, slices, and audio data saved/restored with the DAW session
-- **Theming** — Dark and light themes
+- **Theming** — dark and light themes
+
 ## Usage
 
 ### Getting Started
@@ -33,7 +37,11 @@ A nondestructive, time-stretching, and intersecting sample slicer plugin with in
 
 - **ADD** — click the button, then click and drag on the waveform to draw a slice region
 - **LAZY** — starts continuous playback; press any MIDI key to place a slice boundary at the current playhead. Click **STOP** when done. The final slice closes at the end of the sample
-- **AUTO** — splits the selected slice into equal parts (2-128 divisions)
+- **AUTO** — opens the Auto Chop panel over the waveform:
+  - **Sensitivity slider** (0-100%) — adjusts transient detection sensitivity with live preview lines on the waveform
+  - **Divisions field** — number of equal parts for time-based splitting (2-128)
+  - **Split Equal** — splits the selected slice into equal divisions
+  - **Detect Transients** — splits at detected transient positions
 - **COPY** — duplicates the selected slice with all its parameters
 - **DEL** — deletes the selected slice
 
@@ -41,8 +49,14 @@ A nondestructive, time-stretching, and intersecting sample slicer plugin with in
 
 - Drag the **S** handle (left edge) or **E** handle (right edge) to resize a slice
 - Drag the middle of a slice to move it
-- Click a slice in the waveform, slice lane, or slice list to select it
-- Scroll wheel to zoom, shift+scroll or middle-drag to scroll
+- Click a slice in the waveform or slice lane to select it
+- Toggle **ZX** to snap slice edges to zero-crossings (eliminates clicks)
+
+### Keyboard / Mouse Shortcuts
+
+- **Scroll wheel** — zoom in/out (anchored to cursor position)
+- **Shift + scroll wheel** — scroll horizontally
+- **Middle-click drag** — simultaneous scroll (horizontal) and zoom (vertical)
 
 ### Sample Controls (top bar)
 
@@ -57,6 +71,7 @@ These are the defaults inherited by all slices:
 - **STRETCH** — enable time-stretching (syncs playback to DAW tempo)
 - **GAIN** — master gain in dB (-100 to +24 dB)
 - **TAIL** — release tail — when enabled, audio continues reading past the slice boundary during the release phase
+- **<** / **>** — undo / redo
 
 ### Slice Controls (second bar)
 
@@ -66,9 +81,9 @@ Per-slice overrides. Each parameter has a **lock icon** — click it to override
 
 Calculates BPM from a slice's length. Select a slice, click **SET BPM**, and choose a time division (4 bars, 1 bar, 1/4 note, etc.). INTERSECT sets the BPM so that slice equals the chosen duration at your DAW's tempo.
 
-### MIDI-Selects-Slice
+### Follow MIDI
 
-Click the **M** button to toggle. When active, playing a MIDI note automatically selects that slice in the UI.
+Click the **FM** button to toggle. When active, playing a MIDI note automatically selects that slice in the UI.
 
 ## Install
 

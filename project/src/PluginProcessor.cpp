@@ -1,6 +1,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "audio/GrainEngine.h"
+#include "audio/AudioAnalysis.h"
 
 IntersectProcessor::IntersectProcessor()
     : AudioProcessor (BusesProperties()
@@ -90,8 +91,51 @@ void IntersectProcessor::drainCommands()
         updateHostDisplay (ChangeDetails().withNonParameterStateChanged (true));
 }
 
+void IntersectProcessor::captureSnapshot()
+{
+    UndoManager::Snapshot snap;
+    for (int i = 0; i < SliceManager::kMaxSlices; ++i)
+        snap.slices[(size_t) i] = sliceManager.getSlice (i);
+    snap.numSlices = sliceManager.getNumSlices();
+    snap.selectedSlice = sliceManager.selectedSlice;
+    snap.rootNote = sliceManager.rootNote.load();
+    snap.apvtsState = apvts.copyState();
+    snap.midiSelectsSlice = midiSelectsSlice.load();
+    snap.snapToZeroCrossing = snapToZeroCrossing.load();
+    undoMgr.push (snap);
+}
+
+void IntersectProcessor::restoreSnapshot (const UndoManager::Snapshot& snap)
+{
+    for (int i = 0; i < SliceManager::kMaxSlices; ++i)
+        sliceManager.getSlice (i) = snap.slices[(size_t) i];
+    sliceManager.setNumSlices (snap.numSlices);
+    sliceManager.selectedSlice = snap.selectedSlice;
+    sliceManager.rootNote.store (snap.rootNote);
+    apvts.replaceState (snap.apvtsState);
+    midiSelectsSlice.store (snap.midiSelectsSlice);
+    snapToZeroCrossing.store (snap.snapToZeroCrossing);
+    sliceManager.rebuildMidiMap();
+}
+
 void IntersectProcessor::handleCommand (const Command& cmd)
 {
+    // Capture snapshot before modifying commands (not for load/relink/lazychop/undo/redo/none)
+    switch (cmd.type)
+    {
+        case CmdNone:
+        case CmdLoadFile:
+        case CmdRelinkFile:
+        case CmdLazyChopStart:
+        case CmdLazyChopStop:
+        case CmdUndo:
+        case CmdRedo:
+            break;
+        default:
+            captureSnapshot();
+            break;
+    }
+
     switch (cmd.type)
     {
         case CmdLoadFile:
@@ -136,7 +180,8 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                 psp.grainMode      = (int) grainModeParam->load();
                 psp.sampleRate     = currentSampleRate;
                 psp.sample         = &sampleData;
-                lazyChop.start (sampleData.getNumFrames(), sliceManager, psp);
+                lazyChop.start (sampleData.getNumFrames(), sliceManager, psp,
+                                snapToZeroCrossing.load(), &sampleData.getBuffer());
             }
             break;
 
@@ -259,13 +304,58 @@ void IntersectProcessor::handleCommand (const Command& cmd)
 
                 sliceManager.deleteSlice (sel);
 
+                bool doSnap = snapToZeroCrossing.load() && sampleData.isLoaded();
                 int firstNew = -1;
                 for (int i = 0; i < count; ++i)
                 {
                     int s = startS + i * len / count;
                     int e = startS + (i + 1) * len / count;
+                    // Snap interior boundaries (not first start / last end)
+                    if (doSnap)
+                    {
+                        if (i > 0)
+                            s = AudioAnalysis::findNearestZeroCrossing (sampleData.getBuffer(), s);
+                        if (i < count - 1)
+                            e = AudioAnalysis::findNearestZeroCrossing (sampleData.getBuffer(), e);
+                    }
+                    if (e - s < 64) e = s + 64;
                     int idx = sliceManager.createSlice (s, e);
                     if (i == 0) firstNew = idx;
+                }
+
+                sliceManager.rebuildMidiMap();
+                if (firstNew >= 0)
+                    sliceManager.selectedSlice = firstNew;
+            }
+            break;
+        }
+
+        case CmdTransientChop:
+        {
+            int sel = sliceManager.selectedSlice;
+            if (sel >= 0 && sel < sliceManager.getNumSlices() && ! cmd.positions.empty())
+            {
+                const auto& src = sliceManager.getSlice (sel);
+                int startS = src.startSample;
+                int endS = src.endSample;
+
+                sliceManager.deleteSlice (sel);
+
+                // Build boundary list: [startS, ...positions..., endS]
+                std::vector<int> bounds;
+                bounds.push_back (startS);
+                for (int p : cmd.positions)
+                    bounds.push_back (p);
+                bounds.push_back (endS);
+
+                int firstNew = -1;
+                for (size_t i = 0; i + 1 < bounds.size(); ++i)
+                {
+                    int s = bounds[i];
+                    int e = bounds[i + 1];
+                    if (e - s < 64) continue;
+                    int idx = sliceManager.createSlice (s, e);
+                    if (firstNew < 0) firstNew = idx;
                 }
 
                 sliceManager.rebuildMidiMap();
@@ -282,6 +372,16 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                 missingFilePath.clear();
                 sliceManager.rebuildMidiMap();
             }
+            break;
+
+        case CmdUndo:
+            if (undoMgr.canUndo())
+                restoreSnapshot (undoMgr.undo());
+            break;
+
+        case CmdRedo:
+            if (undoMgr.canRedo())
+                restoreSnapshot (undoMgr.redo());
             break;
 
         case CmdNone:
@@ -454,7 +554,7 @@ void IntersectProcessor::getStateInformation (juce::MemoryBlock& destData)
     juce::MemoryOutputStream stream (destData, false);
 
     // Version
-    stream.writeInt (11);
+    stream.writeInt (12);
 
     // APVTS state
     auto state = apvts.copyState();
@@ -509,6 +609,9 @@ void IntersectProcessor::getStateInformation (juce::MemoryBlock& destData)
     // v9: store file path only (no PCM)
     stream.writeString (sampleData.getFilePath());
     stream.writeString (sampleData.getFileName());
+
+    // v12: snap-to-zero-crossing toggle
+    stream.writeBool (snapToZeroCrossing.load());
 }
 
 void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
@@ -516,7 +619,7 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
     juce::MemoryInputStream stream (data, (size_t) sizeInBytes, false);
 
     int version = stream.readInt();
-    if (version < 9 || version > 11)
+    if (version < 9 || version > 12)
         return;
 
     // APVTS state
@@ -621,6 +724,12 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
     }
 
     sliceManager.rebuildMidiMap();
+
+    // v12: snap-to-zero-crossing
+    if (version >= 12)
+        snapToZeroCrossing.store (stream.readBool());
+    else
+        snapToZeroCrossing.store (false);
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()

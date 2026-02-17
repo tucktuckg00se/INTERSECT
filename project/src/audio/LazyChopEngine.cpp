@@ -1,8 +1,10 @@
 #include "LazyChopEngine.h"
+#include "AudioAnalysis.h"
 #include <cmath>
 
 void LazyChopEngine::start (int sampleLen, SliceManager& sliceMgr,
-                            const PreviewStretchParams& params)
+                            const PreviewStretchParams& params,
+                            bool snap, const juce::AudioBuffer<float>* buf)
 {
     active = true;
     playing = false;
@@ -10,6 +12,8 @@ void LazyChopEngine::start (int sampleLen, SliceManager& sliceMgr,
     sampleLength = sampleLen;
     lastNote = -1;
     cachedParams = params;
+    snapEnabled = snap;
+    sampleBuffer = buf;
 
     nextMidiNote = sliceMgr.rootNote.load();
     int num = sliceMgr.getNumSlices();
@@ -158,6 +162,9 @@ void LazyChopEngine::onNote (int note, VoicePool& voicePool, SliceManager& slice
     // Subsequent unassigned note — place slice boundary at playhead
     auto& v = voicePool.getVoice (getPreviewVoiceIndex());
     int playhead = (int) std::floor (v.position);
+
+    if (snapEnabled && sampleBuffer != nullptr)
+        playhead = AudioAnalysis::findNearestZeroCrossing (*sampleBuffer, playhead);
 
     // After audition, first unassigned note just sets a new start point
     if (chopPos < 0)

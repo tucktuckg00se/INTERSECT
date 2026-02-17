@@ -23,6 +23,7 @@ public:
     void rebuildCacheIfNeeded();
 
     bool sliceDrawMode = false;
+    std::vector<int> transientPreviewPositions;
 
 private:
     enum DragMode { None, DragEdgeLeft, DragEdgeRight, DrawSlice, MoveSlice };

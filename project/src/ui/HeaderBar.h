@@ -35,6 +35,8 @@ private:
     void openRelinkBrowser();
 
     IntersectProcessor& processor;
+    juce::TextButton undoBtn { "UNDO" };
+    juce::TextButton redoBtn { "REDO" };
     juce::TextButton loadBtn { "LOAD" };
     juce::TextButton themeBtn { "UI" };
 

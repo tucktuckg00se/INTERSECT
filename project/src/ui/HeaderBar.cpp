@@ -7,18 +7,37 @@
 
 HeaderBar::HeaderBar (IntersectProcessor& p) : processor (p)
 {
+    addAndMakeVisible (undoBtn);
+    addAndMakeVisible (redoBtn);
     addAndMakeVisible (loadBtn);
     addAndMakeVisible (themeBtn);
+    undoBtn.setAlwaysOnTop (true);
+    redoBtn.setAlwaysOnTop (true);
     loadBtn.setAlwaysOnTop (true);
     themeBtn.setAlwaysOnTop (true);
 
     // Style buttons to match M button
-    loadBtn.setColour (juce::TextButton::buttonColourId, getTheme().button);
-    loadBtn.setColour (juce::TextButton::textColourOnId, getTheme().foreground);
-    loadBtn.setColour (juce::TextButton::textColourOffId, getTheme().foreground);
-    themeBtn.setColour (juce::TextButton::buttonColourId, getTheme().button);
-    themeBtn.setColour (juce::TextButton::textColourOnId, getTheme().foreground);
-    themeBtn.setColour (juce::TextButton::textColourOffId, getTheme().foreground);
+    for (auto* btn : { &undoBtn, &redoBtn, &loadBtn, &themeBtn })
+    {
+        btn->setColour (juce::TextButton::buttonColourId, getTheme().button);
+        btn->setColour (juce::TextButton::textColourOnId, getTheme().foreground);
+        btn->setColour (juce::TextButton::textColourOffId, getTheme().foreground);
+    }
+
+    undoBtn.setTooltip ("Undo");
+    redoBtn.setTooltip ("Redo");
+
+    undoBtn.onClick = [this] {
+        IntersectProcessor::Command cmd;
+        cmd.type = IntersectProcessor::CmdUndo;
+        processor.pushCommand (cmd);
+    };
+
+    redoBtn.onClick = [this] {
+        IntersectProcessor::Command cmd;
+        cmd.type = IntersectProcessor::CmdRedo;
+        processor.pushCommand (cmd);
+    };
 
     loadBtn.onClick = [this] { openFileBrowser(); };
 
@@ -27,11 +46,16 @@ HeaderBar::HeaderBar (IntersectProcessor& p) : processor (p)
 
 void HeaderBar::resized()
 {
-    int btnH = 28;
     int right = getWidth() - 8;  // 8px right margin matching content
 
-    themeBtn.setBounds     (right - 26, 2, 26, btnH);
-    loadBtn.setBounds      (right - 26 - 4 - 40, 2, 40, btnH);
+    themeBtn.setBounds     (right - 26, 2, 26, 28);
+    loadBtn.setBounds      (right - 26 - 4 - 40, 2, 40, 28);
+
+    // UNDO/REDO stacked vertically
+    int undoW = 48;
+    int undoX = right - 26 - 4 - 40 - 4 - undoW;
+    undoBtn.setBounds      (undoX, 2, undoW, 13);
+    redoBtn.setBounds      (undoX, 17, undoW, 13);
 }
 
 void HeaderBar::adjustScale (float delta)
@@ -177,9 +201,9 @@ void HeaderBar::paint (juce::Graphics& g)
             x += cellW + cellGap;
         }
 
-        // Filename and sample info (right-aligned, left of LOAD button)
+        // Filename and sample info (right-aligned, left of UNDO button)
         {
-            int rightEdge = loadBtn.getX() - 6;
+            int rightEdge = undoBtn.getX() - 6;
             bool isMissing = processor.sampleMissing.load();
 
             g.setFont (IntersectLookAndFeel::makeFont (12.0f));
@@ -350,7 +374,7 @@ void HeaderBar::paint (juce::Graphics& g)
         g.setFont (IntersectLookAndFeel::makeFont (18.0f, true));
         g.drawText ("INTERSECT", 8, 8, 160, 20, juce::Justification::centredLeft);
 
-        int rightEdge = loadBtn.getX() - 6;
+        int rightEdge = undoBtn.getX() - 6;
         g.setFont (IntersectLookAndFeel::makeFont (12.0f));
         g.setColour (juce::Colours::orange);
         g.drawText ("MISSING", 180, 2, rightEdge - 180, 13, juce::Justification::right);

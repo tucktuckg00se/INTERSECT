@@ -1,7 +1,9 @@
 #include "ActionPanel.h"
+#include "AutoChopPanel.h"
 #include "IntersectLookAndFeel.h"
 #include "WaveformView.h"
 #include "../PluginProcessor.h"
+#include "../audio/AudioAnalysis.h"
 
 ActionPanel::ActionPanel (IntersectProcessor& p, WaveformView& wv)
     : processor (p), waveformView (wv)
@@ -11,10 +13,11 @@ ActionPanel::ActionPanel (IntersectProcessor& p, WaveformView& wv)
     addAndMakeVisible (dupBtn);
     addAndMakeVisible (splitBtn);
     addAndMakeVisible (deleteBtn);
+    addAndMakeVisible (snapBtn);
     addAndMakeVisible (midiSelectBtn);
 
     // Style all buttons to match M button color scheme
-    for (auto* btn : { &addSliceBtn, &lazyChopBtn, &dupBtn, &splitBtn, &deleteBtn, &midiSelectBtn })
+    for (auto* btn : { &addSliceBtn, &lazyChopBtn, &dupBtn, &splitBtn, &deleteBtn, &snapBtn, &midiSelectBtn })
     {
         btn->setColour (juce::TextButton::buttonColourId, getTheme().button);
         btn->setColour (juce::TextButton::textColourOnId, getTheme().foreground);
@@ -47,38 +50,39 @@ ActionPanel::ActionPanel (IntersectProcessor& p, WaveformView& wv)
     };
 
     splitBtn.onClick = [this] {
-        auto* aw = new juce::AlertWindow ("Split Slice", "Number of slices:",
-                                           juce::MessageBoxIconType::NoIcon);
-        aw->setColour (juce::AlertWindow::backgroundColourId, getTheme().darkBar);
-        aw->setColour (juce::AlertWindow::textColourId, getTheme().foreground);
-        aw->setColour (juce::AlertWindow::outlineColourId, getTheme().separator);
-        aw->addTextEditor ("count", "16");
-        if (auto* te = aw->getTextEditor ("count"))
+        if (autoChopPanel != nullptr)
         {
-            te->setColour (juce::TextEditor::backgroundColourId, getTheme().darkBar.brighter (0.15f));
-            te->setColour (juce::TextEditor::textColourId, getTheme().foreground);
-            te->setColour (juce::TextEditor::outlineColourId, getTheme().separator);
+            // Already showing — close it
+            if (auto* parent = autoChopPanel->getParentComponent())
+                parent->removeChildComponent (autoChopPanel.get());
+            autoChopPanel.reset();
+            return;
         }
-        aw->addButton ("OK", 1);
-        aw->addButton ("Cancel", 0);
-        if (auto* topLvl = getTopLevelComponent())
-            aw->centreAroundComponent (topLvl, aw->getWidth(), aw->getHeight());
-        aw->enterModalState (true, juce::ModalCallbackFunction::create (
-            [this, aw] (int result) {
-                if (result == 1)
-                {
-                    int count = aw->getTextEditorContents ("count").getIntValue();
-                    if (count >= 2 && count <= 128)
-                    {
-                        IntersectProcessor::Command cmd;
-                        cmd.type = IntersectProcessor::CmdSplitSlice;
-                        cmd.intParam1 = count;
-                        processor.pushCommand (cmd);
-                    }
-                }
-                delete aw;
-            }));
+
+        autoChopPanel = std::make_unique<AutoChopPanel> (processor, waveformView);
+
+        // Add to editor (top-level) so it overlays the waveform
+        if (auto* editor = getTopLevelComponent())
+        {
+            int panelW = 340;
+            int panelH = 130;
+            auto wfBounds = waveformView.getBoundsInParent();
+            int cx = wfBounds.getCentreX() - panelW / 2;
+            int cy = wfBounds.getCentreY() - panelH / 2;
+            autoChopPanel->setBounds (cx, cy, panelW, panelH);
+            editor->addAndMakeVisible (*autoChopPanel);
+        }
     };
+
+    snapBtn.setTooltip ("Snap to zero-crossing (ZX)");
+    snapBtn.onClick = [this] {
+        bool current = processor.snapToZeroCrossing.load();
+        bool newState = ! current;
+        processor.snapToZeroCrossing.store (newState);
+        updateSnapButtonAppearance (newState);
+        repaint();
+    };
+    updateSnapButtonAppearance (false);
 
     deleteBtn.onClick = [this] {
         int sel = processor.sliceManager.selectedSlice;
@@ -91,7 +95,7 @@ ActionPanel::ActionPanel (IntersectProcessor& p, WaveformView& wv)
         }
     };
 
-    midiSelectBtn.setTooltip ("MIDI selects slice");
+    midiSelectBtn.setTooltip ("Follow MIDI (auto-select slice on note)");
     midiSelectBtn.onClick = [this] {
         bool current = processor.midiSelectsSlice.load();
         bool newState = ! current;
@@ -102,12 +106,15 @@ ActionPanel::ActionPanel (IntersectProcessor& p, WaveformView& wv)
     updateMidiButtonAppearance (false);
 }
 
+ActionPanel::~ActionPanel() = default;
+
 void ActionPanel::resized()
 {
     int gap = 6;
     int btnH = getHeight();
-    int mBtnW = 24;  // narrow M button
-    int availW = getWidth() - mBtnW - gap;
+    int narrowW = 30;  // ZX and FM buttons
+    int narrowTotal = narrowW * 2 + gap;  // ZX + FM + gap between them
+    int availW = getWidth() - narrowTotal - gap;
     int numBtns = 5;
     int totalGap = gap * (numBtns - 1);
     int btnW = (availW - totalGap) / numBtns;
@@ -117,13 +124,15 @@ void ActionPanel::resized()
     splitBtn.setBounds (2 * (btnW + gap), 0, btnW, btnH);
     dupBtn.setBounds (3 * (btnW + gap), 0, btnW, btnH);
     deleteBtn.setBounds (4 * (btnW + gap), 0, btnW, btnH);
-    midiSelectBtn.setBounds (getWidth() - mBtnW, 0, mBtnW, btnH);
+    snapBtn.setBounds (getWidth() - narrowW * 2 - gap, 0, narrowW, btnH);
+    midiSelectBtn.setBounds (getWidth() - narrowW, 0, narrowW, btnH);
 }
 
 void ActionPanel::paint (juce::Graphics& g)
 {
-    // Sync M button appearance
+    // Sync button appearances
     updateMidiButtonAppearance (processor.midiSelectsSlice.load());
+    updateSnapButtonAppearance (processor.snapToZeroCrossing.load());
 
     // Highlight +SLC if in draw mode
     if (waveformView.sliceDrawMode)
@@ -158,5 +167,21 @@ void ActionPanel::updateMidiButtonAppearance (bool active)
         midiSelectBtn.setColour (juce::TextButton::textColourOnId, getTheme().foreground);
         midiSelectBtn.setColour (juce::TextButton::textColourOffId, getTheme().foreground);
         midiSelectBtn.setColour (juce::TextButton::buttonColourId, getTheme().button);
+    }
+}
+
+void ActionPanel::updateSnapButtonAppearance (bool active)
+{
+    if (active)
+    {
+        snapBtn.setColour (juce::TextButton::textColourOnId, getTheme().accent);
+        snapBtn.setColour (juce::TextButton::textColourOffId, getTheme().accent);
+        snapBtn.setColour (juce::TextButton::buttonColourId, getTheme().accent.withAlpha (0.2f));
+    }
+    else
+    {
+        snapBtn.setColour (juce::TextButton::textColourOnId, getTheme().foreground);
+        snapBtn.setColour (juce::TextButton::textColourOffId, getTheme().foreground);
+        snapBtn.setColour (juce::TextButton::buttonColourId, getTheme().button);
     }
 }
