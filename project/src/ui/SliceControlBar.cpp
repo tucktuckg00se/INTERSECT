@@ -62,7 +62,7 @@ void SliceControlBar::paint (juce::Graphics& g)
 
     int idx = processor.sliceManager.selectedSlice;
     int numSlices = processor.sliceManager.getNumSlices();
-    int rightEdge = getWidth() - 4;  // right boundary for painted content
+    int rightEdge = getWidth() - 8;  // 8px right margin matching content
 
     int row1y = 2;
     int row2y = 36;
@@ -299,6 +299,7 @@ void SliceControlBar::mouseDown (const juce::MouseEvent& e)
     if (textEditor != nullptr)
         textEditor.reset();
 
+    activeDragCell = -1;
     draggingRootNote = false;
     auto pos = e.getPosition();
 

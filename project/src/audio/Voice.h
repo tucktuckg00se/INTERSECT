@@ -61,4 +61,5 @@ struct Voice
     double       bungeeSrcPos       = 0.0;
     double       bungeePitch        = 1.0;
     double       bungeeSpeed        = 1.0;
+    bool         bungeeResetNeeded  = false;
 };

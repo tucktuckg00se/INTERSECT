@@ -338,11 +338,13 @@ static void fillBungeeBlock (Voice& v, const SampleData& sample)
         {
             v.bungeeSrcPos = v.endSample - 1;
             v.bungeeSpeed = -std::abs (v.bungeeSpeed);
+            v.bungeeResetNeeded = true;
         }
         else if (v.bungeeSpeed < 0.0 && v.bungeeSrcPos <= v.startSample)
         {
             v.bungeeSrcPos = v.startSample;
             v.bungeeSpeed = std::abs (v.bungeeSpeed);
+            v.bungeeResetNeeded = true;
         }
     }
 
@@ -353,8 +355,9 @@ static void fillBungeeBlock (Voice& v, const SampleData& sample)
     request.position = v.bungeeSrcPos;
     request.speed = v.bungeeSpeed;
     request.pitch = v.bungeePitch;
-    request.reset = (v.bungeeOutAvail == 0 && v.bungeeOutReadPos == 0);
+    request.reset = (v.bungeeOutAvail == 0 && v.bungeeOutReadPos == 0) || v.bungeeResetNeeded;
     request.resampleMode = resampleMode_autoOut;
+    v.bungeeResetNeeded = false;
 
     if (request.reset)
         stretcher.preroll (request);

@@ -28,10 +28,10 @@ HeaderBar::HeaderBar (IntersectProcessor& p) : processor (p)
 void HeaderBar::resized()
 {
     int btnH = 28;
-    int right = getWidth();
+    int right = getWidth() - 8;  // 8px right margin matching content
 
-    themeBtn.setBounds     (right - 30, 2, 26, btnH);
-    loadBtn.setBounds      (right - 30 - 44, 2, 40, btnH);
+    themeBtn.setBounds     (right - 26, 2, 26, btnH);
+    loadBtn.setBounds      (right - 26 - 4 - 40, 2, 40, btnH);
 }
 
 void HeaderBar::adjustScale (float delta)
@@ -357,6 +357,7 @@ void HeaderBar::mouseDown (const juce::MouseEvent& e)
     if (textEditor != nullptr)
         textEditor.reset();
 
+    activeDragCell = -1;
     auto pos = e.getPosition();
 
     // Click on sample info area opens file browser (relink if missing)
