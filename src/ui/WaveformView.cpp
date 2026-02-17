@@ -131,7 +131,7 @@ void WaveformView::paint (juce::Graphics& g)
 
 void WaveformView::drawWaveform (juce::Graphics& g)
 {
-    g.setColour (getTheme().waveformOrange.withAlpha (0.9f));
+    g.setColour (getTheme().waveform.withAlpha (0.9f));
     int cy = getHeight() / 2;
     float scale = getHeight() * 0.48f;
 
@@ -212,7 +212,7 @@ void WaveformView::drawSlices (juce::Graphics& g)
         if (i == sel)
         {
             // Selected: purple overlay
-            g.setColour (getTheme().purpleOverlay.withAlpha (0.22f));
+            g.setColour (getTheme().selectionOverlay.withAlpha (0.22f));
             g.fillRect (x1, 0, sw, getHeight());
 
             // White markers with triangle handles at bottom
@@ -332,12 +332,18 @@ void WaveformView::mouseDown (const juce::MouseEvent& e)
 
             if (std::abs (e.x - x1) < 6)
             {
+                IntersectProcessor::Command gestureCmd;
+                gestureCmd.type = IntersectProcessor::CmdBeginGesture;
+                processor.pushCommand (gestureCmd);
                 dragMode = DragEdgeLeft;
                 dragSliceIdx = sel;
                 return;
             }
             if (std::abs (e.x - x2) < 6)
             {
+                IntersectProcessor::Command gestureCmd;
+                gestureCmd.type = IntersectProcessor::CmdBeginGesture;
+                processor.pushCommand (gestureCmd);
                 dragMode = DragEdgeRight;
                 dragSliceIdx = sel;
                 return;
@@ -345,6 +351,9 @@ void WaveformView::mouseDown (const juce::MouseEvent& e)
 
             if (e.x > x1 && e.x < x2)
             {
+                IntersectProcessor::Command gestureCmd;
+                gestureCmd.type = IntersectProcessor::CmdBeginGesture;
+                processor.pushCommand (gestureCmd);
                 dragMode = MoveSlice;
                 dragSliceIdx = sel;
                 dragOffset = samplePos - s.startSample;

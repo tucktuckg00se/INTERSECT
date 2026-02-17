@@ -1,0 +1,34 @@
+# INTERSECT Dark Theme
+#
+# Copy this file to your INTERSECT themes folder and edit the colours:
+#   Windows:  %APPDATA%\INTERSECT\themes\
+#   macOS:    ~/Library/Application Support/INTERSECT/themes/
+#   Linux:    ~/.config/INTERSECT/themes/
+#
+# Colours are 6-digit hex (RRGGBB). Restart the plugin to apply changes.
+
+name: dark
+
+# Main surfaces
+background: 0a0a0e          # window background
+waveformBg: 060608          # waveform area background
+darkBar: 0e0e13             # slice control bar / action panel background
+header: 0d0d14              # header bar background
+
+# Text & lines
+foreground: ccd0d8          # primary text colour
+gridLine: 23232d            # waveform grid lines
+separator: 33333f           # horizontal separator lines
+
+# Waveform & slices
+waveform: b2c6d8            # waveform draw colour
+sliceRegion: 2a2a35         # slice region fill
+sliceRegionSelected: 3a3a50 # selected slice region fill
+selectionOverlay: 3f598c    # selected slice translucent overlay
+
+# Controls
+accent: 3fd8d8              # accent colour (labels, highlights)
+lockActive: e55938          # locked/overridden parameter indicator
+lockInactive: 4c4c56        # unlocked/inherited parameter indicator
+button: 1c2028              # button background
+buttonHover: 2a3040         # button hover background

@@ -1,0 +1,34 @@
+# INTERSECT Light Theme
+#
+# Copy this file to your INTERSECT themes folder and edit the colours:
+#   Windows:  %APPDATA%\INTERSECT\themes\
+#   macOS:    ~/Library/Application Support/INTERSECT/themes/
+#   Linux:    ~/.config/INTERSECT/themes/
+#
+# Colours are 6-digit hex (RRGGBB). Restart the plugin to apply changes.
+
+name: light
+
+# Main surfaces
+background: f0f0f4          # window background
+waveformBg: fafafe          # waveform area background
+darkBar: e8e8f0             # slice control bar / action panel background
+header: e0e0ec              # header bar background
+
+# Text & lines
+foreground: 1a1a2e          # primary text colour
+gridLine: d8d8e0            # waveform grid lines
+separator: c0c0cc           # horizontal separator lines
+
+# Waveform & slices
+waveform: 2a4060            # waveform draw colour
+sliceRegion: d0d0dd         # slice region fill
+sliceRegionSelected: b8b8cc # selected slice region fill
+selectionOverlay: 8090b8    # selected slice translucent overlay
+
+# Controls
+accent: 1a8888              # accent colour (labels, highlights)
+lockActive: cc4422          # locked/overridden parameter indicator
+lockInactive: 9999a8        # unlocked/inherited parameter indicator
+button: d0d4dc              # button background
+buttonHover: bcc0cc         # button hover background

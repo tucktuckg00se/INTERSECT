@@ -55,6 +55,7 @@ public:
         CmdRelinkFile,
         CmdUndo,
         CmdRedo,
+        CmdBeginGesture,
     };
 
     // Param field identifiers for CmdSetSliceParam

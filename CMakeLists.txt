@@ -4,10 +4,10 @@ project(Intersect VERSION 1.0.0)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../JUCE JUCE)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/JUCE JUCE)
 
 # --- Bungee (built as static library) ---
-set(BUNGEE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../bungee)
+set(BUNGEE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/bungee)
 
 # pffft (C library used by Bungee)
 add_library(pffft STATIC EXCLUDE_FROM_ALL
@@ -61,8 +61,8 @@ juce_add_plugin(Intersect
 )
 
 juce_add_binary_data(IntersectFonts SOURCES
-    fonts/IBMPlexSans-Regular.ttf
-    fonts/IBMPlexSans-Bold.ttf
+    src/ui/fonts/IBMPlexSans-Regular.ttf
+    src/ui/fonts/IBMPlexSans-Bold.ttf
 )
 
 target_sources(Intersect PRIVATE
@@ -86,9 +86,9 @@ target_sources(Intersect PRIVATE
 )
 
 target_include_directories(Intersect PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/..
-    ${CMAKE_CURRENT_SOURCE_DIR}/../signalsmith-stretch
-    ${CMAKE_CURRENT_SOURCE_DIR}/../signalsmith-linear
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/signalsmith-stretch
+    ${CMAKE_CURRENT_SOURCE_DIR}/signalsmith-linear
     ${BUNGEE_ROOT}
 )
 

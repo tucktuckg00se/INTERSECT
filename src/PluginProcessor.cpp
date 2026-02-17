@@ -130,6 +130,7 @@ void IntersectProcessor::handleCommand (const Command& cmd)
         case CmdLazyChopStop:
         case CmdUndo:
         case CmdRedo:
+        case CmdSetSliceParam:
             break;
         default:
             captureSnapshot();
@@ -383,6 +384,9 @@ void IntersectProcessor::handleCommand (const Command& cmd)
             if (undoMgr.canRedo())
                 restoreSnapshot (undoMgr.redo());
             break;
+
+        case CmdBeginGesture:
+            break; // snapshot already captured by default path above
 
         case CmdNone:
             break;

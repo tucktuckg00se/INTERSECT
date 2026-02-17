@@ -15,12 +15,12 @@ void SliceControlBar::drawLockIcon (juce::Graphics& g, int x, int y, bool locked
 {
     if (locked)
     {
-        g.setColour (getTheme().lockGold);
+        g.setColour (getTheme().lockActive);
         g.fillRect (x, y, 10, 10);
     }
     else
     {
-        g.setColour (getTheme().lockDim.withAlpha (0.6f));
+        g.setColour (getTheme().lockInactive.withAlpha (0.6f));
         g.drawRect (x, y, 10, 10, 1);
     }
 }
@@ -35,7 +35,7 @@ void SliceControlBar::drawParamCell (juce::Graphics& g, int x, int y,
 
     // Label
     g.setFont (IntersectLookAndFeel::makeFont (12.0f));
-    g.setColour (locked ? getTheme().lockGold.withAlpha (0.8f)
+    g.setColour (locked ? getTheme().lockActive.withAlpha (0.8f)
                         : getTheme().foreground.withAlpha (0.45f));
     g.drawText (label, x + 14, y + 2, 70, 13, juce::Justification::centredLeft);
 
@@ -321,6 +321,10 @@ void SliceControlBar::mouseDown (const juce::MouseEvent& e)
     // Root note drag (only editable when no slices exist)
     if (processor.sliceManager.getNumSlices() == 0 && rootNoteArea.contains (pos))
     {
+        IntersectProcessor::Command gestureCmd;
+        gestureCmd.type = IntersectProcessor::CmdBeginGesture;
+        processor.pushCommand (gestureCmd);
+
         draggingRootNote = true;
         dragStartY = pos.y;
         dragStartValue = (float) processor.sliceManager.rootNote.load();
@@ -435,6 +439,11 @@ void SliceControlBar::mouseDown (const juce::MouseEvent& e)
             }
 
             // Set up drag for numeric params
+            {
+                IntersectProcessor::Command gestureCmd;
+                gestureCmd.type = IntersectProcessor::CmdBeginGesture;
+                processor.pushCommand (gestureCmd);
+            }
             activeDragCell = i;
             dragStartY = pos.y;
 

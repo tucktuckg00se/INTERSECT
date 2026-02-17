@@ -70,7 +70,7 @@ void HeaderBar::adjustScale (float delta)
 
 void HeaderBar::paint (juce::Graphics& g)
 {
-    g.fillAll (getTheme().tealHeader);
+    g.fillAll (getTheme().header);
     headerCells.clear();
 
     if (processor.sampleData.isLoaded())
@@ -182,7 +182,7 @@ void HeaderBar::paint (juce::Graphics& g)
             g.drawText ("FMNT C", x, row1y + 2, cellW, 13, juce::Justification::centredLeft);
             g.setFont (IntersectLookAndFeel::makeFont (14.0f));
             bool fmntC = processor.apvts.getRawParameterValue (ParamIds::defaultFormantComp)->load() > 0.5f;
-            g.setColour (fmntC ? getTheme().lockGold : getTheme().foreground.withAlpha (0.5f));
+            g.setColour (fmntC ? getTheme().lockActive : getTheme().foreground.withAlpha (0.5f));
             g.drawText (fmntC ? "ON" : "OFF", x, row1y + 15, cellW, 14, juce::Justification::centredLeft);
             headerCells.push_back ({ x, row1y, cellW, row1h, ParamIds::defaultFormantComp, 0.0f, 1.0f, 1.0f, false, true, false, false });
             x += cellW + cellGap;
@@ -291,7 +291,7 @@ void HeaderBar::paint (juce::Graphics& g)
         g.drawText ("TAIL", x, row2y + 2, cellW, 13, juce::Justification::centredLeft);
         g.setFont (IntersectLookAndFeel::makeFont (14.0f));
         bool tail = processor.apvts.getRawParameterValue (ParamIds::defaultReleaseTail)->load() > 0.5f;
-        g.setColour (tail ? getTheme().lockGold : getTheme().foreground.withAlpha (0.5f));
+        g.setColour (tail ? getTheme().lockActive : getTheme().foreground.withAlpha (0.5f));
         g.drawText (tail ? "ON" : "OFF", x, row2y + 15, cellW, 14, juce::Justification::centredLeft);
         headerCells.push_back ({ x, row2y, cellW, row2h, ParamIds::defaultReleaseTail, 0.0f, 1.0f, 1.0f, false, true, false, false });
         x += cellW + cellGap;
@@ -302,7 +302,7 @@ void HeaderBar::paint (juce::Graphics& g)
         g.drawText ("REV", x, row2y + 2, cellW, 13, juce::Justification::centredLeft);
         g.setFont (IntersectLookAndFeel::makeFont (14.0f));
         bool rev = processor.apvts.getRawParameterValue (ParamIds::defaultReverse)->load() > 0.5f;
-        g.setColour (rev ? getTheme().lockGold : getTheme().foreground.withAlpha (0.5f));
+        g.setColour (rev ? getTheme().lockActive : getTheme().foreground.withAlpha (0.5f));
         g.drawText (rev ? "ON" : "OFF", x, row2y + 15, cellW, 14, juce::Justification::centredLeft);
         headerCells.push_back ({ x, row2y, cellW, row2h, ParamIds::defaultReverse, 0.0f, 1.0f, 1.0f, false, true, false, false });
         x += cellW + cellGap;
@@ -313,7 +313,7 @@ void HeaderBar::paint (juce::Graphics& g)
         g.drawText ("PP", x, row2y + 2, cellW, 13, juce::Justification::centredLeft);
         g.setFont (IntersectLookAndFeel::makeFont (14.0f));
         bool pp = processor.apvts.getRawParameterValue (ParamIds::defaultPingPong)->load() > 0.5f;
-        g.setColour (pp ? getTheme().lockGold : getTheme().foreground.withAlpha (0.5f));
+        g.setColour (pp ? getTheme().lockActive : getTheme().foreground.withAlpha (0.5f));
         g.drawText (pp ? "ON" : "OFF", x, row2y + 15, cellW, 14, juce::Justification::centredLeft);
         headerCells.push_back ({ x, row2y, cellW, row2h, ParamIds::defaultPingPong, 0.0f, 1.0f, 1.0f, false, true, false, false });
         x += cellW + cellGap;
@@ -479,6 +479,11 @@ void HeaderBar::mouseDown (const juce::MouseEvent& e)
             }
 
             // Set up drag for numeric params
+            {
+                IntersectProcessor::Command gestureCmd;
+                gestureCmd.type = IntersectProcessor::CmdBeginGesture;
+                processor.pushCommand (gestureCmd);
+            }
             activeDragCell = i;
             dragStartY = pos.y;
             dragStartValue = processor.apvts.getRawParameterValue (cell.paramId)->load();
@@ -536,7 +541,7 @@ void HeaderBar::showTextEditor (const HeaderCell& cell)
     addAndMakeVisible (*textEditor);
     textEditor->setBounds (cell.x, cell.y + 12, cell.w, 18);
     textEditor->setFont (IntersectLookAndFeel::makeFont (14.0f));
-    textEditor->setColour (juce::TextEditor::backgroundColourId, getTheme().tealHeader.brighter (0.2f));
+    textEditor->setColour (juce::TextEditor::backgroundColourId, getTheme().header.brighter (0.2f));
     textEditor->setColour (juce::TextEditor::textColourId, juce::Colours::white);
     textEditor->setColour (juce::TextEditor::outlineColourId, getTheme().accent);
 

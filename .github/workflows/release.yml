@@ -14,7 +14,7 @@ jobs:
           submodules: recursive
 
       - name: Configure
-        run: cmake -B build -S project -DCMAKE_BUILD_TYPE=Release
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
         run: cmake --build build --config Release
@@ -24,12 +24,12 @@ jobs:
           mkdir staging
           cp -r build/Intersect_artefacts/Release/VST3/INTERSECT.vst3 staging/
           cp build/Intersect_artefacts/Release/Standalone/INTERSECT.exe staging/
-          cd staging && 7z a ../INTERSECT-Windows.zip *
+          cd staging && 7z a ../INTERSECT-Windows-x64.zip *
 
       - uses: actions/upload-artifact@v4
         with:
-          name: INTERSECT-Windows
-          path: INTERSECT-Windows.zip
+          name: INTERSECT-Windows-x64
+          path: INTERSECT-Windows-x64.zip
 
   build-linux:
     runs-on: ubuntu-latest
@@ -44,7 +44,7 @@ jobs:
           submodules: recursive
 
       - name: Configure
-        run: cmake -B build -S project -DCMAKE_BUILD_TYPE=Release
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
         run: cmake --build build --config Release
@@ -54,12 +54,12 @@ jobs:
           mkdir staging
           cp -r build/Intersect_artefacts/Release/VST3/INTERSECT.vst3 staging/
           cp build/Intersect_artefacts/Release/Standalone/INTERSECT staging/
-          cd staging && zip -r ../INTERSECT-Linux.zip .
+          cd staging && zip -r ../INTERSECT-Linux-x64.zip .
 
       - uses: actions/upload-artifact@v4
         with:
-          name: INTERSECT-Linux
-          path: INTERSECT-Linux.zip
+          name: INTERSECT-Linux-x64
+          path: INTERSECT-Linux-x64.zip
 
   build-macos:
     runs-on: macos-latest
@@ -69,7 +69,7 @@ jobs:
           submodules: recursive
 
       - name: Configure
-        run: cmake -B build -S project -DCMAKE_BUILD_TYPE=Release
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
         run: cmake --build build --config Release
@@ -80,12 +80,12 @@ jobs:
           cp -r build/Intersect_artefacts/Release/VST3/INTERSECT.vst3 staging/
           cp -r build/Intersect_artefacts/Release/Standalone/INTERSECT.app staging/
           cp -r build/Intersect_artefacts/Release/AU/INTERSECT.component staging/
-          cd staging && zip -r ../INTERSECT-macOS.zip .
+          cd staging && zip -r ../INTERSECT-macOS-arm64.zip .
 
       - uses: actions/upload-artifact@v4
         with:
-          name: INTERSECT-macOS
-          path: INTERSECT-macOS.zip
+          name: INTERSECT-macOS-arm64
+          path: INTERSECT-macOS-arm64.zip
 
   release:
     needs: [build-windows, build-linux, build-macos]
@@ -101,6 +101,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            artifacts/INTERSECT-Windows/INTERSECT-Windows.zip
-            artifacts/INTERSECT-Linux/INTERSECT-Linux.zip
-            artifacts/INTERSECT-macOS/INTERSECT-macOS.zip
+            artifacts/INTERSECT-Windows-x64/INTERSECT-Windows-x64.zip
+            artifacts/INTERSECT-Linux-x64/INTERSECT-Linux-x64.zip
+            artifacts/INTERSECT-macOS-arm64/INTERSECT-macOS-arm64.zip

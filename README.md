@@ -85,6 +85,47 @@ Calculates BPM from a slice's length. Select a slice, click **SET BPM**, and cho
 
 Click the **FM** button to toggle. When active, playing a MIDI note automatically selects that slice in the UI.
 
+### Custom Themes
+
+INTERSECT supports custom colour themes via YAML files. On first launch, the plugin creates default `dark.yaml` and `light.yaml` in the themes folder:
+
+| OS | Path |
+|----|------|
+| Windows | `%APPDATA%\INTERSECT\themes\` |
+| macOS | `~/Library/Application Support/INTERSECT/themes/` |
+| Linux | `~/.config/INTERSECT/themes/` |
+
+To create a custom theme:
+
+1. Copy one of the starter files from the [`themes/`](themes/) folder in this repo (or from the themes folder above) and give it a new name, e.g. `mytheme.yaml`
+2. Change the `name:` field to something unique — this is the name shown in the theme picker
+3. Edit the 6-digit hex colour values (`RRGGBB`)
+4. Place the file in the themes folder listed above
+5. Restart the plugin — your theme will appear in the theme selector (right-click the header bar)
+
+**Theme properties:**
+
+| Key | Purpose |
+|-----|---------|
+| `background` | Window background |
+| `waveformBg` | Waveform area background |
+| `darkBar` | Slice control bar / action panel background |
+| `header` | Header bar background |
+| `foreground` | Primary text colour |
+| `gridLine` | Waveform grid lines |
+| `separator` | Horizontal separator lines |
+| `waveform` | Waveform draw colour |
+| `sliceRegion` | Slice region fill |
+| `sliceRegionSelected` | Selected slice region fill |
+| `selectionOverlay` | Selected slice translucent overlay |
+| `accent` | Accent colour (labels, highlights) |
+| `lockActive` | Locked/overridden parameter indicator |
+| `lockInactive` | Unlocked/inherited parameter indicator |
+| `button` | Button background |
+| `buttonHover` | Button hover background |
+
+Any missing key falls back to the dark theme default. Lines starting with `#` are comments.
+
 ## Install
 
 Download the latest release zip for your platform from the [Releases](https://github.com/tucktuckg00se/INTERSECT/releases) page and extract it.
@@ -130,11 +171,11 @@ Requires CMake 3.22+ and a C++20 compiler.
 ```bash
 git clone --recursive git@github.com:tucktuckg00se/INTERSECT.git
 cd INTERSECT
-cmake -B build -S project
+cmake -B build
 cmake --build build --config Release
 ```
 
-**Output:** `build/project/Intersect_artefacts/Release/VST3/INTERSECT.vst3`
+**Output:** `build/Intersect_artefacts/Release/VST3/INTERSECT.vst3`
 
 ### macOS
 
@@ -143,13 +184,13 @@ cmake --build build --config Release
 ```bash
 git clone --recursive git@github.com:tucktuckg00se/INTERSECT.git
 cd INTERSECT
-cmake -B build -S project
+cmake -B build
 cmake --build build --config Release
 ```
 
 **Output:**
-- VST3: `build/project/Intersect_artefacts/Release/VST3/INTERSECT.vst3`
-- AU: `build/project/Intersect_artefacts/Release/AU/INTERSECT.component`
+- VST3: `build/Intersect_artefacts/Release/VST3/INTERSECT.vst3`
+- AU: `build/Intersect_artefacts/Release/AU/INTERSECT.component`
 
 ### Linux
 
@@ -184,11 +225,11 @@ Then build:
 ```bash
 git clone --recursive git@github.com:tucktuckg00se/INTERSECT.git
 cd INTERSECT
-cmake -B build -S project
+cmake -B build
 cmake --build build --config Release
 ```
 
-**Output:** `build/project/Intersect_artefacts/Release/VST3/INTERSECT.vst3`
+**Output:** `build/Intersect_artefacts/Release/VST3/INTERSECT.vst3`
 
 Builds VST3, AU (macOS), and Standalone targets.
 
