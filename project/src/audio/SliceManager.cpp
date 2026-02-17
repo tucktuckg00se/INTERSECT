@@ -104,13 +104,20 @@ void SliceManager::clearAll()
 void SliceManager::rebuildMidiMap()
 {
     midiMap.fill (-1);
+    for (auto& v : midiMapMulti)
+        v.clear();
+
     for (int i = 0; i < numSlices; ++i)
     {
         if (slices[i].active)
         {
             int note = slices[i].midiNote;
             if (note >= 0 && note < 128)
-                midiMap[note] = i;
+            {
+                if (midiMap[note] < 0)
+                    midiMap[note] = i;
+                midiMapMulti[note].push_back (i);
+            }
         }
     }
 }
@@ -120,6 +127,14 @@ int SliceManager::midiNoteToSlice (int note) const
     if (note < 0 || note >= 128)
         return -1;
     return midiMap[note];
+}
+
+const std::vector<int>& SliceManager::midiNoteToSlices (int note) const
+{
+    static const std::vector<int> empty;
+    if (note < 0 || note >= 128)
+        return empty;
+    return midiMapMulti[note];
 }
 
 float SliceManager::resolveParam (int sliceIdx, LockBit lockBit, float sliceValue, float globalDefault) const

@@ -187,6 +187,7 @@ void WaveformView::drawSlices (juce::Graphics& g)
 
 void WaveformView::drawPlaybackCursors (juce::Graphics& g)
 {
+    int previewIdx = LazyChopEngine::getPreviewVoiceIndex();
     for (int i = 0; i < VoicePool::kMaxVoices; ++i)
     {
         float pos = processor.voicePool.voicePositions[i].load (std::memory_order_relaxed);
@@ -195,7 +196,7 @@ void WaveformView::drawPlaybackCursors (juce::Graphics& g)
             int px = sampleToPixel ((int) pos);
             if (px >= 0 && px < getWidth())
             {
-                if (i == VoicePool::kMaxVoices - 1 && processor.lazyChop.isActive())
+                if (i == previewIdx && processor.lazyChop.isActive())
                     g.setColour (juce::Colour (0xFFCC4444));  // red for preview
                 else
                     g.setColour (getTheme().accent.withAlpha (0.7f));  // yellow

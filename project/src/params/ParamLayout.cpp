@@ -112,6 +112,18 @@ juce::AudioProcessorValueTreeState::ParameterLayout ParamLayout::createLayout()
         "Default Release Tail",
         false));
 
+    // Default Reverse: off/on
+    params.push_back (std::make_unique<juce::AudioParameterBool> (
+        juce::ParameterID { ParamIds::defaultReverse, 1 },
+        "Default Reverse",
+        false));
+
+    // Max Voices: 1..32, default 16
+    params.push_back (std::make_unique<juce::AudioParameterInt> (
+        juce::ParameterID { ParamIds::maxVoices, 1 },
+        "Max Voices",
+        1, 32, 16));
+
     // UI Scale: 0.5..3.0, default 1.0, step 0.25
     params.push_back (std::make_unique<juce::AudioParameterFloat> (
         juce::ParameterID { ParamIds::uiScale, 1 },

@@ -20,6 +20,7 @@ public:
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
 
+    bool isBusesLayoutSupported (const BusesLayout& layouts) const override;
     const juce::String getName() const override { return "INTERSECT"; }
     bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return true; }
@@ -71,6 +72,8 @@ public:
         FieldGrainMode,
         FieldVolume,
         FieldReleaseTail,
+        FieldReverse,
+        FieldOutputBus,
     };
 
     struct Command
@@ -135,6 +138,8 @@ private:
     std::atomic<float>* formantCompParam = nullptr;
     std::atomic<float>* grainModeParam   = nullptr;
     std::atomic<float>* releaseTailParam = nullptr;
+    std::atomic<float>* reverseParam     = nullptr;
+    std::atomic<float>* maxVoicesParam   = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (IntersectProcessor)
 };

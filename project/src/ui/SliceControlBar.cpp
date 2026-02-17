@@ -69,29 +69,31 @@ void SliceControlBar::paint (juce::Graphics& g)
 
     // ====== Row 2 right side: always draw SLICES and ROOT ======
     {
-        // ROOT note display (Row 2, right-aligned)
+        // ROOT note display (Row 2, right-aligned flush with rightEdge)
         int rn = processor.sliceManager.rootNote.load();
         bool editable = (numSlices == 0);
-        int rnX = rightEdge - 55;
-        rootNoteArea = { rnX, row2y, 55, 30 };
+        int rnW = 55;
+        int rnX = rightEdge - rnW;
+        rootNoteArea = { rnX, row2y, rnW, 30 };
 
         g.setFont (IntersectLookAndFeel::makeFont (12.0f));
         g.setColour (editable ? getTheme().accent.withAlpha (0.7f)
-                              : getTheme().foreground.withAlpha (0.45f));
-        g.drawText ("ROOT", rnX, row2y + 2, 55, 13, juce::Justification::centredLeft);
+                              : getTheme().foreground.withAlpha (0.35f));
+        g.drawText ("ROOT", rnX, row2y + 2, rnW, 13, juce::Justification::right);
         g.setFont (IntersectLookAndFeel::makeFont (14.0f));
-        g.setColour (editable ? getTheme().foreground
-                              : getTheme().foreground.withAlpha (0.8f));
-        g.drawText (juce::String (rn), rnX, row2y + 15, 55, 14, juce::Justification::centredLeft);
+        g.setColour (editable ? getTheme().foreground.withAlpha (0.6f)
+                              : getTheme().foreground.withAlpha (0.4f));
+        g.drawText (juce::String (rn), rnX, row2y + 15, rnW, 14, juce::Justification::right);
 
-        // SLICES count (Row 2, left of ROOT)
-        int slcX = rnX - 60;
+        // SLICES count (Row 2, left of ROOT, right-aligned)
+        int slcW = 55;
+        int slcX = rnX - slcW - 4;
         g.setFont (IntersectLookAndFeel::makeFont (12.0f));
-        g.setColour (getTheme().foreground.withAlpha (0.45f));
-        g.drawText ("SLICES", slcX, row2y + 2, 55, 13, juce::Justification::centredLeft);
+        g.setColour (getTheme().foreground.withAlpha (0.35f));
+        g.drawText ("SLICES", slcX, row2y + 2, slcW, 13, juce::Justification::right);
         g.setFont (IntersectLookAndFeel::makeFont (14.0f));
-        g.setColour (getTheme().foreground.withAlpha (0.8f));
-        g.drawText (juce::String (numSlices), slcX, row2y + 15, 55, 14, juce::Justification::centredLeft);
+        g.setColour (getTheme().foreground.withAlpha (0.4f));
+        g.drawText (juce::String (numSlices), slcX, row2y + 15, slcW, 14, juce::Justification::right);
     }
 
     if (idx < 0 || idx >= numSlices)
@@ -221,7 +223,7 @@ void SliceControlBar::paint (juce::Graphics& g)
     g.setColour (getTheme().separator);
     g.drawHorizontalLine (34, 8.0f, (float) getWidth() - 8.0f);
 
-    // ====== Row 2 (y=36): ATK | DEC | SUS | REL | PP | MUTE | STRETCH | VOL | MIDI ======
+    // ====== Row 2 (y=36): ATK | DEC | SUS | REL | TAIL | REV | PP | MUTE | STRETCH | GAIN | OUT | MIDI ======
     x = 8;
 
     // ATTACK
@@ -246,6 +248,20 @@ void SliceControlBar::paint (juce::Graphics& g)
     locked = s.lockMask & kLockRelease;
     float relVal = locked ? s.releaseSec * 1000.0f : gRelease;
     drawParamCell (g, x, row2y, "REL", juce::String ((int) relVal) + "ms", locked, kLockRelease, F::FieldRelease, 0.0f, 5.0f, 0.001f, false, false, cw);
+    x += cw + 4;
+
+    // TAIL (release tail)
+    bool gTail = processor.apvts.getRawParameterValue (ParamIds::defaultReleaseTail)->load() > 0.5f;
+    locked = s.lockMask & kLockReleaseTail;
+    bool tailVal = locked ? s.releaseTail : gTail;
+    drawParamCell (g, x, row2y, "TAIL", tailVal ? "ON" : "OFF", locked, kLockReleaseTail, F::FieldReleaseTail, 0.0f, 1.0f, 1.0f, true, false, cw);
+    x += cw + 4;
+
+    // REV (reverse)
+    bool gRev = processor.apvts.getRawParameterValue (ParamIds::defaultReverse)->load() > 0.5f;
+    locked = s.lockMask & kLockReverse;
+    bool revVal = locked ? s.reverse : gRev;
+    drawParamCell (g, x, row2y, "REV", revVal ? "ON" : "OFF", locked, kLockReverse, F::FieldReverse, 0.0f, 1.0f, 1.0f, true, false, cw);
     x += cw + 4;
 
     // PING-PONG
@@ -276,11 +292,10 @@ void SliceControlBar::paint (juce::Graphics& g)
     }
     x += cw + 4;
 
-    // TAIL (release tail)
-    bool gTail = processor.apvts.getRawParameterValue (ParamIds::defaultReleaseTail)->load() > 0.5f;
-    locked = s.lockMask & kLockReleaseTail;
-    bool tailVal = locked ? s.releaseTail : gTail;
-    drawParamCell (g, x, row2y, "TAIL", tailVal ? "ON" : "OFF", locked, kLockReleaseTail, F::FieldReleaseTail, 0.0f, 1.0f, 1.0f, true, false, cw);
+    // OUT (output bus)
+    locked = s.lockMask & kLockOutputBus;
+    int outBus = locked ? s.outputBus : 0;
+    drawParamCell (g, x, row2y, "OUT", juce::String (outBus + 1), locked, kLockOutputBus, F::FieldOutputBus, 0.0f, 15.0f, 1.0f, false, false, cw);
     x += cw + 4;
 
     // MIDI note (not lockable)
@@ -369,6 +384,11 @@ void SliceControlBar::mouseDown (const juce::MouseEvent& e)
                     {
                         bool gTail = processor.apvts.getRawParameterValue (ParamIds::defaultReleaseTail)->load() > 0.5f;
                         currentVal = sliceLocked ? s.releaseTail : gTail;
+                    }
+                    else if (cell.fieldId == IntersectProcessor::FieldReverse)
+                    {
+                        bool gRev = processor.apvts.getRawParameterValue (ParamIds::defaultReverse)->load() > 0.5f;
+                        currentVal = sliceLocked ? s.reverse : gRev;
                     }
 
                     IntersectProcessor::Command cmd;
@@ -469,7 +489,11 @@ void SliceControlBar::mouseDown (const juce::MouseEvent& e)
                             processor.apvts.getRawParameterValue (ParamIds::masterVolume)->load();
                         break;
                     case IntersectProcessor::FieldReleaseTail:
+                    case IntersectProcessor::FieldReverse:
                         // Boolean — handled by toggle, shouldn't reach here
+                        break;
+                    case IntersectProcessor::FieldOutputBus:
+                        dragStartValue = (float) ((s.lockMask & kLockOutputBus) ? s.outputBus : 0);
                         break;
                     default:
                         dragStartValue = 0.0f;
@@ -605,6 +629,9 @@ void SliceControlBar::mouseDoubleClick (const juce::MouseEvent& e)
                     case IntersectProcessor::FieldVolume:
                         currentVal = (s.lockMask & kLockVolume) ? s.volume :
                             processor.apvts.getRawParameterValue (ParamIds::masterVolume)->load();
+                        break;
+                    case IntersectProcessor::FieldOutputBus:
+                        currentVal = (float) ((s.lockMask & kLockOutputBus) ? s.outputBus : 0);
                         break;
                     default: break;
                 }

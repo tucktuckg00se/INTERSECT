@@ -261,6 +261,28 @@ void HeaderBar::paint (juce::Graphics& g)
         headerCells.push_back ({ x, row2y, cellW, row2h, ParamIds::defaultRelease, 0.0f, 5000.0f, 1.0f, false, false, false, false });
         x += cellW + cellGap;
 
+        // TAIL (release tail toggle)
+        g.setFont (IntersectLookAndFeel::makeFont (12.0f));
+        g.setColour (getTheme().foreground.withAlpha (0.9f));
+        g.drawText ("TAIL", x, row2y + 2, cellW, 13, juce::Justification::centredLeft);
+        g.setFont (IntersectLookAndFeel::makeFont (14.0f));
+        bool tail = processor.apvts.getRawParameterValue (ParamIds::defaultReleaseTail)->load() > 0.5f;
+        g.setColour (tail ? getTheme().lockGold : getTheme().foreground.withAlpha (0.5f));
+        g.drawText (tail ? "ON" : "OFF", x, row2y + 15, cellW, 14, juce::Justification::centredLeft);
+        headerCells.push_back ({ x, row2y, cellW, row2h, ParamIds::defaultReleaseTail, 0.0f, 1.0f, 1.0f, false, true, false, false });
+        x += cellW + cellGap;
+
+        // REV (reverse toggle)
+        g.setFont (IntersectLookAndFeel::makeFont (12.0f));
+        g.setColour (getTheme().foreground.withAlpha (0.9f));
+        g.drawText ("REV", x, row2y + 2, cellW, 13, juce::Justification::centredLeft);
+        g.setFont (IntersectLookAndFeel::makeFont (14.0f));
+        bool rev = processor.apvts.getRawParameterValue (ParamIds::defaultReverse)->load() > 0.5f;
+        g.setColour (rev ? getTheme().lockGold : getTheme().foreground.withAlpha (0.5f));
+        g.drawText (rev ? "ON" : "OFF", x, row2y + 15, cellW, 14, juce::Justification::centredLeft);
+        headerCells.push_back ({ x, row2y, cellW, row2h, ParamIds::defaultReverse, 0.0f, 1.0f, 1.0f, false, true, false, false });
+        x += cellW + cellGap;
+
         // PP
         g.setFont (IntersectLookAndFeel::makeFont (12.0f));
         g.setColour (getTheme().foreground.withAlpha (0.9f));
@@ -307,16 +329,19 @@ void HeaderBar::paint (juce::Graphics& g)
         headerCells.push_back ({ x, row2y, cellW, row2h, ParamIds::masterVolume, -100.0f, 24.0f, 0.1f, false, false, false, false });
         x += cellW + cellGap;
 
-        // TAIL (release tail toggle)
-        g.setFont (IntersectLookAndFeel::makeFont (12.0f));
-        g.setColour (getTheme().foreground.withAlpha (0.9f));
-        g.drawText ("TAIL", x, row2y + 2, cellW, 13, juce::Justification::centredLeft);
-        g.setFont (IntersectLookAndFeel::makeFont (14.0f));
-        bool tail = processor.apvts.getRawParameterValue (ParamIds::defaultReleaseTail)->load() > 0.5f;
-        g.setColour (tail ? getTheme().lockGold : getTheme().foreground.withAlpha (0.5f));
-        g.drawText (tail ? "ON" : "OFF", x, row2y + 15, cellW, 14, juce::Justification::centredLeft);
-        headerCells.push_back ({ x, row2y, cellW, row2h, ParamIds::defaultReleaseTail, 0.0f, 1.0f, 1.0f, false, true, false, false });
-        x += cellW + cellGap;
+        // VOICES (right-aligned, like SLICES/ROOT)
+        {
+            int voicesW = 55;
+            int voicesX = getWidth() - 8 - voicesW;
+            g.setFont (IntersectLookAndFeel::makeFont (12.0f));
+            g.setColour (getTheme().foreground.withAlpha (0.35f));
+            g.drawText ("VOICES", voicesX, row2y + 2, voicesW, 13, juce::Justification::right);
+            g.setFont (IntersectLookAndFeel::makeFont (14.0f));
+            int maxV = (int) processor.apvts.getRawParameterValue (ParamIds::maxVoices)->load();
+            g.setColour (getTheme().foreground.withAlpha (0.4f));
+            g.drawText (juce::String (maxV), voicesX, row2y + 15, voicesW, 14, juce::Justification::right);
+            headerCells.push_back ({ voicesX, row2y, voicesW, row2h, ParamIds::maxVoices, 1.0f, 32.0f, 1.0f, false, false, false, false });
+        }
     }
     else if (processor.sampleMissing.load())
     {

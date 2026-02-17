@@ -1,6 +1,6 @@
 #include "PluginEditor.h"
 
-static constexpr int kBaseW      = 750;
+static constexpr int kBaseW      = 900;
 static constexpr int kBaseH      = 550;
 static constexpr int kHeaderH    = 66;
 static constexpr int kSliceLaneH = 30;

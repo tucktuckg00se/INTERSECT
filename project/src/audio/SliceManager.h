@@ -14,6 +14,7 @@ public:
     void clearAll();
     void rebuildMidiMap();
     int  midiNoteToSlice (int note) const;
+    const std::vector<int>& midiNoteToSlices (int note) const;
 
     float resolveParam (int sliceIdx, LockBit lockBit, float sliceValue, float globalDefault) const;
 
@@ -30,5 +31,6 @@ public:
 private:
     std::array<Slice, kMaxSlices> slices;
     int numSlices = 0;
-    std::array<int, 128> midiMap;
+    std::array<int, 128> midiMap;               // first slice for note (legacy compat)
+    std::array<std::vector<int>, 128> midiMapMulti;  // all slices for note
 };

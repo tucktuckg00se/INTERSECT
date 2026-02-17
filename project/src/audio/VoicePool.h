@@ -8,7 +8,7 @@
 class VoicePool
 {
 public:
-    static constexpr int kMaxVoices = 16;
+    static constexpr int kMaxVoices = 32;
 
     VoicePool();
 
@@ -22,6 +22,7 @@ public:
                      float globalTonality, float globalFormant, bool globalFormantComp,
                      int globalGrainMode, float globalVolume,
                      bool globalReleaseTail,
+                     bool globalReverse,
                      const SampleData& sample);
 
     void releaseNote (int note);
@@ -30,8 +31,14 @@ public:
     void processSample (const SampleData& sample, double sampleRate,
                         float& outL, float& outR);
 
+    void processSampleMultiOut (const SampleData& sample, double sampleRate,
+                                float* outPtrs[], int numOuts);
+
     void setSampleRate (double sr) { sampleRate = sr; }
     double getSampleRate() const { return sampleRate; }
+
+    void setMaxActiveVoices (int n);
+    int  getMaxActiveVoices() const { return maxActive; }
 
     Voice& getVoice (int idx) { return voices[idx]; }
 
@@ -44,7 +51,12 @@ public:
     // Atomic voice positions for UI cursor display
     std::array<std::atomic<float>, kMaxVoices> voicePositions;
 
+    void processVoiceSample (int i, const SampleData& sample, double sampleRate,
+                             float& outL, float& outR);
+
 private:
+
     std::array<Voice, kMaxVoices> voices;
+    int maxActive = 16;
     double sampleRate = 44100.0;
 };

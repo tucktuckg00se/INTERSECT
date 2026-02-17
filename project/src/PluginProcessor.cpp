@@ -4,7 +4,22 @@
 
 IntersectProcessor::IntersectProcessor()
     : AudioProcessor (BusesProperties()
-                          .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
+                          .withOutput ("Main", juce::AudioChannelSet::stereo(), true)
+                          .withOutput ("Out 2", juce::AudioChannelSet::stereo(), false)
+                          .withOutput ("Out 3", juce::AudioChannelSet::stereo(), false)
+                          .withOutput ("Out 4", juce::AudioChannelSet::stereo(), false)
+                          .withOutput ("Out 5", juce::AudioChannelSet::stereo(), false)
+                          .withOutput ("Out 6", juce::AudioChannelSet::stereo(), false)
+                          .withOutput ("Out 7", juce::AudioChannelSet::stereo(), false)
+                          .withOutput ("Out 8", juce::AudioChannelSet::stereo(), false)
+                          .withOutput ("Out 9", juce::AudioChannelSet::stereo(), false)
+                          .withOutput ("Out 10", juce::AudioChannelSet::stereo(), false)
+                          .withOutput ("Out 11", juce::AudioChannelSet::stereo(), false)
+                          .withOutput ("Out 12", juce::AudioChannelSet::stereo(), false)
+                          .withOutput ("Out 13", juce::AudioChannelSet::stereo(), false)
+                          .withOutput ("Out 14", juce::AudioChannelSet::stereo(), false)
+                          .withOutput ("Out 15", juce::AudioChannelSet::stereo(), false)
+                          .withOutput ("Out 16", juce::AudioChannelSet::stereo(), false)),
       apvts (*this, nullptr, "PARAMETERS", ParamLayout::createLayout())
 {
     masterVolParam = apvts.getRawParameterValue (ParamIds::masterVolume);
@@ -23,6 +38,26 @@ IntersectProcessor::IntersectProcessor()
     formantCompParam = apvts.getRawParameterValue (ParamIds::defaultFormantComp);
     grainModeParam   = apvts.getRawParameterValue (ParamIds::defaultGrainMode);
     releaseTailParam = apvts.getRawParameterValue (ParamIds::defaultReleaseTail);
+    reverseParam     = apvts.getRawParameterValue (ParamIds::defaultReverse);
+    maxVoicesParam   = apvts.getRawParameterValue (ParamIds::maxVoices);
+}
+
+bool IntersectProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
+{
+    // Main output must be stereo
+    if (layouts.outputBuses.isEmpty())
+        return false;
+    if (layouts.outputBuses[0] != juce::AudioChannelSet::stereo())
+        return false;
+
+    // Additional outputs: stereo or disabled
+    for (int i = 1; i < layouts.outputBuses.size(); ++i)
+    {
+        if (! layouts.outputBuses[i].isDisabled()
+            && layouts.outputBuses[i] != juce::AudioChannelSet::stereo())
+            return false;
+    }
+    return true;
 }
 
 void IntersectProcessor::prepareToPlay (double sampleRate, int /*samplesPerBlock*/)
@@ -153,6 +188,8 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                     case FieldGrainMode:  s.grainMode = (int) val;   s.lockMask |= kLockGrainMode;  break;
                     case FieldVolume:     s.volume = val;            s.lockMask |= kLockVolume;    break;
                     case FieldReleaseTail: s.releaseTail = val > 0.5f; s.lockMask |= kLockReleaseTail; break;
+                    case FieldReverse:    s.reverse = val > 0.5f;    s.lockMask |= kLockReverse;    break;
+                    case FieldOutputBus:  s.outputBus = juce::jlimit (0, 15, (int) val); s.lockMask |= kLockOutputBus; break;
                     case FieldMidiNote:
                         s.midiNote = juce::jlimit (0, 127, (int) val);
                         sliceManager.rebuildMidiMap();
@@ -188,6 +225,8 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                     dst.grainMode       = src.grainMode;
                     dst.volume          = src.volume;
                     dst.releaseTail     = src.releaseTail;
+                    dst.reverse         = src.reverse;
+                    dst.outputBus       = src.outputBus;
                     dst.lockMask        = src.lockMask;
                     dst.colour          = src.colour;
                     // midiNote is already assigned by createSlice
@@ -258,8 +297,8 @@ void IntersectProcessor::processMidi (juce::MidiBuffer& midi)
             }
             else
             {
-                int sliceIdx = sliceManager.midiNoteToSlice (note);
-                if (sliceIdx >= 0)
+                const auto& sliceIndices = sliceManager.midiNoteToSlices (note);
+                for (int sliceIdx : sliceIndices)
                 {
                     if (midiSelectsSlice.load (std::memory_order_relaxed))
                         sliceManager.selectedSlice = sliceIdx;
@@ -292,6 +331,7 @@ void IntersectProcessor::processMidi (juce::MidiBuffer& midi)
                                           (int) grainModeParam->load(),
                                           masterVolParam->load(),
                                           releaseTailParam->load() > 0.5f,
+                                          reverseParam->load() > 0.5f,
                                           sampleData);
                 }
             }
@@ -320,22 +360,63 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     }
 
     drainCommands();
+
+    // Update max active voices from param
+    voicePool.setMaxActiveVoices ((int) maxVoicesParam->load());
+
     processMidi (midi);
 
     if (! sampleData.isLoaded())
         return;
 
-    auto* outL = buffer.getWritePointer (0);
-    auto* outR = buffer.getNumChannels() > 1 ? buffer.getWritePointer (1) : nullptr;
+    // Collect write pointers for all enabled output buses
+    static constexpr int kMaxBuses = 16;
+    float* busL[kMaxBuses] = {};
+    float* busR[kMaxBuses] = {};
+    int numActiveBuses = 0;
 
-    for (int i = 0; i < buffer.getNumSamples(); ++i)
+    for (int b = 0; b < std::min (getBusCount (false), kMaxBuses); ++b)
     {
-        float sL = 0.0f, sR = 0.0f;
-        voicePool.processSample (sampleData, currentSampleRate, sL, sR);
+        auto* bus = getBus (false, b);
+        if (bus != nullptr && bus->isEnabled())
+        {
+            int chOff = getChannelIndexInProcessBlockBuffer (false, b, 0);
+            busL[b] = buffer.getWritePointer (chOff);
+            busR[b] = buffer.getNumChannels() > chOff + 1
+                          ? buffer.getWritePointer (chOff + 1) : nullptr;
+            if (b + 1 > numActiveBuses) numActiveBuses = b + 1;
+        }
+    }
 
-        outL[i] = sL;
-        if (outR != nullptr)
-            outR[i] = sR;
+    buffer.clear();
+
+    if (numActiveBuses <= 1)
+    {
+        // Fast path: single stereo output
+        for (int i = 0; i < buffer.getNumSamples(); ++i)
+        {
+            float sL = 0.0f, sR = 0.0f;
+            voicePool.processSample (sampleData, currentSampleRate, sL, sR);
+            if (busL[0]) busL[0][i] = sL;
+            if (busR[0]) busR[0][i] = sR;
+        }
+    }
+    else
+    {
+        // Multi-out: route each voice to its assigned bus
+        for (int i = 0; i < buffer.getNumSamples(); ++i)
+        {
+            for (int vi = 0; vi < voicePool.getMaxActiveVoices(); ++vi)
+            {
+                float vL = 0.0f, vR = 0.0f;
+                voicePool.processVoiceSample (vi, sampleData, currentSampleRate, vL, vR);
+
+                int bus = voicePool.getVoice (vi).outputBus;
+                if (bus < 0 || bus >= numActiveBuses) bus = 0;
+                if (busL[bus]) busL[bus][i] += vL;
+                if (busR[bus]) busR[bus][i] += vR;
+            }
+        }
     }
 
     // Pass through MIDI
@@ -352,7 +433,7 @@ void IntersectProcessor::getStateInformation (juce::MemoryBlock& destData)
     juce::MemoryOutputStream stream (destData, false);
 
     // Version
-    stream.writeInt (10);
+    stream.writeInt (11);
 
     // APVTS state
     auto state = apvts.copyState();
@@ -399,6 +480,9 @@ void IntersectProcessor::getStateInformation (juce::MemoryBlock& destData)
         stream.writeFloat (s.volume);
         // v10 fields
         stream.writeBool (s.releaseTail);
+        // v11 fields
+        stream.writeBool (s.reverse);
+        stream.writeInt (s.outputBus);
     }
 
     // v9: store file path only (no PCM)
@@ -411,7 +495,7 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
     juce::MemoryInputStream stream (data, (size_t) sizeInBytes, false);
 
     int version = stream.readInt();
-    if (version < 9 || version > 10)
+    if (version < 9 || version > 11)
         return;
 
     // APVTS state
@@ -470,6 +554,17 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
         if (version >= 10)
         {
             s.releaseTail = stream.readBool();
+        }
+
+        if (version >= 11)
+        {
+            s.reverse = stream.readBool();
+            s.outputBus = stream.readInt();
+        }
+        else
+        {
+            s.reverse = false;
+            s.outputBus = 0;
         }
 
         // v9 -> v10 migration: convert linear volume (0-1) to dB

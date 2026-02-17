@@ -32,6 +32,7 @@ struct Voice
     float        volume       = 1.0f;
     bool         releaseTail  = false;
     int          sampleEnd    = 0;       // actual end of sample buffer (for release tail)
+    int          outputBus    = 0;       // output bus index (0-15)
 
     // WSOLA fields (legacy, still used for basic WSOLA fallback)
     bool         wsolaActive  = false;
@@ -62,4 +63,9 @@ struct Voice
     double       bungeePitch        = 1.0;
     double       bungeeSpeed        = 1.0;
     bool         bungeeResetNeeded  = false;
+
+    // Bungee ping-pong crossfade fields
+    int          bungeePPFade       = 0;
+    int          bungeePPFadeLen    = 64;
+    std::vector<float> bungeePPFadeL, bungeePPFadeR;
 };
