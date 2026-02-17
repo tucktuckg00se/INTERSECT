@@ -39,20 +39,24 @@ bool SampleData::loadFromFile (const juce::File& file, double projectSampleRate)
         numFrames = resampledLen;
     }
 
-    // Convert to stereo
-    buffer.setSize (2, numFrames);
+    // Build new stereo buffer locally, then swap to minimise the window
+    // where the UI thread might read a partially-constructed buffer
+    juce::AudioBuffer<float> newBuffer (2, numFrames);
 
     if (numChannels >= 2)
     {
-        buffer.copyFrom (0, 0, sourceBuffer, 0, 0, numFrames);
-        buffer.copyFrom (1, 0, sourceBuffer, 1, 0, numFrames);
+        newBuffer.copyFrom (0, 0, sourceBuffer, 0, 0, numFrames);
+        newBuffer.copyFrom (1, 0, sourceBuffer, 1, 0, numFrames);
     }
     else
     {
         // Mono -> stereo duplication
-        buffer.copyFrom (0, 0, sourceBuffer, 0, 0, numFrames);
-        buffer.copyFrom (1, 0, sourceBuffer, 0, 0, numFrames);
+        newBuffer.copyFrom (0, 0, sourceBuffer, 0, 0, numFrames);
+        newBuffer.copyFrom (1, 0, sourceBuffer, 0, 0, numFrames);
     }
+
+    // Atomic-ish swap: the old buffer is freed after swap, not during setSize
+    std::swap (buffer, newBuffer);
 
     loadedFileName = file.getFileName();
     loadedFilePath = file.getFullPathName();

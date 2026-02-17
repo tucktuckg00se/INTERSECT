@@ -334,11 +334,11 @@ void HeaderBar::paint (juce::Graphics& g)
             int voicesW = 55;
             int voicesX = getWidth() - 8 - voicesW;
             g.setFont (IntersectLookAndFeel::makeFont (12.0f));
-            g.setColour (getTheme().foreground.withAlpha (0.35f));
+            g.setColour (getTheme().foreground.withAlpha (0.9f));
             g.drawText ("VOICES", voicesX, row2y + 2, voicesW, 13, juce::Justification::right);
             g.setFont (IntersectLookAndFeel::makeFont (14.0f));
             int maxV = (int) processor.apvts.getRawParameterValue (ParamIds::maxVoices)->load();
-            g.setColour (getTheme().foreground.withAlpha (0.4f));
+            g.setColour (getTheme().foreground.withAlpha (0.9f));
             g.drawText (juce::String (maxV), voicesX, row2y + 15, voicesW, 14, juce::Justification::right);
             headerCells.push_back ({ voicesX, row2y, voicesW, row2h, ParamIds::maxVoices, 1.0f, 32.0f, 1.0f, false, false, false, false });
         }

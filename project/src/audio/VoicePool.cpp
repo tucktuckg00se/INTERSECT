@@ -381,39 +381,15 @@ static void fillBungeeBlock (Voice& v, const SampleData& sample)
     // Ping pong boundary checks before requesting next grain
     if (v.pingPong)
     {
-        bool needFlip = false;
         if (v.bungeeSpeed > 0.0 && v.bungeeSrcPos >= v.endSample)
         {
             v.bungeeSrcPos = v.endSample - 1;
             v.bungeeSpeed = -std::abs (v.bungeeSpeed);
-            needFlip = true;
         }
         else if (v.bungeeSpeed < 0.0 && v.bungeeSrcPos <= v.startSample)
         {
             v.bungeeSrcPos = v.startSample;
             v.bungeeSpeed = std::abs (v.bungeeSpeed);
-            needFlip = true;
-        }
-
-        if (needFlip)
-        {
-            // Save current output for crossfade
-            if (v.bungeeOutAvail > 0)
-            {
-                int remaining = v.bungeeOutAvail - v.bungeeOutReadPos;
-                if (remaining > 0)
-                {
-                    v.bungeePPFadeL.resize ((size_t) remaining);
-                    v.bungeePPFadeR.resize ((size_t) remaining);
-                    for (int k = 0; k < remaining; ++k)
-                    {
-                        v.bungeePPFadeL[(size_t) k] = v.bungeeOutBufL[(size_t)(v.bungeeOutReadPos + k)];
-                        v.bungeePPFadeR[(size_t) k] = v.bungeeOutBufR[(size_t)(v.bungeeOutReadPos + k)];
-                    }
-                }
-            }
-            v.bungeePPFade = v.bungeePPFadeLen;
-            v.bungeeResetNeeded = true;
         }
     }
 
@@ -491,6 +467,15 @@ static void fillBungeeBlock (Voice& v, const SampleData& sample)
 
     // Advance source position
     v.bungeeSrcPos = request.position;
+
+    // Clamp to slice boundaries to prevent playhead overshoot
+    if (v.pingPong)
+    {
+        if (v.bungeeSrcPos > v.endSample)
+            v.bungeeSrcPos = v.endSample;
+        if (v.bungeeSrcPos < v.startSample)
+            v.bungeeSrcPos = v.startSample;
+    }
 }
 
 void VoicePool::processVoiceSample (int i, const SampleData& sample, double sr,

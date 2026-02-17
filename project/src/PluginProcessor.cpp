@@ -95,6 +95,16 @@ void IntersectProcessor::handleCommand (const Command& cmd)
     switch (cmd.type)
     {
         case CmdLoadFile:
+            // Kill all active voices before replacing the sample buffer
+            // to prevent dangling reads from stretcher pipelines
+            for (int vi = 0; vi < VoicePool::kMaxVoices; ++vi)
+            {
+                auto& v = voicePool.getVoice (vi);
+                v.active = false;
+                v.stretcher.reset();
+                v.bungeeStretcher.reset();
+                voicePool.voicePositions[vi].store (0.0f, std::memory_order_relaxed);
+            }
             if (sampleData.loadFromFile (cmd.fileParam, currentSampleRate))
             {
                 sliceManager.clearAll();
