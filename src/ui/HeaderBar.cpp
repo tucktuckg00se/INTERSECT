@@ -70,6 +70,14 @@ void HeaderBar::adjustScale (float delta)
 
 void HeaderBar::paint (juce::Graphics& g)
 {
+    // Re-theme buttons so theme changes take effect
+    for (auto* btn : { &undoBtn, &redoBtn, &loadBtn, &themeBtn })
+    {
+        btn->setColour (juce::TextButton::buttonColourId, getTheme().button);
+        btn->setColour (juce::TextButton::textColourOnId, getTheme().foreground);
+        btn->setColour (juce::TextButton::textColourOffId, getTheme().foreground);
+    }
+
     g.fillAll (getTheme().header);
     headerCells.clear();
 

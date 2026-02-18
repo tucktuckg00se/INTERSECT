@@ -87,17 +87,17 @@ Click the **FM** button to toggle. When active, playing a MIDI note automaticall
 
 ### Custom Themes
 
-INTERSECT supports custom colour themes via YAML files. On first launch, the plugin creates default `dark.yaml` and `light.yaml` in the themes folder:
+INTERSECT supports custom colour themes via `.intersectstyle` files. On first launch, the plugin creates default `dark.intersectstyle` and `light.intersectstyle` in the themes folder:
 
 | OS | Path |
 |----|------|
-| Windows | `%APPDATA%\INTERSECT\themes\` |
+| Windows | `%APPDATA%\Roaming\INTERSECT\themes\` |
 | macOS | `~/Library/Application Support/INTERSECT/themes/` |
 | Linux | `~/.config/INTERSECT/themes/` |
 
 To create a custom theme:
 
-1. Copy one of the starter files from the [`themes/`](themes/) folder in this repo (or from the themes folder above) and give it a new name, e.g. `mytheme.yaml`
+1. Copy one of the starter files from the [`themes/`](themes/) folder in this repo (or from the themes folder above) and give it a new name, e.g. `mytheme.intersectstyle`
 2. Change the `name:` field to something unique — this is the name shown in the theme picker
 3. Edit the 6-digit hex colour values (`RRGGBB`)
 4. Place the file in the themes folder listed above
@@ -123,6 +123,7 @@ To create a custom theme:
 | `lockInactive` | Unlocked/inherited parameter indicator |
 | `button` | Button background |
 | `buttonHover` | Button hover background |
+| `slice1`–`slice16` | Slice colour palette (assigned to new slices in order) |
 
 Any missing key falls back to the dark theme default. Lines starting with `#` are comments.
 

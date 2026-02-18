@@ -2,25 +2,6 @@
 #include <algorithm>
 #include <cmath>
 
-const juce::Colour SliceManager::slicePalette[16] = {
-    juce::Colour::fromFloatRGBA (0.30f, 0.55f, 0.60f, 1.0f),  // Cold Teal
-    juce::Colour::fromFloatRGBA (0.55f, 0.28f, 0.28f, 1.0f),  // Muted Red
-    juce::Colour::fromFloatRGBA (0.30f, 0.50f, 0.35f, 1.0f),  // Dark Green
-    juce::Colour::fromFloatRGBA (0.55f, 0.45f, 0.25f, 1.0f),  // Rust
-    juce::Colour::fromFloatRGBA (0.40f, 0.30f, 0.55f, 1.0f),  // Dusk Violet
-    juce::Colour::fromFloatRGBA (0.50f, 0.50f, 0.30f, 1.0f),  // Olive
-    juce::Colour::fromFloatRGBA (0.25f, 0.50f, 0.55f, 1.0f),  // Steel Cyan
-    juce::Colour::fromFloatRGBA (0.50f, 0.30f, 0.42f, 1.0f),  // Dark Rose
-    juce::Colour::fromFloatRGBA (0.35f, 0.48f, 0.28f, 1.0f),  // Moss
-    juce::Colour::fromFloatRGBA (0.50f, 0.35f, 0.30f, 1.0f),  // Clay
-    juce::Colour::fromFloatRGBA (0.32f, 0.35f, 0.55f, 1.0f),  // Slate Blue
-    juce::Colour::fromFloatRGBA (0.45f, 0.45f, 0.35f, 1.0f),  // Concrete
-    juce::Colour::fromFloatRGBA (0.42f, 0.28f, 0.45f, 1.0f),  // Plum
-    juce::Colour::fromFloatRGBA (0.28f, 0.48f, 0.42f, 1.0f),  // Patina
-    juce::Colour::fromFloatRGBA (0.48f, 0.35f, 0.45f, 1.0f),  // Mauve
-    juce::Colour::fromFloatRGBA (0.38f, 0.48f, 0.40f, 1.0f),  // Lichen
-};
-
 SliceManager::SliceManager()
 {
     midiMap.fill (-1);
@@ -60,7 +41,7 @@ int SliceManager::createSlice (int start, int end)
     s.pingPong       = false;
 
     // Assign colour from palette
-    s.colour = slicePalette[idx % 16];
+    s.colour = palette ? palette[idx % 16] : juce::Colour (0xFF4D8C99);
 
     numSlices++;
     rebuildMidiMap();

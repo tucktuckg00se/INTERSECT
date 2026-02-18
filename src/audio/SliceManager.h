@@ -26,9 +26,11 @@ public:
     int  selectedSlice = -1;
     std::atomic<int> rootNote { 36 };
 
-    static const juce::Colour slicePalette[16];
+    void setSlicePalette (const juce::Colour* p) { palette = p; }
 
 private:
+    const juce::Colour* palette = nullptr;
+
     std::array<Slice, kMaxSlices> slices;
     int numSlices = 0;
     std::array<int, 128> midiMap;               // first slice for note (legacy compat)

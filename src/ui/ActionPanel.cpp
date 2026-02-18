@@ -131,7 +131,15 @@ void ActionPanel::resized()
 
 void ActionPanel::paint (juce::Graphics& g)
 {
-    // Sync button appearances
+    // Re-theme all buttons so theme changes take effect
+    for (auto* btn : { &addSliceBtn, &lazyChopBtn, &dupBtn, &splitBtn, &deleteBtn })
+    {
+        btn->setColour (juce::TextButton::buttonColourId, getTheme().button);
+        btn->setColour (juce::TextButton::textColourOnId, getTheme().foreground);
+        btn->setColour (juce::TextButton::textColourOffId, getTheme().foreground);
+    }
+
+    // Sync toggle button appearances
     updateMidiButtonAppearance (processor.midiSelectsSlice.load());
     updateSnapButtonAppearance (processor.snapToZeroCrossing.load());
 

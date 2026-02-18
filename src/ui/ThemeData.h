@@ -22,6 +22,8 @@ struct ThemeData
     juce::Colour buttonHover;
     juce::Colour separator;
 
+    juce::Colour slicePalette[16];
+
     static ThemeData darkTheme()
     {
         ThemeData t;
@@ -42,6 +44,22 @@ struct ThemeData
         t.button        = juce::Colour (0xFF1C2028);
         t.buttonHover   = juce::Colour (0xFF2A3040);
         t.separator     = juce::Colour::fromFloatRGBA (0.20f, 0.20f, 0.25f, 1.0f);
+        t.slicePalette[0]  = juce::Colour (0xFF4D8C99); // Cold Teal
+        t.slicePalette[1]  = juce::Colour (0xFF8C4747); // Muted Red
+        t.slicePalette[2]  = juce::Colour (0xFF4D8059); // Dark Green
+        t.slicePalette[3]  = juce::Colour (0xFF8C7340); // Rust
+        t.slicePalette[4]  = juce::Colour (0xFF664D8C); // Dusk Violet
+        t.slicePalette[5]  = juce::Colour (0xFF80804D); // Olive
+        t.slicePalette[6]  = juce::Colour (0xFF40808C); // Steel Cyan
+        t.slicePalette[7]  = juce::Colour (0xFF804D6B); // Dark Rose
+        t.slicePalette[8]  = juce::Colour (0xFF597A47); // Moss
+        t.slicePalette[9]  = juce::Colour (0xFF80594D); // Clay
+        t.slicePalette[10] = juce::Colour (0xFF52598C); // Slate Blue
+        t.slicePalette[11] = juce::Colour (0xFF737359); // Concrete
+        t.slicePalette[12] = juce::Colour (0xFF6B4773); // Plum
+        t.slicePalette[13] = juce::Colour (0xFF477A6B); // Patina
+        t.slicePalette[14] = juce::Colour (0xFF7A5973); // Mauve
+        t.slicePalette[15] = juce::Colour (0xFF617A66); // Lichen
         return t;
     }
 
@@ -65,6 +83,22 @@ struct ThemeData
         t.button        = juce::Colour (0xFFD0D4DC);
         t.buttonHover   = juce::Colour (0xFFBCC0CC);
         t.separator     = juce::Colour (0xFFC0C0CC);
+        t.slicePalette[0]  = juce::Colour (0xFF5AABB8); // Cold Teal
+        t.slicePalette[1]  = juce::Colour (0xFFB85A5A); // Muted Red
+        t.slicePalette[2]  = juce::Colour (0xFF5AA66E); // Dark Green
+        t.slicePalette[3]  = juce::Colour (0xFFB89650); // Rust
+        t.slicePalette[4]  = juce::Colour (0xFF8066B8); // Dusk Violet
+        t.slicePalette[5]  = juce::Colour (0xFFA6A65A); // Olive
+        t.slicePalette[6]  = juce::Colour (0xFF50A6B8); // Steel Cyan
+        t.slicePalette[7]  = juce::Colour (0xFFB8668E); // Dark Rose
+        t.slicePalette[8]  = juce::Colour (0xFF6E9E5A); // Moss
+        t.slicePalette[9]  = juce::Colour (0xFFB87A66); // Clay
+        t.slicePalette[10] = juce::Colour (0xFF6670B8); // Slate Blue
+        t.slicePalette[11] = juce::Colour (0xFF96966E); // Concrete
+        t.slicePalette[12] = juce::Colour (0xFF8E5A98); // Plum
+        t.slicePalette[13] = juce::Colour (0xFF5A9E88); // Patina
+        t.slicePalette[14] = juce::Colour (0xFFA07098); // Mauve
+        t.slicePalette[15] = juce::Colour (0xFF7A9E80); // Lichen
         return t;
     }
 
@@ -73,11 +107,11 @@ struct ThemeData
         return juce::Colour ((juce::uint32) (0xFF000000 | hex.getHexValue32()));
     }
 
-    static ThemeData fromYaml (const juce::String& yaml)
+    static ThemeData fromThemeFile (const juce::String& text)
     {
         ThemeData t = darkTheme(); // defaults
 
-        for (auto line : juce::StringArray::fromLines (yaml))
+        for (auto line : juce::StringArray::fromLines (text))
         {
             line = line.trim();
             if (line.isEmpty() || line.startsWith ("#"))
@@ -89,6 +123,11 @@ struct ThemeData
 
             auto key = line.substring (0, colonIdx).trim();
             auto val = line.substring (colonIdx + 1).trim().unquoted();
+
+            // Strip inline comments (  # ...)
+            int hashIdx = val.indexOf (" #");
+            if (hashIdx >= 0)
+                val = val.substring (0, hashIdx).trimEnd();
 
             if (key == "name")            t.name = val;
             else if (key == "background")    t.background = parseHex (val);
@@ -107,6 +146,12 @@ struct ThemeData
             else if (key == "button")        t.button = parseHex (val);
             else if (key == "buttonHover")   t.buttonHover = parseHex (val);
             else if (key == "separator")     t.separator = parseHex (val);
+            else if (key.startsWith ("slice"))
+            {
+                int idx = key.substring (5).getIntValue() - 1;
+                if (idx >= 0 && idx < 16)
+                    t.slicePalette[idx] = parseHex (val);
+            }
         }
         return t;
     }
@@ -116,7 +161,7 @@ struct ThemeData
         return juce::String::toHexString ((int) (c.getARGB() & 0x00FFFFFF)).paddedLeft ('0', 6);
     }
 
-    juce::String toYaml() const
+    juce::String toThemeFile() const
     {
         juce::String s;
         s << "name: " << name << "\n";
@@ -136,6 +181,8 @@ struct ThemeData
         s << "button: " << colourToHex (button) << "\n";
         s << "buttonHover: " << colourToHex (buttonHover) << "\n";
         s << "separator: " << colourToHex (separator) << "\n";
+        for (int i = 0; i < 16; ++i)
+            s << "slice" << (i + 1) << ": " << colourToHex (slicePalette[i]) << "\n";
         return s;
     }
 };

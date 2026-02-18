@@ -118,23 +118,23 @@ void IntersectEditor::ensureDefaultThemes()
     auto dir = getThemesDir();
     dir.createDirectory();
 
-    auto darkFile = dir.getChildFile ("dark.yaml");
+    auto darkFile = dir.getChildFile ("dark.intersectstyle");
     if (! darkFile.existsAsFile())
-        darkFile.replaceWithText (ThemeData::darkTheme().toYaml());
+        darkFile.replaceWithText (ThemeData::darkTheme().toThemeFile());
 
-    auto lightFile = dir.getChildFile ("light.yaml");
+    auto lightFile = dir.getChildFile ("light.intersectstyle");
     if (! lightFile.existsAsFile())
-        lightFile.replaceWithText (ThemeData::lightTheme().toYaml());
+        lightFile.replaceWithText (ThemeData::lightTheme().toThemeFile());
 }
 
 juce::StringArray IntersectEditor::getAvailableThemes()
 {
     juce::StringArray names;
     auto dir = getThemesDir();
-    for (auto& f : dir.findChildFiles (juce::File::findFiles, false, "*.yaml"))
+    for (auto& f : dir.findChildFiles (juce::File::findFiles, false, "*.intersectstyle"))
     {
         auto content = f.loadFileAsString();
-        auto theme = ThemeData::fromYaml (content);
+        auto theme = ThemeData::fromThemeFile (content);
         if (theme.name.isNotEmpty())
             names.add (theme.name);
     }
@@ -149,13 +149,14 @@ juce::StringArray IntersectEditor::getAvailableThemes()
 void IntersectEditor::applyTheme (const juce::String& themeName)
 {
     auto dir = getThemesDir();
-    for (auto& f : dir.findChildFiles (juce::File::findFiles, false, "*.yaml"))
+    for (auto& f : dir.findChildFiles (juce::File::findFiles, false, "*.intersectstyle"))
     {
         auto content = f.loadFileAsString();
-        auto theme = ThemeData::fromYaml (content);
+        auto theme = ThemeData::fromThemeFile (content);
         if (theme.name == themeName)
         {
             setTheme (theme);
+            processor.sliceManager.setSlicePalette (getTheme().slicePalette);
             float scale = processor.apvts.getRawParameterValue (ParamIds::uiScale)->load();
             saveUserSettings (scale, themeName);
             repaint();
@@ -169,6 +170,7 @@ void IntersectEditor::applyTheme (const juce::String& themeName)
     else
         setTheme (ThemeData::darkTheme());
 
+    processor.sliceManager.setSlicePalette (getTheme().slicePalette);
     float scale = processor.apvts.getRawParameterValue (ParamIds::uiScale)->load();
     saveUserSettings (scale, themeName);
     repaint();

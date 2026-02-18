@@ -1,7 +1,10 @@
 # INTERSECT Dark Theme
 #
-# Copy this file to your INTERSECT themes folder and edit the colours:
-#   Windows:  %APPDATA%\INTERSECT\themes\
+# Copy this file to your INTERSECT themes folder and give it a new name:
+# e.g. mytheme.intersectstyle
+#
+# Themes folder:
+#   Windows:  %APPDATA%\Roaming\INTERSECT\themes\
 #   macOS:    ~/Library/Application Support/INTERSECT/themes/
 #   Linux:    ~/.config/INTERSECT/themes/
 #
@@ -32,3 +35,21 @@ lockActive: e55938          # locked/overridden parameter indicator
 lockInactive: 4c4c56        # unlocked/inherited parameter indicator
 button: 1c2028              # button background
 buttonHover: 2a3040         # button hover background
+
+# Slice palette (colours assigned to new slices)
+slice1: 4d8c99              # Cold Teal
+slice2: 8c4747              # Muted Red
+slice3: 4d8059              # Dark Green
+slice4: 8c7340              # Rust
+slice5: 664d8c              # Dusk Violet
+slice6: 80804d              # Olive
+slice7: 40808c              # Steel Cyan
+slice8: 804d6b              # Dark Rose
+slice9: 597a47              # Moss
+slice10: 80594d             # Clay
+slice11: 52598c             # Slate Blue
+slice12: 737359             # Concrete
+slice13: 6b4773             # Plum
+slice14: 477a6b             # Patina
+slice15: 7a5973             # Mauve
+slice16: 617a66             # Lichen
