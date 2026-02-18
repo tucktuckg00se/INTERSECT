@@ -65,9 +65,9 @@ These are the defaults inherited by all slices:
 
 - **BPM** — sample tempo (drag vertically or double-click to type)
 - **PITCH** — pitch shift in semitones (-24 to +24)
-- **ALGO** — Repitch (speed=pitch), Stretch (independent pitch/time), or Bungee (granular)
+- **ALGO** — click to cycle: Repitch (speed=pitch), Stretch (independent pitch/time), or Bungee (granular)
 - **ATK / DEC / SUS / REL** — ADSR amplitude envelope
-- **PP** — ping-pong (bounce) playback — works in all algorithm modes (Repitch, Stretch, Bungee)
+- **LOOP** — loop mode: OFF, LOOP (repeat), or PP (ping-pong bounce) — click to cycle; works in all algorithm modes
 - **MUTE** — mute group (voices in the same group cut each other off)
 - **STRETCH** — enable time-stretching (syncs playback to DAW tempo)
 - **GAIN** — master gain in dB (-100 to +24 dB)
