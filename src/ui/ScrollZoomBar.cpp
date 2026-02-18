@@ -2,6 +2,7 @@
 #include "IntersectLookAndFeel.h"
 #include "WaveformView.h"
 #include "../PluginProcessor.h"
+#include <algorithm>
 #include <cmath>
 
 ScrollZoomBar::ScrollZoomBar (IntersectProcessor& p, WaveformView& wv)
@@ -37,11 +38,9 @@ void ScrollZoomBar::paint (juce::Graphics& g)
     // Nice values spanning deep zoom to full view
     const float niceSteps[] = { 0.01f, 0.02f, 0.05f, 0.1f, 0.2f, 0.5f,
                                 1.0f, 2.0f, 5.0f, 10.0f, 25.0f, 50.0f };
-    float majorStep = 50.0f;
-    for (float ns : niceSteps)
-    {
-        if (ns >= rawStep) { majorStep = ns; break; }
-    }
+    auto stepIt = std::find_if (std::begin (niceSteps), std::end (niceSteps),
+                                [rawStep] (float ns) { return ns >= rawStep; });
+    float majorStep = (stepIt != std::end (niceSteps)) ? *stepIt : 50.0f;
 
     float startPct = viewStart * 100.0f;
     float endPct = viewEnd * 100.0f;
@@ -117,7 +116,7 @@ void ScrollZoomBar::mouseDrag (const juce::MouseEvent& e)
     // Vertical drag: zoom
     float deltaY = (float) (e.y - dragStartY);
     float zoomFactor = std::pow (1.01f, deltaY);
-    float newZoom = juce::jlimit (1.0f, 2048.0f, dragStartZoom * zoomFactor);
+    float newZoom = juce::jlimit (1.0f, 16384.0f, dragStartZoom * zoomFactor);
     processor.zoom.store (newZoom);
 
     float newViewFrac = 1.0f / newZoom;

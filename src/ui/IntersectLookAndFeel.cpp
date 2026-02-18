@@ -8,6 +8,7 @@ void setTheme (const ThemeData& t) { globalTheme = t; }
 
 juce::Typeface::Ptr IntersectLookAndFeel::sRegularTypeface;
 juce::Typeface::Ptr IntersectLookAndFeel::sBoldTypeface;
+float IntersectLookAndFeel::sMenuScale = 1.0f;
 
 IntersectLookAndFeel::IntersectLookAndFeel()
 {
@@ -95,12 +96,25 @@ void IntersectLookAndFeel::drawPopupMenuItem (juce::Graphics& g, const juce::Rec
     g.setColour (isTicked ? getTheme().accent
                           : (isActive ? getTheme().foreground : getTheme().foreground.withAlpha (0.4f)));
     g.setFont (getPopupMenuFont());
-    g.drawText (text, area.reduced (8, 0), juce::Justification::centredLeft);
+    g.drawText (text, area.reduced ((int) (8 * sMenuScale), 0), juce::Justification::centredLeft);
+}
+
+void IntersectLookAndFeel::drawPopupMenuSectionHeader (juce::Graphics& g,
+                                                        const juce::Rectangle<int>& area,
+                                                        const juce::String& sectionName)
+{
+    g.setFont (getPopupMenuFont().boldened());
+    g.setColour (getTheme().foreground);
+    g.drawFittedText (sectionName,
+                      area.getX() + (int) (12 * sMenuScale), area.getY(),
+                      area.getWidth() - (int) (16 * sMenuScale),
+                      (int) ((float) area.getHeight() * 0.8f),
+                      juce::Justification::bottomLeft, 1);
 }
 
 juce::Font IntersectLookAndFeel::getPopupMenuFont()
 {
-    return makeFont (15.0f);
+    return makeFont (15.0f * sMenuScale);
 }
 
 void IntersectLookAndFeel::drawTooltip (juce::Graphics& g, const juce::String& text, int width, int height)

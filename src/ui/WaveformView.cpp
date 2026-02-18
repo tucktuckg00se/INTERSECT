@@ -35,7 +35,8 @@ void WaveformView::rebuildCacheIfNeeded()
     if (z != prevZoom || sc != prevScroll || w != prevWidth || numFrames != prevNumFrames)
     {
         if (processor.sampleData.isLoaded())
-            cache.rebuild (processor.sampleData.getBuffer(), numFrames, z, sc, w);
+            cache.rebuild (processor.sampleData.getBuffer(), processor.sampleData.getMipmaps(),
+                           numFrames, z, sc, w);
         prevZoom = z;
         prevScroll = sc;
         prevWidth = w;
@@ -131,12 +132,14 @@ void WaveformView::paint (juce::Graphics& g)
 
 void WaveformView::drawWaveform (juce::Graphics& g)
 {
-    g.setColour (getTheme().waveform.withAlpha (0.9f));
     int cy = getHeight() / 2;
     float scale = getHeight() * 0.48f;
 
     auto& peaks = cache.getPeaks();
     int numPeaks = std::min (cache.getNumPeaks(), getWidth());
+
+    if (numPeaks <= 0)
+        return;
 
     // Determine if we're in sub-sample zoom (peaks are single points, not ranges)
     int numFrames = processor.sampleData.getNumFrames();
@@ -147,6 +150,7 @@ void WaveformView::drawWaveform (juce::Graphics& g)
     if (samplesPerPixel < 1.0f)
     {
         // Sub-sample zoom: draw connected lines between sample points
+        g.setColour (getTheme().waveform.withAlpha (0.9f));
         juce::Path path;
         bool pathStarted = false;
 
@@ -184,12 +188,37 @@ void WaveformView::drawWaveform (juce::Graphics& g)
     }
     else
     {
-        // Normal zoom: draw vertical lines for peak ranges
-        for (int px = 0; px < numPeaks; ++px)
+        // Normal zoom: filled path waveform
+        g.setColour (getTheme().waveform);
+
+        juce::Path fillPath;
+
+        // Top envelope (max peaks, left to right)
+        fillPath.startNewSubPath (0.0f, (float) cy - peaks[0].maxVal * scale);
+        for (int px = 1; px < numPeaks; ++px)
+            fillPath.lineTo ((float) px, (float) cy - peaks[(size_t) px].maxVal * scale);
+
+        // Bottom envelope (min peaks, right to left)
+        for (int px = numPeaks - 1; px >= 0; --px)
+            fillPath.lineTo ((float) px, (float) cy - peaks[(size_t) px].minVal * scale);
+
+        fillPath.closeSubPath();
+        g.fillPath (fillPath);
+
+        // When zoomed in close (few samples per pixel), the fill becomes
+        // sub-pixel thin and disappears. Draw a centre-line to keep the
+        // waveform visible through the transition zone.
+        if (samplesPerPixel < 8.0f)
         {
-            float yMax = cy - peaks[(size_t) px].maxVal * scale;
-            float yMin = cy - peaks[(size_t) px].minVal * scale;
-            g.drawVerticalLine (px, yMax, yMin);
+            juce::Path midPath;
+            float midY0 = (float) cy - (peaks[0].maxVal + peaks[0].minVal) * 0.5f * scale;
+            midPath.startNewSubPath (0.0f, midY0);
+            for (int px = 1; px < numPeaks; ++px)
+            {
+                float mid = (peaks[(size_t) px].maxVal + peaks[(size_t) px].minVal) * 0.5f;
+                midPath.lineTo ((float) px, (float) cy - mid * scale);
+            }
+            g.strokePath (midPath, juce::PathStrokeType (1.5f));
         }
     }
 }
@@ -215,8 +244,8 @@ void WaveformView::drawSlices (juce::Graphics& g)
             g.setColour (getTheme().selectionOverlay.withAlpha (0.22f));
             g.fillRect (x1, 0, sw, getHeight());
 
-            // White markers with triangle handles at bottom
-            g.setColour (juce::Colours::white.withAlpha (0.8f));
+            // Markers with triangle handles at bottom
+            g.setColour (getTheme().foreground.withAlpha (0.8f));
             g.drawVerticalLine (x1, 0.0f, (float) getHeight());
             g.drawVerticalLine (x2 - 1, 0.0f, (float) getHeight());
 
@@ -225,7 +254,7 @@ void WaveformView::drawSlices (juce::Graphics& g)
             triS.addTriangle ((float) x1, (float) getHeight(),
                               (float) x1 + 7.0f, (float) getHeight(),
                               (float) x1, (float) getHeight() - 9.0f);
-            g.setColour (juce::Colours::white.withAlpha (0.9f));
+            g.setColour (getTheme().foreground.withAlpha (0.9f));
             g.fillPath (triS);
 
             // Triangle handles at bottom for end
@@ -237,12 +266,12 @@ void WaveformView::drawSlices (juce::Graphics& g)
 
             // "S" and "E" labels near handles
             g.setFont (IntersectLookAndFeel::makeFont (10.0f, true));
-            g.setColour (juce::Colours::white.withAlpha (0.7f));
+            g.setColour (getTheme().foreground.withAlpha (0.7f));
             g.drawText ("S", x1 + 2, getHeight() - 24, 12, 12, juce::Justification::centredLeft);
             g.drawText ("E", x2 - 14, getHeight() - 24, 12, 12, juce::Justification::centredRight);
 
             // Label
-            g.setColour (juce::Colours::white.withAlpha (0.85f));
+            g.setColour (getTheme().foreground.withAlpha (0.85f));
             g.setFont (IntersectLookAndFeel::makeFont (13.0f, true));
             g.drawText ("Slice " + juce::String (i + 1), x1 + 3, 3, 70, 14,
                          juce::Justification::centredLeft);
@@ -377,7 +406,7 @@ void WaveformView::mouseDrag (const juce::MouseEvent& e)
 
         float deltaY = (float) (e.y - midDragStartY);
         float zoomFactor = std::pow (1.01f, deltaY);
-        float newZoom = juce::jlimit (1.0f, 2048.0f, midDragStartZoom * zoomFactor);
+        float newZoom = juce::jlimit (1.0f, 16384.0f, midDragStartZoom * zoomFactor);
         processor.zoom.store (newZoom);
 
         float newViewFrac = 1.0f / newZoom;
@@ -498,26 +527,26 @@ void WaveformView::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseW
         float oldZoom = processor.zoom.load();
         float oldViewFrac = 1.0f / oldZoom;
         float oldScroll = processor.scroll.load();
-        float oldViewStart = oldScroll * (1.0f - oldViewFrac);
 
         // Sample fraction under cursor
         float cursorPixelFrac = (width > 0) ? (float) e.x / (float) width : 0.5f;
-        float anchorFrac = oldViewStart + cursorPixelFrac * oldViewFrac;
 
         // Apply zoom change
-        float newZoom = oldZoom;
-        if (w.deltaY > 0)
-            newZoom = std::min (2048.0f, oldZoom * 1.2f);
-        else
-            newZoom = std::max (1.0f, oldZoom / 1.2f);
+        float newZoom = (w.deltaY > 0)
+            ? std::min (16384.0f, oldZoom * 1.2f)
+            : std::max (1.0f, oldZoom / 1.2f);
         processor.zoom.store (newZoom);
 
         // Recompute scroll so anchorFrac stays at same pixel position
         float newViewFrac = 1.0f / newZoom;
-        float newViewStart = anchorFrac - cursorPixelFrac * newViewFrac;
         float maxScroll = 1.0f - newViewFrac;
         if (maxScroll > 0.0f)
+        {
+            float oldViewStart = oldScroll * (1.0f - oldViewFrac);
+            float anchorFrac = oldViewStart + cursorPixelFrac * oldViewFrac;
+            float newViewStart = anchorFrac - cursorPixelFrac * newViewFrac;
             processor.scroll.store (juce::jlimit (0.0f, 1.0f, newViewStart / maxScroll));
+        }
         else
             processor.scroll.store (0.0f);
     }

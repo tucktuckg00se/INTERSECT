@@ -20,7 +20,12 @@ public:
                             bool isTicked, bool hasSubMenu,
                             const juce::String& text, const juce::String& shortcutText,
                             const juce::Drawable* icon, const juce::Colour* textColour) override;
+    void drawPopupMenuSectionHeader (juce::Graphics&, const juce::Rectangle<int>& area,
+                                     const juce::String& sectionName) override;
     juce::Font getPopupMenuFont() override;
+
+    static void setMenuScale (float s) { sMenuScale = s; }
+    static float getMenuScale() { return sMenuScale; }
 
     void drawTooltip (juce::Graphics&, const juce::String& text, int width, int height) override;
     juce::Rectangle<int> getTooltipBounds (const juce::String& text, juce::Point<int> screenPos,
@@ -33,6 +38,7 @@ public:
 private:
     static juce::Typeface::Ptr sRegularTypeface;
     static juce::Typeface::Ptr sBoldTypeface;
+    static float sMenuScale;
 
     juce::Typeface::Ptr regularTypeface;
     juce::Typeface::Ptr boldTypeface;

@@ -125,7 +125,7 @@ public:
 private:
     void drainCommands();
     void handleCommand (const Command& cmd);
-    void processMidi (juce::MidiBuffer& midi);
+    void processMidi (const juce::MidiBuffer& midi);
     void captureSnapshot();
     void restoreSnapshot (const UndoManager::Snapshot& snap);
 

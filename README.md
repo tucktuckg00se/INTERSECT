@@ -24,7 +24,7 @@ A nondestructive, time-stretching, and intersecting sample slicer plugin with in
 - **Duplicate slice** — clone a slice with all its locked parameters
 - **Hi-DPI scaling** — adjustable UI scale factor (0.5x to 3x)
 - **Full state recall** — all parameters, slices, and audio data saved/restored with the DAW session
-- **Theming** — dark and light themes
+- **Custom theming** — dark, light, and custom theming
 
 ## Usage
 

@@ -473,8 +473,10 @@ void HeaderBar::mouseDown (const juce::MouseEvent& e)
                     menu.addItem (3, "Bungee");
                 }
                 auto* topLvl = getTopLevelComponent();
+                float ms = IntersectLookAndFeel::getMenuScale();
                 menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this)
-                                        .withParentComponent (topLvl),
+                                        .withParentComponent (topLvl)
+                                        .withStandardItemHeight ((int) (24 * ms)),
                     [this, paramId = cell.paramId] (int result) {
                         if (result > 0)
                         {
@@ -609,8 +611,10 @@ void HeaderBar::showSetBpmPopup (bool forSampleDefault)
     menu.addItem (9, "1/16 note");
 
     auto* editor = getTopLevelComponent();
+    float ms = IntersectLookAndFeel::getMenuScale();
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this)
-                            .withParentComponent (editor),
+                            .withParentComponent (editor)
+                            .withStandardItemHeight ((int) (24 * ms)),
         [this, forSampleDefault] (int result) {
             if (result <= 0 || result > 9) return;
             const float bars[] = { 0.0f, 16.0f, 8.0f, 4.0f, 2.0f, 1.0f, 0.5f, 0.25f, 0.125f, 0.0625f };
@@ -669,8 +673,10 @@ void HeaderBar::showThemePopup()
         menu.addItem (i + 1, themes[i], true, themes[i] == currentName);
 
     auto* topLevel = getTopLevelComponent();
+    float ms2 = IntersectLookAndFeel::getMenuScale();
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&themeBtn)
-                            .withParentComponent (topLevel),
+                            .withParentComponent (topLevel)
+                            .withStandardItemHeight ((int) (24 * ms2)),
         [this, editor, themes] (int result) {
             if (result == 100)
                 adjustScale (-0.25f);

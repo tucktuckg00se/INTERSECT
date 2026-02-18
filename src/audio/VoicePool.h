@@ -31,8 +31,8 @@ public:
     void processSample (const SampleData& sample, double sampleRate,
                         float& outL, float& outR);
 
-    void processSampleMultiOut (const SampleData& sample, double sampleRate,
-                                float* outPtrs[], int numOuts);
+    static void processSampleMultiOut (const SampleData& sample, double sampleRate,
+                                      float* outPtrs[], int numOuts);
 
     void setSampleRate (double sr) { sampleRate = sr; }
     double getSampleRate() const { return sampleRate; }

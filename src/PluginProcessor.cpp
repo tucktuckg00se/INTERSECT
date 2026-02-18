@@ -345,8 +345,7 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                 // Build boundary list: [startS, ...positions..., endS]
                 std::vector<int> bounds;
                 bounds.push_back (startS);
-                for (int p : cmd.positions)
-                    bounds.push_back (p);
+                std::copy (cmd.positions.begin(), cmd.positions.end(), std::back_inserter (bounds));
                 bounds.push_back (endS);
 
                 int firstNew = -1;
@@ -393,7 +392,7 @@ void IntersectProcessor::handleCommand (const Command& cmd)
     }
 }
 
-void IntersectProcessor::processMidi (juce::MidiBuffer& midi)
+void IntersectProcessor::processMidi (const juce::MidiBuffer& midi)
 {
     for (const auto metadata : midi)
     {

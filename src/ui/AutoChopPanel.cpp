@@ -3,6 +3,7 @@
 #include "WaveformView.h"
 #include "../PluginProcessor.h"
 #include "../audio/AudioAnalysis.h"
+#include <algorithm>
 
 AutoChopPanel::AutoChopPanel (IntersectProcessor& p, WaveformView& wv)
     : processor (p), waveformView (wv)
@@ -165,9 +166,9 @@ void AutoChopPanel::updatePreview()
 
     if (processor.snapToZeroCrossing.load())
     {
-        for (auto& p : positions)
-            p = AudioAnalysis::findNearestZeroCrossing (
-                processor.sampleData.getBuffer(), p);
+        std::transform (positions.begin(), positions.end(), positions.begin(),
+                        [this] (int p) { return AudioAnalysis::findNearestZeroCrossing (
+                            processor.sampleData.getBuffer(), p); });
     }
 
     waveformView.transientPreviewPositions = std::move (positions);

@@ -206,7 +206,6 @@ void SliceControlBar::paint (juce::Graphics& g)
         locked = s.lockMask & kLockFormantComp;
         bool fmntCVal = locked ? s.formantComp : gFmntC;
         drawParamCell (g, x, row1y, "FMNT C", fmntCVal ? "ON" : "OFF", locked, kLockFormantComp, F::FieldFormantComp, 0.0f, 1.0f, 1.0f, true, false, cw);
-        x += cw + 4;
     }
     else if (av == 2)
     {
@@ -216,7 +215,6 @@ void SliceControlBar::paint (juce::Graphics& g)
         int gmVal = locked ? s.grainMode : gGM;
         juce::String gmNames[] = { "Fast", "Normal", "Smooth" };
         drawParamCell (g, x, row1y, "GRAIN", gmNames[juce::jlimit (0, 2, gmVal)], locked, kLockGrainMode, F::FieldGrainMode, 0.0f, 2.0f, 1.0f, false, true, cw);
-        x += cw + 4;
     }
 
     // ====== Separator line ======
@@ -422,8 +420,10 @@ void SliceControlBar::mouseDown (const juce::MouseEvent& e)
                     menu.addItem (3, "Bungee");
                 }
                 auto* topLvl = getTopLevelComponent();
+                float ms = IntersectLookAndFeel::getMenuScale();
                 menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this)
-                                        .withParentComponent (topLvl),
+                                        .withParentComponent (topLvl)
+                                        .withStandardItemHeight ((int) (24 * ms)),
                     [this, fieldId = cell.fieldId] (int result) {
                         if (result > 0)
                         {
@@ -736,8 +736,10 @@ void SliceControlBar::showSetBpmPopup()
     menu.addItem (9, "1/16 note");
 
     auto* topLvl = getTopLevelComponent();
+    float ms = IntersectLookAndFeel::getMenuScale();
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this)
-                            .withParentComponent (topLvl),
+                            .withParentComponent (topLvl)
+                            .withStandardItemHeight ((int) (24 * ms)),
         [this] (int result) {
             if (result <= 0 || result > 9) return;
             const float bars[] = { 0.0f, 16.0f, 8.0f, 4.0f, 2.0f, 1.0f, 0.5f, 0.25f, 0.125f, 0.0625f };

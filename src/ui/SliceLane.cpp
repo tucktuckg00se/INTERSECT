@@ -91,7 +91,7 @@ void SliceLane::paint (juce::Graphics& g)
             // Only draw if the label fits within the visible area
             if (labelX + labelW < w)
             {
-                g.setColour (si.selected ? juce::Colours::white.withAlpha (0.9f) : si.col.withAlpha (0.7f));
+                g.setColour (si.selected ? getTheme().foreground.withAlpha (0.9f) : si.col.withAlpha (0.7f));
                 g.drawText (label, labelX, 0, labelW, h, juce::Justification::centredLeft);
                 labelEnds.push_back (labelX + labelW);
             }

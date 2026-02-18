@@ -61,6 +61,7 @@ bool SampleData::loadFromFile (const juce::File& file, double projectSampleRate)
     loadedFileName = file.getFileName();
     loadedFilePath = file.getFullPathName();
     loaded = true;
+    buildMipmaps();
     return true;
 }
 
@@ -77,4 +78,49 @@ float SampleData::getInterpolatedSample (double pos, int channel) const
 
     auto* data = buffer.getReadPointer (channel);
     return data[ipos] + (data[ipos + 1] - data[ipos]) * frac;
+}
+
+void SampleData::buildMipmaps()
+{
+    int numFrames = buffer.getNumSamples();
+    if (numFrames <= 0)
+    {
+        for (auto& m : peakMipmaps)
+        {
+            m.samplesPerPeak = 0;
+            m.maxPeaks.clear();
+            m.minPeaks.clear();
+        }
+        return;
+    }
+
+    const float* dataL = buffer.getReadPointer (0);
+    const float* dataR = buffer.getNumChannels() > 1 ? buffer.getReadPointer (1) : dataL;
+
+    static constexpr int kBlockSizes[kNumMipmapLevels] = { 64, 512, 4096 };
+
+    for (int level = 0; level < kNumMipmapLevels; ++level)
+    {
+        auto& m = peakMipmaps[(size_t) level];
+        m.samplesPerPeak = kBlockSizes[level];
+        int numPeaks = (numFrames + m.samplesPerPeak - 1) / m.samplesPerPeak;
+        m.maxPeaks.resize ((size_t) numPeaks);
+        m.minPeaks.resize ((size_t) numPeaks);
+
+        for (int i = 0; i < numPeaks; ++i)
+        {
+            int start = i * m.samplesPerPeak;
+            int end = std::min (start + m.samplesPerPeak, numFrames);
+            float hi = -1.0f;
+            float lo = 1.0f;
+            for (int s = start; s < end; ++s)
+            {
+                float val = (dataL[s] + dataR[s]) * 0.5f;
+                if (val > hi) hi = val;
+                if (val < lo) lo = val;
+            }
+            m.maxPeaks[(size_t) i] = hi;
+            m.minPeaks[(size_t) i] = lo;
+        }
+    }
 }

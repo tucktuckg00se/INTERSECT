@@ -3,6 +3,7 @@
 #include <vector>
 #include <cmath>
 #include <algorithm>
+#include <iterator>
 
 namespace AudioAnalysis
 {
@@ -101,9 +102,8 @@ inline std::vector<int> detectTransients (const juce::AudioBuffer<float>& buffer
     // sensitivity 1.0 -> low percentile (many detections)
     // sensitivity 0.0 -> high percentile (only biggest hits)
     std::vector<float> sorted;
-    for (float v : odf)
-        if (v > 0.0f)
-            sorted.push_back (v);
+    std::copy_if (odf.begin(), odf.end(), std::back_inserter (sorted),
+                  [] (float v) { return v > 0.0f; });
 
     if (sorted.empty())
         return onsets;

@@ -107,6 +107,7 @@ void IntersectEditor::timerCallback()
     {
         lastScale = scale;
         setTransform (juce::AffineTransform::scale (scale));
+        IntersectLookAndFeel::setMenuScale (scale);
         saveUserSettings (scale, getTheme().name);
     }
 

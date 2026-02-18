@@ -7,6 +7,7 @@
 // Include Bungee
 #include "bungee/Bungee.h"
 
+#include <algorithm>
 #include <cmath>
 
 static constexpr int kStretchBlockSize = 128;
@@ -26,9 +27,10 @@ VoicePool::VoicePool()
 int VoicePool::allocate()
 {
     // First pass: find inactive voice within maxActive range
-    for (int i = 0; i < maxActive; ++i)
-        if (! voices[i].active)
-            return i;
+    auto it = std::find_if (voices.begin(), voices.begin() + maxActive,
+                            [] (const Voice& v) { return ! v.active; });
+    if (it != voices.begin() + maxActive)
+        return (int) std::distance (voices.begin(), it);
 
     // Second pass: steal — prefer releasing voices with lowest envelope
     int best = 0;
