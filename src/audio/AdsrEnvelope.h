@@ -72,6 +72,10 @@ public:
                 break;
         }
 
+        // Guard against float accumulation drift
+        if (level < 0.0f) level = 0.0f;
+        if (level > 1.0f) level = 1.0f;
+
         return level;
     }
 

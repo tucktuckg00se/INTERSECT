@@ -315,15 +315,16 @@ void HeaderBar::paint (juce::Graphics& g)
         headerCells.push_back ({ x, row2y, cellW, row2h, ParamIds::defaultReverse, 0.0f, 1.0f, 1.0f, false, true, false, false });
         x += cellW + cellGap;
 
-        // PP
+        // LOOP (choice: Off/Loop/PP)
         g.setFont (IntersectLookAndFeel::makeFont (12.0f));
         g.setColour (getTheme().foreground.withAlpha (0.9f));
-        g.drawText ("PP", x, row2y + 2, cellW, 13, juce::Justification::centredLeft);
+        g.drawText ("LOOP", x, row2y + 2, cellW, 13, juce::Justification::centredLeft);
         g.setFont (IntersectLookAndFeel::makeFont (14.0f));
-        bool pp = processor.apvts.getRawParameterValue (ParamIds::defaultPingPong)->load() > 0.5f;
-        g.setColour (pp ? getTheme().lockActive : getTheme().foreground.withAlpha (0.5f));
-        g.drawText (pp ? "ON" : "OFF", x, row2y + 15, cellW, 14, juce::Justification::centredLeft);
-        headerCells.push_back ({ x, row2y, cellW, row2h, ParamIds::defaultPingPong, 0.0f, 1.0f, 1.0f, false, true, false, false });
+        int loopMode = (int) processor.apvts.getRawParameterValue (ParamIds::defaultLoop)->load();
+        juce::String loopNames[] = { "OFF", "LOOP", "PP" };
+        g.setColour (loopMode > 0 ? getTheme().lockActive : getTheme().foreground.withAlpha (0.5f));
+        g.drawText (loopNames[juce::jlimit (0, 2, loopMode)], x, row2y + 15, cellW, 14, juce::Justification::centredLeft);
+        headerCells.push_back ({ x, row2y, cellW, row2h, ParamIds::defaultLoop, 0.0f, 2.0f, 1.0f, true, false, false, false });
         x += cellW + cellGap;
 
         // MUTE GROUP
@@ -465,6 +466,12 @@ void HeaderBar::mouseDown (const juce::MouseEvent& e)
                     menu.addItem (1, "Fast");
                     menu.addItem (2, "Normal");
                     menu.addItem (3, "Smooth");
+                }
+                else if (cell.paramId == ParamIds::defaultLoop)
+                {
+                    menu.addItem (1, "OFF");
+                    menu.addItem (2, "LOOP");
+                    menu.addItem (3, "PING-PONG");
                 }
                 else
                 {

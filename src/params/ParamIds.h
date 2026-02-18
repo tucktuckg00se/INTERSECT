@@ -12,7 +12,7 @@ namespace ParamIds
     inline const juce::String defaultSustain  { "defaultSustain" };
     inline const juce::String defaultRelease  { "defaultRelease" };
     inline const juce::String defaultMuteGroup { "defaultMuteGroup" };
-    inline const juce::String defaultPingPong { "defaultPingPong" };
+    inline const juce::String defaultLoop    { "defaultLoop" };
     inline const juce::String defaultStretchEnabled { "defaultStretchEnabled" };
     inline const juce::String defaultTonality     { "defaultTonality" };
     inline const juce::String defaultFormant      { "defaultFormant" };

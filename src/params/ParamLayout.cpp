@@ -67,11 +67,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout ParamLayout::createLayout()
         "Default Mute Group",
         0, 32, 0));
 
-    // Default Ping-Pong: off/on
-    params.push_back (std::make_unique<juce::AudioParameterBool> (
-        juce::ParameterID { ParamIds::defaultPingPong, 1 },
-        "Default Ping-Pong",
-        false));
+    // Default Loop Mode: Off/Loop/Ping-Pong
+    params.push_back (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { ParamIds::defaultLoop, 1 },
+        "Default Loop Mode",
+        juce::StringArray { "Off", "Loop", "Ping-Pong" },
+        0));
 
     // Default Stretch Enabled: off/on
     params.push_back (std::make_unique<juce::AudioParameterBool> (

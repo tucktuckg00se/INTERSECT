@@ -8,9 +8,10 @@ WaveformView::WaveformView (IntersectProcessor& p) : processor (p) {}
 int WaveformView::pixelToSample (int px) const
 {
     int numFrames = processor.sampleData.getNumFrames();
-    float z = processor.zoom.load();
+    float z = std::max (1.0f, processor.zoom.load());
     float sc = processor.scroll.load();
     int visLen = (int) (numFrames / z);
+    if (visLen <= 0) return 0;
     int visStart = (int) (sc * (numFrames - visLen));
     return visStart + (int) ((float) px / getWidth() * visLen);
 }
@@ -18,7 +19,7 @@ int WaveformView::pixelToSample (int px) const
 int WaveformView::sampleToPixel (int sample) const
 {
     int numFrames = processor.sampleData.getNumFrames();
-    float z = processor.zoom.load();
+    float z = std::max (1.0f, processor.zoom.load());
     float sc = processor.scroll.load();
     int visLen = (int) (numFrames / z);
     int visStart = (int) (sc * (numFrames - visLen));

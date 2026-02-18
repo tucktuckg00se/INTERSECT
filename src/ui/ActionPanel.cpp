@@ -125,8 +125,8 @@ void ActionPanel::resized()
     splitBtn.setBounds (2 * (btnW + gap), 0, btnW, btnH);
     dupBtn.setBounds (3 * (btnW + gap), 0, btnW, btnH);
     deleteBtn.setBounds (4 * (btnW + gap), 0, btnW, btnH);
-    snapBtn.setBounds (getWidth() - narrowW * 2 - gap, 0, narrowW, btnH);
     midiSelectBtn.setBounds (getWidth() - narrowW, 0, narrowW, btnH);
+    snapBtn.setBounds (getWidth() - narrowW - gap - narrowW, 0, narrowW, btnH);
 }
 
 void ActionPanel::paint (juce::Graphics& g)

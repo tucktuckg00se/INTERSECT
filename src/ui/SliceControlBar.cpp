@@ -115,7 +115,7 @@ void SliceControlBar::paint (juce::Graphics& g)
     float gSustain = processor.apvts.getRawParameterValue (ParamIds::defaultSustain)->load();
     float gRelease = processor.apvts.getRawParameterValue (ParamIds::defaultRelease)->load();
     int   gMG      = (int) processor.apvts.getRawParameterValue (ParamIds::defaultMuteGroup)->load();
-    bool  gPP      = processor.apvts.getRawParameterValue (ParamIds::defaultPingPong)->load() > 0.5f;
+    int   gLoopMode = (int) processor.apvts.getRawParameterValue (ParamIds::defaultLoop)->load();
     bool  gStretch = processor.apvts.getRawParameterValue (ParamIds::defaultStretchEnabled)->load() > 0.5f;
 
     int cw;
@@ -262,10 +262,11 @@ void SliceControlBar::paint (juce::Graphics& g)
     drawParamCell (g, x, row2y, "REV", revVal ? "ON" : "OFF", locked, kLockReverse, F::FieldReverse, 0.0f, 1.0f, 1.0f, true, false, cw);
     x += cw + 4;
 
-    // PING-PONG
-    locked = s.lockMask & kLockPingPong;
-    bool pp = locked ? s.pingPong : gPP;
-    drawParamCell (g, x, row2y, "PP", pp ? "ON" : "OFF", locked, kLockPingPong, F::FieldPingPong, 0.0f, 1.0f, 1.0f, true, false, cw);
+    // LOOP (choice: Off/Loop/PP)
+    locked = s.lockMask & kLockLoop;
+    int loopVal = locked ? s.loopMode : gLoopMode;
+    juce::String loopNames[] = { "OFF", "LOOP", "PP" };
+    drawParamCell (g, x, row2y, "LOOP", loopNames[juce::jlimit (0, 2, loopVal)], locked, kLockLoop, F::FieldLoop, 0.0f, 2.0f, 1.0f, false, true, cw);
     x += cw + 4;
 
     // MUTE GROUP
@@ -367,12 +368,7 @@ void SliceControlBar::mouseDown (const juce::MouseEvent& e)
                     bool sliceLocked = s.lockMask & cell.lockBit;
 
                     bool currentVal = false;
-                    if (cell.fieldId == IntersectProcessor::FieldPingPong)
-                    {
-                        bool gPP = processor.apvts.getRawParameterValue (ParamIds::defaultPingPong)->load() > 0.5f;
-                        currentVal = sliceLocked ? s.pingPong : gPP;
-                    }
-                    else if (cell.fieldId == IntersectProcessor::FieldStretchEnabled)
+                    if (cell.fieldId == IntersectProcessor::FieldStretchEnabled)
                     {
                         bool gStr = processor.apvts.getRawParameterValue (ParamIds::defaultStretchEnabled)->load() > 0.5f;
                         currentVal = sliceLocked ? s.stretchEnabled : gStr;
@@ -412,6 +408,12 @@ void SliceControlBar::mouseDown (const juce::MouseEvent& e)
                     menu.addItem (1, "Fast");
                     menu.addItem (2, "Normal");
                     menu.addItem (3, "Smooth");
+                }
+                else if (cell.fieldId == IntersectProcessor::FieldLoop)
+                {
+                    menu.addItem (1, "OFF");
+                    menu.addItem (2, "LOOP");
+                    menu.addItem (3, "PING-PONG");
                 }
                 else
                 {

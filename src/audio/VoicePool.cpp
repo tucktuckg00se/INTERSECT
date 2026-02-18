@@ -98,7 +98,8 @@ void VoicePool::initStretcher (Voice& v, float pitchSemis, double sr,
     int seekLen = v.stretcher->outputSeekLength (playbackRate);
     seekLen = std::min (seekLen, v.endSample - v.startSample);
 
-    if (seekLen > 0 && sample.isLoaded())
+    int maxFrame = sample.getNumFrames() - 1;
+    if (seekLen > 0 && sample.isLoaded() && maxFrame >= 0)
     {
         std::vector<float> seekL ((size_t) seekLen), seekR ((size_t) seekLen);
         for (int i = 0; i < seekLen; ++i)
@@ -106,6 +107,7 @@ void VoicePool::initStretcher (Voice& v, float pitchSemis, double sr,
             int srcIdx = (v.direction > 0)
                 ? v.startSample + i
                 : v.endSample - 1 - i;
+            srcIdx = juce::jlimit (0, maxFrame, srcIdx);
             seekL[(size_t) i] = sample.getInterpolatedSample (srcIdx, 0);
             seekR[(size_t) i] = sample.getInterpolatedSample (srcIdx, 1);
         }
@@ -142,12 +144,13 @@ void VoicePool::startVoice (int voiceIdx, int sliceIdx, float velocity, int note
                             SliceManager& sm,
                             float globalBpm, float globalPitch, int globalAlgorithm,
                             float globalAttack, float globalDecay, float globalSustain, float globalRelease,
-                            int globalMuteGroup, bool globalPingPong,
+                            int globalMuteGroup,
                             bool globalStretchEnabled, float dawBpmVal,
                             float globalTonality, float globalFormant, bool globalFormantComp,
                             int globalGrainMode, float globalVolume,
                             bool globalReleaseTail,
                             bool globalReverse,
+                            int globalLoopMode,
                             const SampleData& sample)
 {
     auto& v = voices[voiceIdx];
@@ -158,7 +161,6 @@ void VoicePool::startVoice (int voiceIdx, int sliceIdx, float velocity, int note
     v.midiNote  = note;
     v.velocity  = velocity / 127.0f;
     v.age       = 0;
-    v.looping   = false;
 
     v.startSample = s.startSample;
     v.endSample   = s.endSample;
@@ -171,7 +173,9 @@ void VoicePool::startVoice (int voiceIdx, int sliceIdx, float velocity, int note
 
     v.envelope.noteOn (attack, decay, sustain, release);
 
-    v.pingPong   = sm.resolveParam (sliceIdx, kLockPingPong,  s.pingPong ? 1.0f : 0.0f, globalPingPong ? 1.0f : 0.0f) > 0.5f;
+    int resolvedLoopMode = (int) sm.resolveParam (sliceIdx, kLockLoop, (float) s.loopMode, (float) globalLoopMode);
+    v.looping    = (resolvedLoopMode == 1);
+    v.pingPong   = (resolvedLoopMode == 2);
     v.muteGroup  = (int) sm.resolveParam (sliceIdx, kLockMuteGroup, (float) s.muteGroup, (float) globalMuteGroup);
 
     bool rev = sm.resolveParam (sliceIdx, kLockReverse,
@@ -321,13 +325,16 @@ static void fillStretchBlock (Voice& v, const SampleData& sample)
                 v.stretchSrcPos = v.endSample - 1;
                 v.direction = -1;
             }
+            else if (v.looping)
+            {
+                v.stretchSrcPos = v.startSample;
+            }
             else if (v.releaseTail && v.stretchSrcPos < v.sampleEnd)
             {
-                // Continue reading beyond slice end during release tail
+                v.stretchSrcPos = std::min (v.stretchSrcPos, (double) v.sampleEnd - 1);
             }
             else
             {
-                // Fill rest with last sample
                 float lastL = v.stretchInBufL[(size_t) i];
                 float lastR = v.stretchInBufR[(size_t) i];
                 for (int j = i + 1; j < inputSamples; ++j)
@@ -346,9 +353,13 @@ static void fillStretchBlock (Voice& v, const SampleData& sample)
                 v.stretchSrcPos = v.startSample;
                 v.direction = 1;
             }
+            else if (v.looping)
+            {
+                v.stretchSrcPos = v.endSample - 1;
+            }
             else if (v.releaseTail && v.stretchSrcPos >= 0)
             {
-                // Continue reading before slice start during release tail (reverse)
+                v.stretchSrcPos = std::max (v.stretchSrcPos, 0.0);
             }
             else
             {
@@ -382,7 +393,7 @@ static void fillBungeeBlock (Voice& v, const SampleData& sample)
     if (! v.bungeeStretcher)
         return;
 
-    // Ping pong boundary checks before requesting next grain
+    // Boundary checks before requesting next grain
     if (v.pingPong)
     {
         if (v.bungeeSpeed > 0.0 && v.bungeeSrcPos >= v.endSample)
@@ -395,6 +406,13 @@ static void fillBungeeBlock (Voice& v, const SampleData& sample)
             v.bungeeSrcPos = v.startSample;
             v.bungeeSpeed = std::abs (v.bungeeSpeed);
         }
+    }
+    else if (v.looping)
+    {
+        if (v.bungeeSpeed > 0.0 && v.bungeeSrcPos >= v.endSample)
+            v.bungeeSrcPos = v.startSample;
+        else if (v.bungeeSpeed < 0.0 && v.bungeeSrcPos <= v.startSample)
+            v.bungeeSrcPos = v.endSample - 1;
     }
 
     auto& stretcher = *v.bungeeStretcher;
@@ -516,7 +534,15 @@ void VoicePool::processVoiceSample (int i, const SampleData& sample, double sr,
 
             if (pastEnd && !v.pingPong)
             {
-                if (v.releaseTail && v.stretchSrcPos < v.sampleEnd && v.stretchSrcPos >= 0)
+                if (v.looping)
+                {
+                    if (v.direction > 0)
+                        v.stretchSrcPos = v.startSample;
+                    else
+                        v.stretchSrcPos = v.endSample - 1;
+                    fillStretchBlock (v, sample);
+                }
+                else if (v.releaseTail && v.stretchSrcPos < v.sampleEnd && v.stretchSrcPos >= 0)
                 {
                     if (v.envelope.getState() != AdsrEnvelope::Release)
                         v.envelope.noteOff();
@@ -566,7 +592,16 @@ void VoicePool::processVoiceSample (int i, const SampleData& sample, double sr,
 
             if (pastEnd && !v.pingPong)
             {
-                if (v.releaseTail && v.bungeeSrcPos < v.sampleEnd && v.bungeeSrcPos >= 0)
+                if (v.looping)
+                {
+                    if (v.bungeeSpeed > 0.0)
+                        v.bungeeSrcPos = v.startSample;
+                    else
+                        v.bungeeSrcPos = v.endSample - 1;
+                    v.bungeeResetNeeded = true;
+                    fillBungeeBlock (v, sample);
+                }
+                else if (v.releaseTail && v.bungeeSrcPos < v.sampleEnd && v.bungeeSrcPos >= 0)
                 {
                     if (v.envelope.getState() != AdsrEnvelope::Release)
                         v.envelope.noteOff();

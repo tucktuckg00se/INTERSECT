@@ -69,7 +69,6 @@ public:
         FieldSustain,
         FieldRelease,
         FieldMuteGroup,
-        FieldPingPong,
         FieldMidiNote,
         FieldStretchEnabled,
         FieldTonality,
@@ -80,6 +79,7 @@ public:
         FieldReleaseTail,
         FieldReverse,
         FieldOutputBus,
+        FieldLoop,
     };
 
     struct Command
@@ -146,7 +146,6 @@ private:
     std::atomic<float>* sustainParam    = nullptr;
     std::atomic<float>* releaseParam    = nullptr;
     std::atomic<float>* muteGroupParam  = nullptr;
-    std::atomic<float>* pingPongParam   = nullptr;
     std::atomic<float>* stretchParam    = nullptr;
     std::atomic<float>* tonalityParam   = nullptr;
     std::atomic<float>* formantParam    = nullptr;
@@ -154,6 +153,7 @@ private:
     std::atomic<float>* grainModeParam   = nullptr;
     std::atomic<float>* releaseTailParam = nullptr;
     std::atomic<float>* reverseParam     = nullptr;
+    std::atomic<float>* loopParam        = nullptr;
     std::atomic<float>* maxVoicesParam   = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (IntersectProcessor)

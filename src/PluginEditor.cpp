@@ -90,6 +90,9 @@ void IntersectEditor::resized()
     // 4. ActionPanel (28px) — above slice control
     actionPanel.setBounds (area.removeFromBottom (kActionH).reduced (kMargin, 0));
 
+    // 4px gap between scroll bar and action panel
+    area.removeFromBottom (4);
+
     // 5. RulerBar / ScrollZoomBar (22px) — above action panel
     scrollZoomBar.setBounds (area.removeFromBottom (kScrollbarH).reduced (kMargin, 0));
 

@@ -24,12 +24,12 @@ jobs:
           mkdir staging
           cp -r build/Intersect_artefacts/Release/VST3/INTERSECT.vst3 staging/
           cp build/Intersect_artefacts/Release/Standalone/INTERSECT.exe staging/
-          cd staging && 7z a ../INTERSECT-Windows-x64.zip *
+          cd staging && 7z a ../INTERSECT-${{ github.ref_name }}-Windows-x64.zip *
 
       - uses: actions/upload-artifact@v4
         with:
           name: INTERSECT-Windows-x64
-          path: INTERSECT-Windows-x64.zip
+          path: INTERSECT-${{ github.ref_name }}-Windows-x64.zip
 
   build-linux:
     runs-on: ubuntu-latest
@@ -54,12 +54,12 @@ jobs:
           mkdir staging
           cp -r build/Intersect_artefacts/Release/VST3/INTERSECT.vst3 staging/
           cp build/Intersect_artefacts/Release/Standalone/INTERSECT staging/
-          cd staging && zip -r ../INTERSECT-Linux-x64.zip .
+          cd staging && zip -r ../INTERSECT-${{ github.ref_name }}-Linux-x64.zip .
 
       - uses: actions/upload-artifact@v4
         with:
           name: INTERSECT-Linux-x64
-          path: INTERSECT-Linux-x64.zip
+          path: INTERSECT-${{ github.ref_name }}-Linux-x64.zip
 
   build-macos:
     runs-on: macos-latest
@@ -80,12 +80,12 @@ jobs:
           cp -r build/Intersect_artefacts/Release/VST3/INTERSECT.vst3 staging/
           cp -r build/Intersect_artefacts/Release/Standalone/INTERSECT.app staging/
           cp -r build/Intersect_artefacts/Release/AU/INTERSECT.component staging/
-          cd staging && zip -r ../INTERSECT-macOS-arm64.zip .
+          cd staging && zip -r ../INTERSECT-${{ github.ref_name }}-macOS-arm64.zip .
 
       - uses: actions/upload-artifact@v4
         with:
           name: INTERSECT-macOS-arm64
-          path: INTERSECT-macOS-arm64.zip
+          path: INTERSECT-${{ github.ref_name }}-macOS-arm64.zip
 
   release:
     needs: [build-windows, build-linux, build-macos]
@@ -101,6 +101,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            artifacts/INTERSECT-Windows-x64/INTERSECT-Windows-x64.zip
-            artifacts/INTERSECT-Linux-x64/INTERSECT-Linux-x64.zip
-            artifacts/INTERSECT-macOS-arm64/INTERSECT-macOS-arm64.zip
+            artifacts/INTERSECT-Windows-x64/INTERSECT-${{ github.ref_name }}-Windows-x64.zip
+            artifacts/INTERSECT-Linux-x64/INTERSECT-${{ github.ref_name }}-Linux-x64.zip
+            artifacts/INTERSECT-macOS-arm64/INTERSECT-${{ github.ref_name }}-macOS-arm64.zip

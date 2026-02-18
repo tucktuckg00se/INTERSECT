@@ -12,7 +12,7 @@ enum LockBit : uint32_t
     kLockSustain   = 32,
     kLockRelease   = 64,
     kLockMuteGroup = 128,
-    kLockPingPong      = 256,
+    // 256 was kLockPingPong (removed — merged into kLockLoop)
     kLockStretch       = 512,
     kLockTonality      = 1024,
     kLockFormant       = 2048,
@@ -21,7 +21,8 @@ enum LockBit : uint32_t
     kLockVolume        = 16384,
     kLockReleaseTail   = 32768,
     kLockReverse       = 65536,
-    kLockOutputBus     = 131072
+    kLockOutputBus     = 131072,
+    kLockLoop          = 262144
 };
 
 struct Slice
@@ -38,7 +39,7 @@ struct Slice
     float    sustainLevel  = 1.0f;
     float    releaseSec    = 0.02f;
     int      muteGroup     = 1;
-    bool     pingPong      = false;
+    int      loopMode      = 0;       // 0=Off, 1=Loop, 2=Ping-Pong
     bool     stretchEnabled = false;
     float    tonalityHz    = 0.0f;
     float    formantSemitones = 0.0f;

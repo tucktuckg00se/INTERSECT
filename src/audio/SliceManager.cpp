@@ -38,7 +38,7 @@ int SliceManager::createSlice (int start, int end)
     s.sustainLevel   = 1.0f;
     s.releaseSec     = 0.02f;
     s.muteGroup      = 1;
-    s.pingPong       = false;
+    s.loopMode       = 0;
 
     // Assign colour from palette
     s.colour = palette ? palette[idx % 16] : juce::Colour (0xFF4D8C99);
