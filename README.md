@@ -103,30 +103,6 @@ To create a custom theme:
 4. Place the file in the themes folder listed above
 5. Restart the plugin — your theme will appear in the theme selector (right-click the header bar)
 
-**Theme properties:**
-
-| Key | Purpose |
-|-----|---------|
-| `background` | Window background |
-| `waveformBg` | Waveform area background |
-| `darkBar` | Slice control bar / action panel background |
-| `header` | Header bar background |
-| `foreground` | Primary text colour |
-| `gridLine` | Waveform grid lines |
-| `separator` | Horizontal separator lines |
-| `waveform` | Waveform draw colour |
-| `sliceRegion` | Slice region fill |
-| `sliceRegionSelected` | Selected slice region fill |
-| `selectionOverlay` | Selected slice translucent overlay |
-| `accent` | Accent colour (labels, highlights) |
-| `lockActive` | Locked/overridden parameter indicator |
-| `lockInactive` | Unlocked/inherited parameter indicator |
-| `button` | Button background |
-| `buttonHover` | Button hover background |
-| `slice1`–`slice16` | Slice colour palette (assigned to new slices in order) |
-
-Any missing key falls back to the dark theme default. Lines starting with `#` are comments.
-
 ## Install
 
 Download the latest release zip for your platform from the [Releases](https://github.com/tucktuckg00se/INTERSECT/releases) page and extract it.

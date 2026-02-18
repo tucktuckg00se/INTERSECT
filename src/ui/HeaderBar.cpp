@@ -457,41 +457,17 @@ void HeaderBar::mouseDown (const juce::MouseEvent& e)
                 return;
             }
 
-            // Choice popup (Algorithm or Grain Mode)
+            // Choice: click to cycle
             if (cell.isChoice)
             {
-                juce::PopupMenu menu;
-                if (cell.paramId == ParamIds::defaultGrainMode)
+                if (auto* p = processor.apvts.getParameter (cell.paramId))
                 {
-                    menu.addItem (1, "Fast");
-                    menu.addItem (2, "Normal");
-                    menu.addItem (3, "Smooth");
+                    int current = (int) processor.apvts.getRawParameterValue (cell.paramId)->load();
+                    int maxVal = (int) cell.maxVal;
+                    int next = (current + 1) > maxVal ? 0 : current + 1;
+                    p->setValueNotifyingHost (p->convertTo0to1 ((float) next));
                 }
-                else if (cell.paramId == ParamIds::defaultLoop)
-                {
-                    menu.addItem (1, "OFF");
-                    menu.addItem (2, "LOOP");
-                    menu.addItem (3, "PING-PONG");
-                }
-                else
-                {
-                    menu.addItem (1, "Repitch");
-                    menu.addItem (2, "Stretch");
-                    menu.addItem (3, "Bungee");
-                }
-                auto* topLvl = getTopLevelComponent();
-                float ms = IntersectLookAndFeel::getMenuScale();
-                menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this)
-                                        .withParentComponent (topLvl)
-                                        .withStandardItemHeight ((int) (24 * ms)),
-                    [this, paramId = cell.paramId] (int result) {
-                        if (result > 0)
-                        {
-                            if (auto* p = processor.apvts.getParameter (paramId))
-                                p->setValueNotifyingHost (p->convertTo0to1 ((float) (result - 1)));
-                            repaint();
-                        }
-                    });
+                repaint();
                 return;
             }
 

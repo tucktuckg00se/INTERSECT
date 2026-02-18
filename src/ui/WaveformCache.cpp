@@ -19,8 +19,20 @@ void WaveformCache::rebuild (const juce::AudioBuffer<float>& buffer,
     peaks.resize ((size_t) widthPixels);
     float samplesPerPixel = (float) visibleLen / (float) widthPixels;
 
+    if (buffer.getNumChannels() < 1)
+    {
+        peaks.clear();
+        return;
+    }
+
     const float* dataL = buffer.getReadPointer (0);
     const float* dataR = buffer.getNumChannels() > 1 ? buffer.getReadPointer (1) : dataL;
+
+    if (dataL == nullptr)
+    {
+        peaks.clear();
+        return;
+    }
 
     if (samplesPerPixel < 1.0f)
     {

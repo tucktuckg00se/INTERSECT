@@ -11,8 +11,6 @@ struct ThemeData
     juce::Colour foreground;
     juce::Colour header;
     juce::Colour waveform;
-    juce::Colour sliceRegion;
-    juce::Colour sliceRegionSelected;
     juce::Colour selectionOverlay;
     juce::Colour lockActive;
     juce::Colour lockInactive;
@@ -34,8 +32,6 @@ struct ThemeData
         t.foreground    = juce::Colour (0xFFCCD0D8);
         t.header    = juce::Colour (0xFF0D0D14);
         t.waveform = juce::Colour::fromFloatRGBA (0.70f, 0.78f, 0.85f, 1.0f);
-        t.sliceRegion     = juce::Colour (0xFF2A2A35);
-        t.sliceRegionSelected  = juce::Colour (0xFF3A3A50);
         t.selectionOverlay = juce::Colour::fromFloatRGBA (0.25f, 0.35f, 0.55f, 1.0f);
         t.lockActive      = juce::Colour::fromFloatRGBA (0.90f, 0.35f, 0.22f, 1.0f);
         t.lockInactive       = juce::Colour::fromFloatRGBA (0.30f, 0.30f, 0.34f, 1.0f);
@@ -73,8 +69,6 @@ struct ThemeData
         t.foreground    = juce::Colour (0xFF1A1A2E);
         t.header    = juce::Colour (0xFFE0E0EC);
         t.waveform = juce::Colour (0xFF2A4060);
-        t.sliceRegion     = juce::Colour (0xFFD0D0DD);
-        t.sliceRegionSelected  = juce::Colour (0xFFB8B8CC);
         t.selectionOverlay = juce::Colour (0xFF8090B8);
         t.lockActive      = juce::Colour (0xFFCC4422);
         t.lockInactive       = juce::Colour (0xFF9999A8);
@@ -136,8 +130,6 @@ struct ThemeData
             else if (key == "foreground")    t.foreground = parseHex (val);
             else if (key == "header")    t.header = parseHex (val);
             else if (key == "waveform") t.waveform = parseHex (val);
-            else if (key == "sliceRegion")     t.sliceRegion = parseHex (val);
-            else if (key == "sliceRegionSelected")  t.sliceRegionSelected = parseHex (val);
             else if (key == "selectionOverlay") t.selectionOverlay = parseHex (val);
             else if (key == "lockActive")      t.lockActive = parseHex (val);
             else if (key == "lockInactive")       t.lockInactive = parseHex (val);
@@ -171,8 +163,6 @@ struct ThemeData
         s << "foreground: " << colourToHex (foreground) << "\n";
         s << "header: " << colourToHex (header) << "\n";
         s << "waveform: " << colourToHex (waveform) << "\n";
-        s << "sliceRegion: " << colourToHex (sliceRegion) << "\n";
-        s << "sliceRegionSelected: " << colourToHex (sliceRegionSelected) << "\n";
         s << "selectionOverlay: " << colourToHex (selectionOverlay) << "\n";
         s << "lockActive: " << colourToHex (lockActive) << "\n";
         s << "lockInactive: " << colourToHex (lockInactive) << "\n";

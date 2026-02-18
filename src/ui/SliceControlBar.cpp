@@ -399,44 +399,40 @@ void SliceControlBar::mouseDown (const juce::MouseEvent& e)
                 return;
             }
 
-            // Choice popup (Algorithm or Grain Mode)
+            // Choice: click to cycle
             if (cell.isChoice)
             {
-                juce::PopupMenu menu;
-                if (cell.fieldId == IntersectProcessor::FieldGrainMode)
+                int idx = processor.sliceManager.selectedSlice;
+                if (idx >= 0 && idx < processor.sliceManager.getNumSlices())
                 {
-                    menu.addItem (1, "Fast");
-                    menu.addItem (2, "Normal");
-                    menu.addItem (3, "Smooth");
+                    const auto& s = processor.sliceManager.getSlice (idx);
+                    int current = 0;
+                    int maxVal = (int) cell.maxVal;
+
+                    if (cell.fieldId == IntersectProcessor::FieldAlgorithm)
+                    {
+                        int gAlgo = (int) processor.apvts.getRawParameterValue (ParamIds::defaultAlgorithm)->load();
+                        current = (s.lockMask & kLockAlgorithm) ? s.algorithm : gAlgo;
+                    }
+                    else if (cell.fieldId == IntersectProcessor::FieldGrainMode)
+                    {
+                        int gGM = (int) processor.apvts.getRawParameterValue (ParamIds::defaultGrainMode)->load();
+                        current = (s.lockMask & kLockGrainMode) ? s.grainMode : gGM;
+                    }
+                    else if (cell.fieldId == IntersectProcessor::FieldLoop)
+                    {
+                        int gLM = (int) processor.apvts.getRawParameterValue (ParamIds::defaultLoop)->load();
+                        current = (s.lockMask & kLockLoop) ? s.loopMode : gLM;
+                    }
+
+                    int next = (current + 1) > maxVal ? 0 : current + 1;
+                    IntersectProcessor::Command cmd;
+                    cmd.type = IntersectProcessor::CmdSetSliceParam;
+                    cmd.intParam1 = cell.fieldId;
+                    cmd.floatParam1 = (float) next;
+                    processor.pushCommand (cmd);
+                    repaint();
                 }
-                else if (cell.fieldId == IntersectProcessor::FieldLoop)
-                {
-                    menu.addItem (1, "OFF");
-                    menu.addItem (2, "LOOP");
-                    menu.addItem (3, "PING-PONG");
-                }
-                else
-                {
-                    menu.addItem (1, "Repitch");
-                    menu.addItem (2, "Stretch");
-                    menu.addItem (3, "Bungee");
-                }
-                auto* topLvl = getTopLevelComponent();
-                float ms = IntersectLookAndFeel::getMenuScale();
-                menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this)
-                                        .withParentComponent (topLvl)
-                                        .withStandardItemHeight ((int) (24 * ms)),
-                    [this, fieldId = cell.fieldId] (int result) {
-                        if (result > 0)
-                        {
-                            IntersectProcessor::Command cmd;
-                            cmd.type = IntersectProcessor::CmdSetSliceParam;
-                            cmd.intParam1 = fieldId;
-                            cmd.floatParam1 = (float) (result - 1);
-                            processor.pushCommand (cmd);
-                            repaint();
-                        }
-                    });
                 return;
             }
 

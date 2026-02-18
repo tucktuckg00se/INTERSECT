@@ -25,8 +25,6 @@ separator: 33333f           # horizontal separator lines
 
 # Waveform & slices
 waveform: b2c6d8            # waveform draw colour
-sliceRegion: 2a2a35         # slice region fill
-sliceRegionSelected: 3a3a50 # selected slice region fill
 selectionOverlay: 3f598c    # selected slice translucent overlay
 
 # Controls

@@ -77,6 +77,8 @@ float SampleData::getInterpolatedSample (double pos, int channel) const
         return 0.0f;
 
     auto* data = buffer.getReadPointer (channel);
+    if (data == nullptr)
+        return 0.0f;
     return data[ipos] + (data[ipos + 1] - data[ipos]) * frac;
 }
 
@@ -94,8 +96,14 @@ void SampleData::buildMipmaps()
         return;
     }
 
+    if (buffer.getNumChannels() < 1)
+        return;
+
     const float* dataL = buffer.getReadPointer (0);
     const float* dataR = buffer.getNumChannels() > 1 ? buffer.getReadPointer (1) : dataL;
+
+    if (dataL == nullptr)
+        return;
 
     static constexpr int kBlockSizes[kNumMipmapLevels] = { 64, 512, 4096 };
 
