@@ -91,7 +91,7 @@ void IntersectProcessor::drainCommands()
         updateHostDisplay (ChangeDetails().withNonParameterStateChanged (true));
 }
 
-void IntersectProcessor::captureSnapshot()
+UndoManager::Snapshot IntersectProcessor::makeSnapshot()
 {
     UndoManager::Snapshot snap;
     for (int i = 0; i < SliceManager::kMaxSlices; ++i)
@@ -102,7 +102,12 @@ void IntersectProcessor::captureSnapshot()
     snap.apvtsState = apvts.copyState();
     snap.midiSelectsSlice = midiSelectsSlice.load();
     snap.snapToZeroCrossing = snapToZeroCrossing.load();
-    undoMgr.push (snap);
+    return snap;
+}
+
+void IntersectProcessor::captureSnapshot()
+{
+    undoMgr.push (makeSnapshot());
 }
 
 void IntersectProcessor::restoreSnapshot (const UndoManager::Snapshot& snap)
@@ -426,7 +431,7 @@ void IntersectProcessor::handleCommand (const Command& cmd)
 
         case CmdUndo:
             if (undoMgr.canUndo())
-                restoreSnapshot (undoMgr.undo());
+                restoreSnapshot (undoMgr.undo (makeSnapshot()));
             break;
 
         case CmdRedo:

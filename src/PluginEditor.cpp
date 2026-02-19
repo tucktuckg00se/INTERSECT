@@ -59,6 +59,7 @@ IntersectEditor::IntersectEditor (IntersectProcessor& p)
             param->setValueNotifyingHost (param->convertTo0to1 (savedScale));
     }
 
+    setWantsKeyboardFocus (true);
     setSize (kBaseW, kBaseH);
     startTimerHz (30);
 }
@@ -98,6 +99,142 @@ void IntersectEditor::resized()
 
     // 6. WaveformView (flexible) — remaining space
     waveformView.setBounds (area.reduced (kMargin, 0));
+}
+
+bool IntersectEditor::keyPressed (const juce::KeyPress& key)
+{
+    auto mods = key.getModifiers();
+    int code = key.getKeyCode();
+
+    // Ctrl+Shift+Z — Redo
+    if (code == 'Z' && mods.isCommandDown() && mods.isShiftDown())
+    {
+        IntersectProcessor::Command cmd;
+        cmd.type = IntersectProcessor::CmdRedo;
+        processor.pushCommand (cmd);
+        return true;
+    }
+
+    // Ctrl+Z — Undo
+    if (code == 'Z' && mods.isCommandDown())
+    {
+        IntersectProcessor::Command cmd;
+        cmd.type = IntersectProcessor::CmdUndo;
+        processor.pushCommand (cmd);
+        return true;
+    }
+
+    // Skip single-key shortcuts if any modifier is held
+    if (mods.isCommandDown() || mods.isAltDown())
+        return false;
+
+    // Esc — Close Auto Chop panel (only if open)
+    if (code == juce::KeyPress::escapeKey && actionPanel.isAutoChopOpen())
+    {
+        actionPanel.toggleAutoChop();
+        return true;
+    }
+
+    // C — Toggle Auto Chop
+    if (code == 'C')
+    {
+        actionPanel.toggleAutoChop();
+        return true;
+    }
+
+    // A — Add Slice mode
+    if (code == 'A')
+    {
+        waveformView.sliceDrawMode = ! waveformView.sliceDrawMode;
+        waveformView.setMouseCursor (waveformView.sliceDrawMode
+            ? juce::MouseCursor::IBeamCursor
+            : juce::MouseCursor::NormalCursor);
+        repaint();
+        return true;
+    }
+
+    // L — Lazy Chop
+    if (code == 'L')
+    {
+        IntersectProcessor::Command cmd;
+        cmd.type = processor.lazyChop.isActive()
+            ? IntersectProcessor::CmdLazyChopStop
+            : IntersectProcessor::CmdLazyChopStart;
+        processor.pushCommand (cmd);
+        repaint();
+        return true;
+    }
+
+    // D — Duplicate Slice
+    if (code == 'D')
+    {
+        IntersectProcessor::Command cmd;
+        cmd.type = IntersectProcessor::CmdDuplicateSlice;
+        processor.pushCommand (cmd);
+        return true;
+    }
+
+    // Delete / Backspace — Delete Slice
+    if (code == juce::KeyPress::deleteKey || code == juce::KeyPress::backspaceKey)
+    {
+        int sel = processor.sliceManager.selectedSlice;
+        if (sel >= 0)
+        {
+            IntersectProcessor::Command cmd;
+            cmd.type = IntersectProcessor::CmdDeleteSlice;
+            cmd.intParam1 = sel;
+            processor.pushCommand (cmd);
+        }
+        return true;
+    }
+
+    // Z — Snap to Zero-Crossing
+    if (code == 'Z')
+    {
+        bool current = processor.snapToZeroCrossing.load();
+        processor.snapToZeroCrossing.store (! current);
+        repaint();
+        return true;
+    }
+
+    // F — Follow MIDI
+    if (code == 'F')
+    {
+        bool current = processor.midiSelectsSlice.load();
+        processor.midiSelectsSlice.store (! current);
+        repaint();
+        return true;
+    }
+
+    // Right arrow / Tab — Next Slice
+    if (code == juce::KeyPress::rightKey
+        || (code == juce::KeyPress::tabKey && ! mods.isShiftDown()))
+    {
+        int sel = processor.sliceManager.selectedSlice;
+        int num = processor.sliceManager.getNumSlices();
+        if (num > 0)
+        {
+            processor.sliceManager.selectedSlice = juce::jlimit (0, num - 1, sel + 1);
+            repaint();
+        }
+        return true;
+    }
+
+    // Left arrow / Shift+Tab — Prev Slice
+    if (code == juce::KeyPress::leftKey
+        || (code == juce::KeyPress::tabKey && mods.isShiftDown()))
+    {
+        int sel = processor.sliceManager.selectedSlice;
+        int num = processor.sliceManager.getNumSlices();
+        if (num > 0)
+        {
+            processor.sliceManager.selectedSlice = juce::jlimit (0, num - 1, sel - 1);
+            repaint();
+        }
+        return true;
+    }
+
+    return false;
 }
 
 void IntersectEditor::timerCallback()

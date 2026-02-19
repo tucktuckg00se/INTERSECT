@@ -12,6 +12,8 @@ public:
     ~ActionPanel() override;
     void resized() override;
     void paint (juce::Graphics& g) override;
+    void toggleAutoChop();
+    bool isAutoChopOpen() const { return autoChopPanel != nullptr; }
 
 private:
     IntersectProcessor& processor;

@@ -49,33 +49,15 @@ ActionPanel::ActionPanel (IntersectProcessor& p, WaveformView& wv)
         repaint();
     };
 
-    splitBtn.onClick = [this] {
-        if (autoChopPanel != nullptr)
-        {
-            // Already showing — close it
-            if (auto* parent = autoChopPanel->getParentComponent())
-                parent->removeChildComponent (autoChopPanel.get());
-            autoChopPanel.reset();
-            return;
-        }
+    splitBtn.onClick = [this] { toggleAutoChop(); };
 
-        autoChopPanel = std::make_unique<AutoChopPanel> (processor, waveformView);
+    addSliceBtn.setTooltip ("Add Slice (A)");
+    lazyChopBtn.setTooltip ("Lazy Chop (L)");
+    dupBtn.setTooltip ("Duplicate Slice (D)");
+    splitBtn.setTooltip ("Auto Chop (C)");
+    deleteBtn.setTooltip ("Delete Slice (Del)");
 
-        // Position as a bar at the bottom of the waveform area, full width
-        // Use waveformView's parent (the editor) so coordinates match
-        if (auto* editor = waveformView.getParentComponent())
-        {
-            auto wfBounds = waveformView.getBoundsInParent();
-            int panelH = 34;
-            int panelX = wfBounds.getX();
-            int panelW = wfBounds.getWidth();
-            int panelY = wfBounds.getBottom() - panelH;
-            autoChopPanel->setBounds (panelX, panelY, panelW, panelH);
-            editor->addAndMakeVisible (*autoChopPanel);
-        }
-    };
-
-    snapBtn.setTooltip ("Snap to zero-crossing (ZX)");
+    snapBtn.setTooltip ("Snap to Zero-Crossing (Z)");
     snapBtn.onClick = [this] {
         bool current = processor.snapToZeroCrossing.load();
         bool newState = ! current;
@@ -96,7 +78,7 @@ ActionPanel::ActionPanel (IntersectProcessor& p, WaveformView& wv)
         }
     };
 
-    midiSelectBtn.setTooltip ("Follow MIDI (auto-select slice on note)");
+    midiSelectBtn.setTooltip ("Follow MIDI (F)");
     midiSelectBtn.onClick = [this] {
         bool current = processor.midiSelectsSlice.load();
         bool newState = ! current;
@@ -108,6 +90,30 @@ ActionPanel::ActionPanel (IntersectProcessor& p, WaveformView& wv)
 }
 
 ActionPanel::~ActionPanel() = default;
+
+void ActionPanel::toggleAutoChop()
+{
+    if (autoChopPanel != nullptr)
+    {
+        if (auto* parent = autoChopPanel->getParentComponent())
+            parent->removeChildComponent (autoChopPanel.get());
+        autoChopPanel.reset();
+        return;
+    }
+
+    autoChopPanel = std::make_unique<AutoChopPanel> (processor, waveformView);
+
+    if (auto* editor = waveformView.getParentComponent())
+    {
+        auto wfBounds = waveformView.getBoundsInParent();
+        int panelH = 34;
+        int panelX = wfBounds.getX();
+        int panelW = wfBounds.getWidth();
+        int panelY = wfBounds.getBottom() - panelH;
+        autoChopPanel->setBounds (panelX, panelY, panelW, panelH);
+        editor->addAndMakeVisible (*autoChopPanel);
+    }
+}
 
 void ActionPanel::resized()
 {

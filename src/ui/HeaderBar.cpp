@@ -24,8 +24,9 @@ HeaderBar::HeaderBar (IntersectProcessor& p) : processor (p)
         btn->setColour (juce::TextButton::textColourOffId, getTheme().foreground);
     }
 
-    undoBtn.setTooltip ("Undo");
-    redoBtn.setTooltip ("Redo");
+    undoBtn.setTooltip ("Undo (Ctrl+Z)");
+    redoBtn.setTooltip ("Redo (Ctrl+Shift+Z)");
+    loadBtn.setTooltip ("Load Sample");
 
     undoBtn.onClick = [this] {
         IntersectProcessor::Command cmd;

@@ -18,6 +18,7 @@ public:
 
     void paint (juce::Graphics&) override;
     void resized() override;
+    bool keyPressed (const juce::KeyPress& key) override;
 
     juce::StringArray getAvailableThemes();
     void applyTheme (const juce::String& themeName);
@@ -39,6 +40,8 @@ private:
     ScrollZoomBar   scrollZoomBar;
     SliceControlBar sliceControlBar;
     ActionPanel     actionPanel;
+
+    juce::TooltipWindow tooltipWindow { this, 500 };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (IntersectEditor)
 };
