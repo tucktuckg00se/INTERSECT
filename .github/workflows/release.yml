@@ -61,7 +61,7 @@ jobs:
           name: INTERSECT-Linux-x64
           path: INTERSECT-${{ github.ref_name }}-Linux-x64.zip
 
-  build-macos:
+  build-macos-arm64:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -87,8 +87,34 @@ jobs:
           name: INTERSECT-macOS-arm64
           path: INTERSECT-${{ github.ref_name }}-macOS-arm64.zip
 
+  build-macos-x64:
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Package
+        run: |
+          mkdir staging
+          cp -r build/Intersect_artefacts/Release/VST3/INTERSECT.vst3 staging/
+          cp -r build/Intersect_artefacts/Release/Standalone/INTERSECT.app staging/
+          cp -r build/Intersect_artefacts/Release/AU/INTERSECT.component staging/
+          cd staging && zip -r ../INTERSECT-${{ github.ref_name }}-macOS-x64.zip .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: INTERSECT-macOS-x64
+          path: INTERSECT-${{ github.ref_name }}-macOS-x64.zip
+
   release:
-    needs: [build-windows, build-linux, build-macos]
+    needs: [build-windows, build-linux, build-macos-arm64, build-macos-x64]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -104,3 +130,4 @@ jobs:
             artifacts/INTERSECT-Windows-x64/INTERSECT-${{ github.ref_name }}-Windows-x64.zip
             artifacts/INTERSECT-Linux-x64/INTERSECT-${{ github.ref_name }}-Linux-x64.zip
             artifacts/INTERSECT-macOS-arm64/INTERSECT-${{ github.ref_name }}-macOS-arm64.zip
+            artifacts/INTERSECT-macOS-x64/INTERSECT-${{ github.ref_name }}-macOS-x64.zip
