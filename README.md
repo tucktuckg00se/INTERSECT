@@ -26,6 +26,50 @@ A nondestructive, time-stretching, and intersecting sample slicer plugin with in
 - **Full state recall** — all parameters, slices, and audio data saved/restored with the DAW session
 - **Custom theming** — dark, light, and custom theming
 
+## Install
+
+Download the latest release zip for your platform from the [Releases](https://github.com/tucktuckg00se/INTERSECT/releases) page and extract it.
+
+Copy `INTERSECT.vst3` to your VST3 folder or run INTERSECT as a standalone app:
+
+### Windows
+
+```
+C:\Program Files\Common Files\VST3\
+```
+
+Or run `INTERSECT.exe` as a standalone app.
+
+### macOS
+
+```
+~/Library/Audio/Plug-Ins/VST3/
+```
+
+For AU, copy `INTERSECT.component` to:
+
+```
+~/Library/Audio/Plug-Ins/Components/
+```
+
+> **"INTERSECT is damaged and can't be opened"** — macOS blocks unsigned apps downloaded from the internet. Run this in Terminal after copying the files, replacing the path with wherever you put them:
+>
+> ```bash
+> xattr -cr ~/Library/Audio/Plug-Ins/VST3/INTERSECT.vst3
+> xattr -cr ~/Library/Audio/Plug-Ins/Components/INTERSECT.component
+> xattr -cr /Applications/INTERSECT.app
+> ```
+>
+> Then relaunch/rescan. This strips the quarantine flag macOS adds to downloaded files.
+
+### Linux
+
+```
+~/.vst3/
+```
+
+After installing, rescan plugins in your DAW to pick up INTERSECT.
+
 ## Usage
 
 ### Getting Started
@@ -102,50 +146,6 @@ To create a custom theme:
 3. Edit the 6-digit hex colour values (`RRGGBB`)
 4. Place the file in the themes folder listed above
 5. Restart the plugin — your theme will appear in the theme selector (right-click the header bar)
-
-## Install
-
-Download the latest release zip for your platform from the [Releases](https://github.com/tucktuckg00se/INTERSECT/releases) page and extract it.
-
-Copy `INTERSECT.vst3` to your VST3 folder or run INTERSECT as a standalone app:
-
-### Windows
-
-```
-C:\Program Files\Common Files\VST3\
-```
-
-Or run `INTERSECT.exe` as a standalone app.
-
-### macOS
-
-> **"INTERSECT is damaged and can't be opened"** — macOS blocks unsigned apps downloaded from the internet. Run this in Terminal after copying the files, replacing the path with wherever you put them:
->
-> ```bash
-> xattr -cr ~/Library/Audio/Plug-Ins/VST3/INTERSECT.vst3
-> xattr -cr ~/Library/Audio/Plug-Ins/Components/INTERSECT.component
-> xattr -cr /Applications/INTERSECT.app   # standalone only
-> ```
->
-> Then relaunch/rescan. This strips the quarantine flag macOS adds to downloaded files.
-
-```
-~/Library/Audio/Plug-Ins/VST3/
-```
-
-For AU, copy `INTERSECT.component` to:
-
-```
-~/Library/Audio/Plug-Ins/Components/
-```
-
-### Linux
-
-```
-~/.vst3/
-```
-
-After installing, rescan plugins in your DAW to pick up INTERSECT.
 
 ## Build
 
