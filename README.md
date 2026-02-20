@@ -119,6 +119,16 @@ Or run `INTERSECT.exe` as a standalone app.
 
 ### macOS
 
+> **"INTERSECT is damaged and can't be opened"** — macOS blocks unsigned apps downloaded from the internet. Run this in Terminal after copying the files, replacing the path with wherever you put them:
+>
+> ```bash
+> xattr -cr ~/Library/Audio/Plug-Ins/VST3/INTERSECT.vst3
+> xattr -cr ~/Library/Audio/Plug-Ins/Components/INTERSECT.component
+> xattr -cr /Applications/INTERSECT.app   # standalone only
+> ```
+>
+> Then relaunch/rescan. This strips the quarantine flag macOS adds to downloaded files.
+
 ```
 ~/Library/Audio/Plug-Ins/VST3/
 ```
