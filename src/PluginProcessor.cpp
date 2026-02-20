@@ -511,6 +511,12 @@ void IntersectProcessor::processMidi (const juce::MidiBuffer& midi)
     }
 }
 
+static inline float sanitiseSample (float x)
+{
+    if (! std::isfinite (x)) return 0.0f;
+    return juce::jlimit (-1.0f, 1.0f, x);
+}
+
 void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                                             juce::MidiBuffer& midi)
 {
@@ -568,8 +574,8 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         {
             float sL = 0.0f, sR = 0.0f;
             voicePool.processSample (sampleData, currentSampleRate, sL, sR);
-            if (busL[0]) busL[0][i] = sL;
-            if (busR[0]) busR[0][i] = sR;
+            if (busL[0]) busL[0][i] = sanitiseSample (sL);
+            if (busR[0]) busR[0][i] = sanitiseSample (sR);
         }
     }
     else
@@ -598,6 +604,16 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 if (busL[0]) busL[0][i] += vL;
                 if (busR[0]) busR[0][i] += vR;
             }
+        }
+        // Clamp / NaN-guard every active bus after accumulation
+        for (int b = 0; b < numActiveBuses; ++b)
+        {
+            if (busL[b])
+                for (int i = 0; i < buffer.getNumSamples(); ++i)
+                    busL[b][i] = sanitiseSample (busL[b][i]);
+            if (busR[b])
+                for (int i = 0; i < buffer.getNumSamples(); ++i)
+                    busR[b][i] = sanitiseSample (busR[b][i]);
         }
     }
 
