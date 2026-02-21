@@ -217,7 +217,7 @@ void HeaderBar::paint (juce::Graphics& g)
             g.setColour (getTheme().foreground.withAlpha (0.9f));
             g.drawText ("STRETCH", x, row1y + 2, cellW, 13, juce::Justification::centredLeft);
             g.setFont (IntersectLookAndFeel::makeFont (14.0f));
-            g.setColour (strOnR1 ? getTheme().accent : getTheme().foreground.withAlpha (0.5f));
+            g.setColour (strOnR1 ? getTheme().lockActive : getTheme().foreground.withAlpha (0.5f));
             g.drawText (strOnR1 ? "ON" : "OFF", x, row1y + 15, cellW, 14, juce::Justification::centredLeft);
             headerCells.push_back ({ x, row1y, cellW, row1h, ParamIds::defaultStretchEnabled, 0.0f, 1.0f, 1.0f, false, true, false, false });
             x += cellW + cellGap;
