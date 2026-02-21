@@ -40,6 +40,7 @@ IntersectProcessor::IntersectProcessor()
     releaseTailParam = apvts.getRawParameterValue (ParamIds::defaultReleaseTail);
     reverseParam     = apvts.getRawParameterValue (ParamIds::defaultReverse);
     loopParam        = apvts.getRawParameterValue (ParamIds::defaultLoop);
+    oneShotParam     = apvts.getRawParameterValue (ParamIds::defaultOneShot);
     maxVoicesParam   = apvts.getRawParameterValue (ParamIds::maxVoices);
 }
 
@@ -256,6 +257,7 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                     case FieldReverse:    s.reverse = val > 0.5f;    s.lockMask |= kLockReverse;    break;
                     case FieldOutputBus:  s.outputBus = juce::jlimit (0, 15, (int) val); s.lockMask |= kLockOutputBus; break;
                     case FieldLoop:       s.loopMode = (int) val;    s.lockMask |= kLockLoop;      break;
+                    case FieldOneShot:    s.oneShot = val > 0.5f;    s.lockMask |= kLockOneShot;   break;
                     case FieldMidiNote:
                         s.midiNote = juce::jlimit (0, 127, (int) val);
                         sliceManager.rebuildMidiMap();
@@ -293,6 +295,7 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                     dst.releaseTail     = src.releaseTail;
                     dst.reverse         = src.reverse;
                     dst.outputBus       = src.outputBus;
+                    dst.oneShot         = src.oneShot;
                     dst.lockMask        = src.lockMask;
                     dst.colour          = src.colour;
                     // midiNote is already assigned by createSlice
@@ -351,6 +354,7 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                         dst.releaseTail = srcCopy.releaseTail;
                         dst.reverse = srcCopy.reverse;
                         dst.outputBus = srcCopy.outputBus;
+                        dst.oneShot = srcCopy.oneShot;
                         dst.lockMask = srcCopy.lockMask;
                     }
                     if (i == 0) firstNew = idx;
@@ -408,6 +412,7 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                         dst.releaseTail = srcCopy.releaseTail;
                         dst.reverse = srcCopy.reverse;
                         dst.outputBus = srcCopy.outputBus;
+                        dst.oneShot = srcCopy.oneShot;
                         dst.lockMask = srcCopy.lockMask;
                     }
                     if (firstNew < 0) firstNew = idx;
@@ -502,6 +507,7 @@ void IntersectProcessor::processMidi (const juce::MidiBuffer& midi)
                                           releaseTailParam->load() > 0.5f,
                                           reverseParam->load() > 0.5f,
                                           (int) loopParam->load(),
+                                          oneShotParam->load() > 0.5f,
                                           sampleData);
                 }
             }
@@ -509,6 +515,14 @@ void IntersectProcessor::processMidi (const juce::MidiBuffer& midi)
         else if (msg.isNoteOff())
         {
             voicePool.releaseNote (msg.getNoteNumber());
+        }
+        else if (msg.isAllNotesOff())
+        {
+            voicePool.releaseAll (false);  // graceful release (respects envelope)
+        }
+        else if (msg.isAllSoundOff())
+        {
+            voicePool.releaseAll (true);   // immediate kill (5ms fade)
         }
     }
 }
@@ -633,7 +647,7 @@ void IntersectProcessor::getStateInformation (juce::MemoryBlock& destData)
     juce::MemoryOutputStream stream (destData, false);
 
     // Version
-    stream.writeInt (14);
+    stream.writeInt (15);
 
     // APVTS state
     auto state = apvts.copyState();
@@ -683,6 +697,8 @@ void IntersectProcessor::getStateInformation (juce::MemoryBlock& destData)
         // v11 fields
         stream.writeBool (s.reverse);
         stream.writeInt (s.outputBus);
+        // v15 fields
+        stream.writeBool (s.oneShot);
     }
 
     // v9: store file path only (no PCM)
@@ -698,7 +714,7 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
     juce::MemoryInputStream stream (data, (size_t) sizeInBytes, false);
 
     int version = stream.readInt();
-    if (version != 14)
+    if (version < 14 || version > 15)
         return;
 
     // APVTS state
@@ -709,7 +725,7 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
     // UI state
     zoom.store (juce::jlimit (1.0f, 16384.0f, stream.readFloat()));
     scroll.store (juce::jlimit (0.0f, 1.0f, stream.readFloat()));
-    sliceManager.selectedSlice = stream.readInt();
+    int savedSelectedSlice = stream.readInt();
 
     midiSelectsSlice.store (stream.readBool());
     sliceManager.rootNote.store (stream.readInt());
@@ -717,6 +733,7 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
     // Slice data
     int numSlices = stream.readInt();
     sliceManager.setNumSlices (numSlices);
+    sliceManager.selectedSlice = juce::jlimit (-1, numSlices - 1, savedSelectedSlice);
     for (int i = 0; i < numSlices; ++i)
     {
         auto& s = sliceManager.getSlice (i);
@@ -744,6 +761,8 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
         s.releaseTail = stream.readBool();
         s.reverse = stream.readBool();
         s.outputBus = stream.readInt();
+        // v15 fields
+        s.oneShot = (version >= 15) ? stream.readBool() : false;
     }
 
     // Path-based sample restore

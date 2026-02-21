@@ -24,9 +24,11 @@ public:
                      bool globalReleaseTail,
                      bool globalReverse,
                      int globalLoopMode,
+                     bool globalOneShot,
                      const SampleData& sample);
 
     void releaseNote (int note);
+    void releaseAll (bool immediate);   // All Notes Off / All Sound Off
     void muteGroup (int group, int exceptVoice);
 
     void processSample (const SampleData& sample, double sampleRate,

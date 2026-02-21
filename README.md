@@ -20,11 +20,13 @@ A nondestructive, time-stretching, and intersecting sample slicer plugin with in
 - **Undo/redo** — snapshot-based undo/redo for all slice and parameter changes
 - **SET BPM** — calculate BPM from a slice length and a musical time unit (4 bars down to 1/32 bar)
 - **Mute groups** — voices in the same group cut each other off
+- **One-shot mode** — voice plays to the end of the slice regardless of note-off; available per-slice or as a sample-level default
 - **Follow MIDI** — optionally auto-select a slice in the UI when its MIDI note is played (FM button)
 - **Duplicate slice** — clone a slice with all its locked parameters
 - **Hi-DPI scaling** — adjustable UI scale factor (0.5x to 3x)
 - **Full state recall** — all parameters, slices, and audio data saved/restored with the DAW session
 - **Custom theming** — dark, light, and custom theming
+- **DAW transport stop** — responds to All Notes Off (CC 123) and All Sound Off (CC 120); all voices including one-shot release cleanly on stop
 
 ## Install
 
@@ -110,10 +112,11 @@ These are the defaults inherited by all slices:
 - **BPM** — sample tempo (drag vertically or double-click to type)
 - **PITCH** — pitch shift in semitones (-24 to +24)
 - **ALGO** — click to cycle: Repitch (speed=pitch), Stretch (independent pitch/time), or Bungee (granular)
+- **STRETCH** — enable time-stretching (syncs playback to DAW tempo); shown next to ALGO
+- **1SHOT** — one-shot mode: voice plays to the end of the slice regardless of note-off
 - **ATK / DEC / SUS / REL** — ADSR amplitude envelope
 - **LOOP** — loop mode: OFF, LOOP (repeat), or PP (ping-pong bounce) — click to cycle; works in all algorithm modes
 - **MUTE** — mute group (voices in the same group cut each other off)
-- **STRETCH** — enable time-stretching (syncs playback to DAW tempo)
 - **GAIN** — master gain in dB (-100 to +24 dB)
 - **TAIL** — release tail — when enabled, audio continues reading past the slice boundary during the release phase
 

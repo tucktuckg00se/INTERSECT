@@ -20,6 +20,7 @@ namespace ParamIds
     inline const juce::String defaultGrainMode     { "defaultGrainMode" };
     inline const juce::String defaultReleaseTail  { "defaultReleaseTail" };
     inline const juce::String defaultReverse      { "defaultReverse" };
+    inline const juce::String defaultOneShot      { "defaultOneShot" };
     inline const juce::String maxVoices           { "maxVoices" };
     inline const juce::String uiScale             { "uiScale" };
 }

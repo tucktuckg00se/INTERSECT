@@ -96,6 +96,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout ParamLayout::createLayout()
         "Sample Release Tail",
         false));
 
+    // Sample One Shot: off/on
+    params.push_back (std::make_unique<juce::AudioParameterBool> (
+        juce::ParameterID { ParamIds::defaultOneShot, 1 },
+        "Sample One Shot",
+        false));
+
     // ── Advanced / algorithm-specific ─────────────────────────────────────────
 
     // Sample Tonality: 0..8000 Hz, default 0 (off)

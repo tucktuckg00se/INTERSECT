@@ -80,6 +80,7 @@ public:
         FieldReverse,
         FieldOutputBus,
         FieldLoop,
+        FieldOneShot,
     };
 
     struct Command
@@ -155,6 +156,7 @@ private:
     std::atomic<float>* releaseTailParam = nullptr;
     std::atomic<float>* reverseParam     = nullptr;
     std::atomic<float>* loopParam        = nullptr;
+    std::atomic<float>* oneShotParam     = nullptr;
     std::atomic<float>* maxVoicesParam   = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (IntersectProcessor)

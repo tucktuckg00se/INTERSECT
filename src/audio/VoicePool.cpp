@@ -150,6 +150,7 @@ void VoicePool::startVoice (int voiceIdx, int sliceIdx, float velocity, int note
                             bool globalReleaseTail,
                             bool globalReverse,
                             int globalLoopMode,
+                            bool globalOneShot,
                             const SampleData& sample)
 {
     auto& v = voices[voiceIdx];
@@ -211,6 +212,9 @@ void VoicePool::startVoice (int voiceIdx, int sliceIdx, float velocity, int note
     v.releaseTail = sm.resolveParam (sliceIdx, kLockReleaseTail,
                                       s.releaseTail ? 1.0f : 0.0f,
                                       globalReleaseTail ? 1.0f : 0.0f) > 0.5f;
+    v.oneShot = sm.resolveParam (sliceIdx, kLockOneShot,
+                                  s.oneShot ? 1.0f : 0.0f,
+                                  globalOneShot ? 1.0f : 0.0f) > 0.5f;
     v.sampleEnd = sample.getNumFrames();
 
     // Reset stretch state
@@ -282,8 +286,28 @@ void VoicePool::startVoice (int voiceIdx, int sliceIdx, float velocity, int note
 void VoicePool::releaseNote (int note)
 {
     for (int i = 0; i < kMaxVoices; ++i)
+    {
         if (voices[i].active && voices[i].midiNote == note)
+        {
+            if (voices[i].oneShot)
+                continue;   // ignore note-off; voice plays through to endSample
             voices[i].envelope.noteOff();
+        }
+    }
+}
+
+void VoicePool::releaseAll (bool immediate)
+{
+    for (int i = 0; i < kMaxVoices; ++i)
+    {
+        if (voices[i].active)
+        {
+            if (immediate)
+                voices[i].envelope.forceRelease (0.005f);
+            else
+                voices[i].envelope.noteOff();
+        }
+    }
 }
 
 void VoicePool::muteGroup (int group, int exceptVoice)

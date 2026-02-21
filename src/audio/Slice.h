@@ -22,7 +22,8 @@ enum LockBit : uint32_t
     kLockReleaseTail   = 32768,
     kLockReverse       = 65536,
     kLockOutputBus     = 131072,
-    kLockLoop          = 262144
+    kLockLoop          = 262144,
+    kLockOneShot       = 524288    // bit 19
 };
 
 struct Slice
@@ -49,6 +50,7 @@ struct Slice
     bool     releaseTail   = false;
     bool     reverse       = false;
     int      outputBus     = 0;
+    bool     oneShot       = false;
     uint32_t lockMask      = 0;
     juce::Colour colour    { 0.4f, 0.7f, 0.95f, 1.0f };
 };

@@ -210,6 +210,32 @@ void HeaderBar::paint (juce::Graphics& g)
             x += cellW + cellGap;
         }
 
+        // STRETCH (moved from row 2)
+        {
+            bool strOnR1 = processor.apvts.getRawParameterValue (ParamIds::defaultStretchEnabled)->load() > 0.5f;
+            g.setFont (IntersectLookAndFeel::makeFont (12.0f));
+            g.setColour (getTheme().foreground.withAlpha (0.9f));
+            g.drawText ("STRETCH", x, row1y + 2, cellW, 13, juce::Justification::centredLeft);
+            g.setFont (IntersectLookAndFeel::makeFont (14.0f));
+            g.setColour (strOnR1 ? getTheme().accent : getTheme().foreground.withAlpha (0.5f));
+            g.drawText (strOnR1 ? "ON" : "OFF", x, row1y + 15, cellW, 14, juce::Justification::centredLeft);
+            headerCells.push_back ({ x, row1y, cellW, row1h, ParamIds::defaultStretchEnabled, 0.0f, 1.0f, 1.0f, false, true, false, false });
+            x += cellW + cellGap;
+        }
+
+        // 1SHOT (sample-level one-shot)
+        {
+            bool osOn = processor.apvts.getRawParameterValue (ParamIds::defaultOneShot)->load() > 0.5f;
+            g.setFont (IntersectLookAndFeel::makeFont (12.0f));
+            g.setColour (getTheme().foreground.withAlpha (0.9f));
+            g.drawText ("1SHOT", x, row1y + 2, cellW, 13, juce::Justification::centredLeft);
+            g.setFont (IntersectLookAndFeel::makeFont (14.0f));
+            g.setColour (osOn ? getTheme().lockActive : getTheme().foreground.withAlpha (0.5f));
+            g.drawText (osOn ? "ON" : "OFF", x, row1y + 15, cellW, 14, juce::Justification::centredLeft);
+            headerCells.push_back ({ x, row1y, cellW, row1h, ParamIds::defaultOneShot, 0.0f, 1.0f, 1.0f, false, true, false, false });
+            x += cellW + cellGap;
+        }
+
         // Filename and sample info (right-aligned, left of UNDO button)
         {
             int rightEdge = undoBtn.getX() - 6;
@@ -337,18 +363,6 @@ void HeaderBar::paint (juce::Graphics& g)
         g.drawText (juce::String ((int) muteGrp), x, row2y + 15, cellW, 14, juce::Justification::centredLeft);
         headerCells.push_back ({ x, row2y, cellW, row2h, ParamIds::defaultMuteGroup, 0.0f, 32.0f, 1.0f, false, false, false, false });
         x += cellW + cellGap;
-
-        // STRETCH toggle
-        int stretchW = 65;  // slightly wider for "STRETCH" label
-        g.setFont (IntersectLookAndFeel::makeFont (12.0f));
-        g.setColour (getTheme().foreground.withAlpha (0.9f));
-        g.drawText ("STRETCH", x, row2y + 2, stretchW, 13, juce::Justification::centredLeft);
-        g.setFont (IntersectLookAndFeel::makeFont (14.0f));
-        bool strOn = processor.apvts.getRawParameterValue (ParamIds::defaultStretchEnabled)->load() > 0.5f;
-        g.setColour (strOn ? getTheme().accent : getTheme().foreground.withAlpha (0.5f));
-        g.drawText (strOn ? "ON" : "OFF", x, row2y + 15, stretchW, 14, juce::Justification::centredLeft);
-        headerCells.push_back ({ x, row2y, stretchW, row2h, ParamIds::defaultStretchEnabled, 0.0f, 1.0f, 1.0f, false, true, false, false });
-        x += stretchW + cellGap;
 
         // GAIN (dB)
         g.setFont (IntersectLookAndFeel::makeFont (12.0f));

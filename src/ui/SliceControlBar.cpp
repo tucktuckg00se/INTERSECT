@@ -204,6 +204,7 @@ void SliceControlBar::paint (juce::Graphics& g)
         locked = s.lockMask & kLockFormantComp;
         bool fmntCVal = locked ? s.formantComp : gFmntC;
         drawParamCell (g, x, row1y, "FMNT C", fmntCVal ? "ON" : "OFF", locked, kLockFormantComp, F::FieldFormantComp, 0.0f, 1.0f, 1.0f, true, false, cw);
+        x += cw + 4;
     }
     else if (av == 2)
     {
@@ -213,6 +214,28 @@ void SliceControlBar::paint (juce::Graphics& g)
         int gmVal = locked ? s.grainMode : gGM;
         juce::String gmNames[] = { "Fast", "Normal", "Smooth" };
         drawParamCell (g, x, row1y, "GRAIN", gmNames[juce::jlimit (0, 2, gmVal)], locked, kLockGrainMode, F::FieldGrainMode, 0.0f, 2.0f, 1.0f, false, true, cw);
+        x += cw + 4;
+    }
+
+    // STRETCH (moved from row 2)
+    {
+        locked = s.lockMask & kLockStretch;
+        bool strOnR1 = locked ? s.stretchEnabled : gStretch;
+        drawParamCell (g, x, row1y, "STRETCH", strOnR1 ? "ON" : "OFF",
+                       locked, kLockStretch, F::FieldStretchEnabled,
+                       0.0f, 1.0f, 1.0f, true, false, cw);
+        x += cw + 4;
+    }
+
+    // 1SHOT (moved from row 2)
+    {
+        bool gOneShot = processor.apvts.getRawParameterValue (ParamIds::defaultOneShot)->load() > 0.5f;
+        locked = s.lockMask & kLockOneShot;
+        bool oneShotVal = locked ? s.oneShot : gOneShot;
+        drawParamCell (g, x, row1y, "1SHOT", oneShotVal ? "ON" : "OFF",
+                       locked, kLockOneShot, F::FieldOneShot,
+                       0.0f, 1.0f, 1.0f, true, false, cw);
+        x += cw + 4;
     }
 
     // ====== Separator line ======
@@ -271,12 +294,6 @@ void SliceControlBar::paint (juce::Graphics& g)
     locked = s.lockMask & kLockMuteGroup;
     int mg = locked ? s.muteGroup : gMG;
     drawParamCell (g, x, row2y, "MUTE", juce::String (mg), locked, kLockMuteGroup, F::FieldMuteGroup, 0.0f, 32.0f, 1.0f, false, false, cw);
-    x += cw + 4;
-
-    // STRETCH
-    locked = s.lockMask & kLockStretch;
-    bool strOn = locked ? s.stretchEnabled : gStretch;
-    drawParamCell (g, x, row2y, "STRETCH", strOn ? "ON" : "OFF", locked, kLockStretch, F::FieldStretchEnabled, 0.0f, 1.0f, 1.0f, true, false, cw);
     x += cw + 4;
 
     // GAIN (dB)
@@ -385,6 +402,11 @@ void SliceControlBar::mouseDown (const juce::MouseEvent& e)
                     {
                         bool gRev = processor.apvts.getRawParameterValue (ParamIds::defaultReverse)->load() > 0.5f;
                         currentVal = sliceLocked ? s.reverse : gRev;
+                    }
+                    else if (cell.fieldId == IntersectProcessor::FieldOneShot)
+                    {
+                        bool gOS = processor.apvts.getRawParameterValue (ParamIds::defaultOneShot)->load() > 0.5f;
+                        currentVal = sliceLocked ? s.oneShot : gOS;
                     }
 
                     IntersectProcessor::Command cmd;
