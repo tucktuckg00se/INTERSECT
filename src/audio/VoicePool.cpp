@@ -1,5 +1,4 @@
 #include "VoicePool.h"
-#include "GrainEngine.h"
 
 // Include Signalsmith Stretch
 #include "signalsmith-stretch.h"
@@ -190,7 +189,7 @@ void VoicePool::startVoice (int voiceIdx, int sliceIdx, float velocity, int note
 
     float sliceBpm = sm.resolveParam (sliceIdx, kLockBpm, s.bpm, globalBpm);
     float pitch = sm.resolveParam (sliceIdx, kLockPitch, s.pitchSemitones, globalPitch);
-    v.pitchRatio = std::pow (2.0f, pitch / 12.0f);
+    float pitchRatio = std::pow (2.0f, pitch / 12.0f);
 
     bool stretchOn = sm.resolveParam (sliceIdx, kLockStretch,
                                        s.stretchEnabled ? 1.0f : 0.0f,
@@ -216,7 +215,6 @@ void VoicePool::startVoice (int voiceIdx, int sliceIdx, float velocity, int note
 
     // Reset stretch state
     v.stretchActive = false;
-    v.wsolaActive = false;
     v.bungeeActive = false;
 
     if (stretchOn && dawBpmVal > 0.0f && sliceBpm > 0.0f)
@@ -276,7 +274,7 @@ void VoicePool::startVoice (int voiceIdx, int sliceIdx, float velocity, int note
         else
         {
             // Repitch: direct playback
-            v.speed = v.pitchRatio;
+            v.speed = pitchRatio;
         }
     }
 }
@@ -644,11 +642,6 @@ void VoicePool::processVoiceSample (int i, const SampleData& sample, double sr,
 
         v.age++;
         voicePositions[i].store ((float) v.bungeeSrcPos, std::memory_order_relaxed);
-    }
-    else if (v.wsolaActive)
-    {
-        GrainEngine::processVoice (v, sample, sr, voiceL, voiceR);
-        voicePositions[i].store ((float) v.position, std::memory_order_relaxed);
     }
     else
     {

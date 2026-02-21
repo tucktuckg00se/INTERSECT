@@ -5,6 +5,43 @@ juce::AudioProcessorValueTreeState::ParameterLayout ParamLayout::createLayout()
 {
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
 
+    // ── Most-reached-for (first 8) ────────────────────────────────────────────
+
+    // Sample BPM: 20..999, default 120
+    params.push_back (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { ParamIds::defaultBpm, 1 },
+        "Sample BPM",
+        juce::NormalisableRange<float> (20.0f, 999.0f, 0.01f),
+        120.0f));
+
+    // Sample Pitch: -24..+24 semitones, default 0
+    params.push_back (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { ParamIds::defaultPitch, 1 },
+        "Sample Pitch",
+        juce::NormalisableRange<float> (-24.0f, 24.0f, 0.01f),
+        0.0f));
+
+    // Sample Algorithm: 0=Repitch, 1=Stretch, 2=Bungee
+    params.push_back (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { ParamIds::defaultAlgorithm, 1 },
+        "Sample Algorithm",
+        juce::StringArray { "Repitch", "Stretch", "Bungee" },
+        0));
+
+    // Sample Attack: 0..1000 ms, default 5ms
+    params.push_back (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { ParamIds::defaultAttack, 1 },
+        "Sample Attack",
+        juce::NormalisableRange<float> (0.0f, 1000.0f, 0.1f),
+        5.0f));
+
+    // Sample Release: 0..5000 ms, default 20ms
+    params.push_back (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { ParamIds::defaultRelease, 1 },
+        "Sample Release",
+        juce::NormalisableRange<float> (0.0f, 5000.0f, 0.1f),
+        20.0f));
+
     // Master Gain: -100..+24 dB, default 0 dB (unity)
     params.push_back (std::make_unique<juce::AudioParameterFloat> (
         juce::ParameterID { ParamIds::masterVolume, 1 },
@@ -12,112 +49,83 @@ juce::AudioProcessorValueTreeState::ParameterLayout ParamLayout::createLayout()
         juce::NormalisableRange<float> (-100.0f, 24.0f, 0.1f),
         0.0f));
 
-    // Default BPM: 20..999, default 120
-    params.push_back (std::make_unique<juce::AudioParameterFloat> (
-        juce::ParameterID { ParamIds::defaultBpm, 1 },
-        "Default BPM",
-        juce::NormalisableRange<float> (20.0f, 999.0f, 0.01f),
-        120.0f));
+    // ── Secondary sample params ────────────────────────────────────────────────
 
-    // Default Pitch: -24..+24 semitones, default 0
-    params.push_back (std::make_unique<juce::AudioParameterFloat> (
-        juce::ParameterID { ParamIds::defaultPitch, 1 },
-        "Default Pitch",
-        juce::NormalisableRange<float> (-24.0f, 24.0f, 0.01f),
-        0.0f));
+    // Sample Reverse: off/on
+    params.push_back (std::make_unique<juce::AudioParameterBool> (
+        juce::ParameterID { ParamIds::defaultReverse, 1 },
+        "Sample Reverse",
+        false));
 
-    // Default Algorithm: 0=Repitch, 1=Stretch, 2=Bungee
-    params.push_back (std::make_unique<juce::AudioParameterChoice> (
-        juce::ParameterID { ParamIds::defaultAlgorithm, 1 },
-        "Default Algorithm",
-        juce::StringArray { "Repitch", "Stretch", "Bungee" },
-        0));
-
-    // Default Attack: 0..1000 ms, default 5ms
-    params.push_back (std::make_unique<juce::AudioParameterFloat> (
-        juce::ParameterID { ParamIds::defaultAttack, 1 },
-        "Default Attack",
-        juce::NormalisableRange<float> (0.0f, 1000.0f, 0.1f),
-        5.0f));
-
-    // Default Decay: 0..5000 ms, default 100ms
-    params.push_back (std::make_unique<juce::AudioParameterFloat> (
-        juce::ParameterID { ParamIds::defaultDecay, 1 },
-        "Default Decay",
-        juce::NormalisableRange<float> (0.0f, 5000.0f, 0.1f),
-        100.0f));
-
-    // Default Sustain: 0..100%, default 100%
-    params.push_back (std::make_unique<juce::AudioParameterFloat> (
-        juce::ParameterID { ParamIds::defaultSustain, 1 },
-        "Default Sustain",
-        juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f),
-        100.0f));
-
-    // Default Release: 0..5000 ms, default 20ms
-    params.push_back (std::make_unique<juce::AudioParameterFloat> (
-        juce::ParameterID { ParamIds::defaultRelease, 1 },
-        "Default Release",
-        juce::NormalisableRange<float> (0.0f, 5000.0f, 0.1f),
-        20.0f));
-
-    // Default Mute Group: 0..32, default 0 (off)
-    params.push_back (std::make_unique<juce::AudioParameterInt> (
-        juce::ParameterID { ParamIds::defaultMuteGroup, 1 },
-        "Default Mute Group",
-        0, 32, 0));
-
-    // Default Loop Mode: Off/Loop/Ping-Pong
+    // Sample Loop Mode: Off/Loop/Ping-Pong
     params.push_back (std::make_unique<juce::AudioParameterChoice> (
         juce::ParameterID { ParamIds::defaultLoop, 1 },
-        "Default Loop Mode",
+        "Sample Loop Mode",
         juce::StringArray { "Off", "Loop", "Ping-Pong" },
         0));
 
-    // Default Stretch Enabled: off/on
+    // Sample Stretch: off/on
     params.push_back (std::make_unique<juce::AudioParameterBool> (
         juce::ParameterID { ParamIds::defaultStretchEnabled, 1 },
-        "Default Stretch Enabled",
+        "Sample Stretch",
         false));
 
-    // Default Tonality: 0..8000 Hz, default 0 (off)
+    // Sample Mute Group: 0..32, default 0 (off)
+    params.push_back (std::make_unique<juce::AudioParameterInt> (
+        juce::ParameterID { ParamIds::defaultMuteGroup, 1 },
+        "Sample Mute Group",
+        0, 32, 0));
+
+    // Sample Decay: 0..5000 ms, default 100ms
+    params.push_back (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { ParamIds::defaultDecay, 1 },
+        "Sample Decay",
+        juce::NormalisableRange<float> (0.0f, 5000.0f, 0.1f),
+        100.0f));
+
+    // Sample Sustain: 0..100%, default 100%
+    params.push_back (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { ParamIds::defaultSustain, 1 },
+        "Sample Sustain",
+        juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f),
+        100.0f));
+
+    // Sample Release Tail: off/on
+    params.push_back (std::make_unique<juce::AudioParameterBool> (
+        juce::ParameterID { ParamIds::defaultReleaseTail, 1 },
+        "Sample Release Tail",
+        false));
+
+    // ── Advanced / algorithm-specific ─────────────────────────────────────────
+
+    // Sample Tonality: 0..8000 Hz, default 0 (off)
     params.push_back (std::make_unique<juce::AudioParameterFloat> (
         juce::ParameterID { ParamIds::defaultTonality, 1 },
-        "Default Tonality",
+        "Sample Tonality",
         juce::NormalisableRange<float> (0.0f, 8000.0f, 1.0f),
         0.0f));
 
-    // Default Formant: -24..+24 semitones, default 0
+    // Sample Formant: -24..+24 semitones, default 0
     params.push_back (std::make_unique<juce::AudioParameterFloat> (
         juce::ParameterID { ParamIds::defaultFormant, 1 },
-        "Default Formant",
+        "Sample Formant",
         juce::NormalisableRange<float> (-24.0f, 24.0f, 0.1f),
         0.0f));
 
-    // Default Formant Compensation: off/on
+    // Sample Formant Comp: off/on
     params.push_back (std::make_unique<juce::AudioParameterBool> (
         juce::ParameterID { ParamIds::defaultFormantComp, 1 },
-        "Default Formant Compensation",
+        "Sample Formant Comp",
         false));
 
-    // Default Grain Mode (Bungee): 0=Fast(-1), 1=Normal(0), 2=Smooth(+1)
+    // Sample Grain Mode (Bungee): 0=Fast(-1), 1=Normal(0), 2=Smooth(+1)
     params.push_back (std::make_unique<juce::AudioParameterChoice> (
         juce::ParameterID { ParamIds::defaultGrainMode, 1 },
-        "Default Grain Mode",
+        "Sample Grain Mode",
         juce::StringArray { "Fast", "Normal", "Smooth" },
         1));  // default = Normal
 
-    // Default Release Tail: off/on
-    params.push_back (std::make_unique<juce::AudioParameterBool> (
-        juce::ParameterID { ParamIds::defaultReleaseTail, 1 },
-        "Default Release Tail",
-        false));
-
-    // Default Reverse: off/on
-    params.push_back (std::make_unique<juce::AudioParameterBool> (
-        juce::ParameterID { ParamIds::defaultReverse, 1 },
-        "Default Reverse",
-        false));
+    // ── Global utility ─────────────────────────────────────────────────────────
 
     // Max Voices: 1..32, default 16
     params.push_back (std::make_unique<juce::AudioParameterInt> (

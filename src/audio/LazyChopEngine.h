@@ -28,7 +28,7 @@ public:
     void start (int sampleLen, SliceManager& sliceMgr, const PreviewStretchParams& params,
                 bool snap = false, const juce::AudioBuffer<float>* buf = nullptr);
     void stop (VoicePool& voicePool, SliceManager& sliceMgr);
-    void onNote (int note, VoicePool& voicePool, SliceManager& sliceMgr);
+    int  onNote (int note, VoicePool& voicePool, SliceManager& sliceMgr);
 
     static int getPreviewVoiceIndex() { return VoicePool::kMaxVoices - 1; }
 

@@ -461,7 +461,9 @@ void IntersectProcessor::processMidi (const juce::MidiBuffer& midi)
             if (lazyChop.isActive())
             {
                 // Any MIDI note places a chop boundary at the playhead
-                lazyChop.onNote (note, voicePool, sliceManager);
+                int newSliceIdx = lazyChop.onNote (note, voicePool, sliceManager);
+                if (midiSelectsSlice.load (std::memory_order_relaxed) && newSliceIdx >= 0)
+                    sliceManager.selectedSlice = newSliceIdx;
             }
             else
             {

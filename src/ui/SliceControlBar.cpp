@@ -121,20 +121,18 @@ void SliceControlBar::paint (juce::Graphics& g)
     int cw;
     using F = IntersectProcessor;
 
-    // ====== Row 1 (y=2): BPM | SET BPM | PITCH | ALGO | ... | S-E | SLICES | ROOT | SLICE N | M ======
+    // ====== Row 1 (y=2): BPM | SET BPM | PITCH | ALGO | ... ======
     int x = 8;
 
-    // Row 1 right side: SLICE N (12pt label) over S-E info (14pt value), like SAMPLE/filename
+    // Row 1 right side: SLICE N (12pt label) over S-E info (14pt value)
     {
-        int infoW = rightEdge - 8;  // available width for right-aligned info
+        int infoW = rightEdge - 8;
 
-        // Top line: "SLICE N" in 12pt, accent color, right-aligned
         juce::String sliceLabel = "SLICE " + juce::String (idx + 1);
         g.setFont (IntersectLookAndFeel::makeFont (12.0f));
         g.setColour (getTheme().accent.withAlpha (0.7f));
         g.drawText (sliceLabel, 8, row1y + 2, infoW, 13, juce::Justification::right);
 
-        // Bottom line: S-E info in 14pt, dim foreground, right-aligned
         g.setFont (IntersectLookAndFeel::makeFont (14.0f));
         g.setColour (getTheme().foreground.withAlpha (0.5f));
         double srate = processor.getSampleRate();
@@ -663,8 +661,8 @@ void SliceControlBar::showTextEditor (const ParamCell& cell, float currentValue)
     // Display value
     juce::String displayVal;
     if (cell.fieldId == IntersectProcessor::FieldAttack ||
-        cell.fieldId == IntersectProcessor::FieldDecay ||
-        cell.fieldId == IntersectProcessor::FieldRelease)
+             cell.fieldId == IntersectProcessor::FieldDecay ||
+             cell.fieldId == IntersectProcessor::FieldRelease)
         displayVal = juce::String ((int) currentValue);
     else if (cell.fieldId == IntersectProcessor::FieldSustain)
         displayVal = juce::String ((int) currentValue);
@@ -691,8 +689,8 @@ void SliceControlBar::showTextEditor (const ParamCell& cell, float currentValue)
 
         // Convert ms to seconds for ATK/DEC/REL, percent to fraction for SUS
         if (fieldId == IntersectProcessor::FieldAttack ||
-            fieldId == IntersectProcessor::FieldDecay ||
-            fieldId == IntersectProcessor::FieldRelease)
+                 fieldId == IntersectProcessor::FieldDecay ||
+                 fieldId == IntersectProcessor::FieldRelease)
             val /= 1000.0f;
         else if (fieldId == IntersectProcessor::FieldSustain)
             val /= 100.0f;

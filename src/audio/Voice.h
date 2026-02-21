@@ -34,13 +34,6 @@ struct Voice
     int          sampleEnd    = 0;       // actual end of sample buffer (for release tail)
     int          outputBus    = 0;       // output bus index (0-15)
 
-    // WSOLA fields (legacy, still used for basic WSOLA fallback)
-    bool         wsolaActive  = false;
-    float        pitchRatio   = 1.0f;
-    float        timeRatio    = 1.0f;
-    double       wsolaSrcPos  = 0.0;
-    double       wsolaPhase   = 0.0;
-
     // Signalsmith stretch fields
     bool         stretchActive = false;
     std::shared_ptr<signalsmith::stretch::SignalsmithStretch<float, void>> stretcher;

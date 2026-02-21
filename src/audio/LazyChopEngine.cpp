@@ -39,10 +39,8 @@ void LazyChopEngine::startPreview (VoicePool& voicePool, int fromPos)
     v.endSample   = sampleLength;
     v.pingPong    = false;
     v.muteGroup   = 0;
-    v.wsolaActive = false;
     v.stretchActive = false;
     v.bungeeActive  = false;
-    v.pitchRatio  = 1.0f;
     v.age         = 0;
     v.looping     = true;
     v.volume      = 1.0f;
@@ -107,8 +105,7 @@ void LazyChopEngine::startPreview (VoicePool& voicePool, int fromPos)
     else
     {
         // Repitch: apply pitch ratio to speed
-        v.pitchRatio = std::pow (2.0f, p.pitch / 12.0f);
-        v.speed = v.pitchRatio;
+        v.speed = std::pow (2.0f, p.pitch / 12.0f);
     }
 
     // Sustain at half volume
@@ -129,7 +126,7 @@ void LazyChopEngine::stop (VoicePool& voicePool, SliceManager& /*sliceMgr*/)
     playing = false;
 }
 
-void LazyChopEngine::onNote (int note, VoicePool& voicePool, SliceManager& sliceMgr)
+int LazyChopEngine::onNote (int note, VoicePool& voicePool, SliceManager& sliceMgr)
 {
     // If this MIDI note is already assigned to an existing slice, audition it
     int existingSlice = sliceMgr.midiNoteToSlice (note);
@@ -139,7 +136,7 @@ void LazyChopEngine::onNote (int note, VoicePool& voicePool, SliceManager& slice
         startPreview (voicePool, s.startSample);
         playing = true;
         chopPos = -1;  // reset so next unassigned note only sets a new start
-        return;
+        return -1;
     }
 
     // First unassigned note — start playback from beginning
@@ -149,14 +146,14 @@ void LazyChopEngine::onNote (int note, VoicePool& voicePool, SliceManager& slice
         chopPos = 0;
         lastNote = note;
         playing = true;
-        return;
+        return -1;
     }
 
     // Re-press same note: re-audition from current start point
     if (note == lastNote && chopPos >= 0)
     {
         startPreview (voicePool, chopPos);
-        return;
+        return -1;
     }
 
     // Subsequent unassigned note — place slice boundary at playhead
@@ -171,8 +168,10 @@ void LazyChopEngine::onNote (int note, VoicePool& voicePool, SliceManager& slice
     {
         chopPos = playhead;
         lastNote = note;
-        return;
+        return -1;
     }
+
+    int resultIdx = -1;
 
     // Handle wrap-around: if playhead wrapped past chopPos, close slice to end of sample
     if (playhead < chopPos)
@@ -186,6 +185,7 @@ void LazyChopEngine::onNote (int note, VoicePool& voicePool, SliceManager& slice
                 s.midiNote = nextMidiNote;
                 nextMidiNote = std::min (nextMidiNote + 1, 127);
                 sliceMgr.rebuildMidiMap();
+                resultIdx = idx;
             }
         }
         chopPos = 0;
@@ -201,9 +201,11 @@ void LazyChopEngine::onNote (int note, VoicePool& voicePool, SliceManager& slice
             s.midiNote = nextMidiNote;
             nextMidiNote = std::min (nextMidiNote + 1, 127);
             sliceMgr.rebuildMidiMap();
+            resultIdx = newIdx;
         }
     }
 
     chopPos = playhead;
     lastNote = note;
+    return resultIdx;
 }
