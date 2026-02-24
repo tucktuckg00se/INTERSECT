@@ -329,13 +329,14 @@ void IntersectEditor::timerCallback()
     if (rulerNeedsRepaint)
         scrollZoomBar.repaint();
 
-    // Other components only need repaint when snapshot/theme/scale changes.
+    // HeaderBar and SliceControlBar display APVTS param values that can change
+    // independently of the audio-thread snapshot (e.g. dragging a header param
+    // while a slice is selected), so repaint them every tick.
+    headerBar.repaint();
+    sliceControlBar.repaint();
+
     if (uiChanged)
-    {
-        headerBar.repaint();
-        sliceControlBar.repaint();
         actionPanel.repaint();
-    }
 }
 
 void IntersectEditor::ensureDefaultThemes()
