@@ -64,7 +64,7 @@ static Slice sanitiseRestoredSlice (Slice s)
 
     s.midiNote = juce::jlimit (0, 127, s.midiNote);
     s.bpm = juce::jlimit (20.0f, 999.0f, s.bpm);
-    s.pitchSemitones = juce::jlimit (-24.0f, 24.0f, s.pitchSemitones);
+    s.pitchSemitones = juce::jlimit (-48.0f, 48.0f, s.pitchSemitones);
     s.algorithm = juce::jlimit (0, 2, s.algorithm);
     s.attackSec = juce::jlimit (0.0f, 1.0f, s.attackSec);
     s.decaySec = juce::jlimit (0.0f, 5.0f, s.decaySec);

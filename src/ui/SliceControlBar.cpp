@@ -188,7 +188,7 @@ void SliceControlBar::paint (juce::Graphics& g)
         pv = (float) std::round (totalSemis);
     }
     { int pvi = (int) std::round (pv); val = (pvi >= 0 ? "+" : "") + juce::String (pvi) + "st"; }
-    drawParamCell (g, x, row1y, "PITCH", val, locked, kLockPitch, F::FieldPitch, -24.0f, 24.0f, 0.1f, false, false, cw);
+    drawParamCell (g, x, row1y, "PITCH", val, locked, kLockPitch, F::FieldPitch, -48.0f, 48.0f, 0.1f, false, false, cw);
     if (repitchStretch)
         cells.back().isReadOnly = true;
     x += cw + 4;

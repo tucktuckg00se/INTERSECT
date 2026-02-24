@@ -155,7 +155,7 @@ void HeaderBar::paintRow1 (juce::Graphics& g)
             juce::String pitchStr = (calcPitchI >= 0 ? "+" : "") + juce::String (calcPitchI) + "st";
             g.setColour (getTheme().foreground.withAlpha (0.5f));
             g.drawText (pitchStr, x, row1y + 15, cellW, 14, juce::Justification::centredLeft);
-            headerCells.push_back ({ x, row1y, cellW, row1h, ParamIds::defaultPitch, -24.0f, 24.0f, 0.1f, false, false, true, false });
+            headerCells.push_back ({ x, row1y, cellW, row1h, ParamIds::defaultPitch, -48.0f, 48.0f, 0.1f, false, false, true, false });
         }
         else
         {
@@ -163,7 +163,7 @@ void HeaderBar::paintRow1 (juce::Graphics& g)
             g.setColour (getTheme().foreground.withAlpha (0.9f));
             int pitchI = (int) std::round (pitch);
             g.drawText ((pitchI >= 0 ? "+" : "") + juce::String (pitchI), x, row1y + 15, cellW, 14, juce::Justification::centredLeft);
-            headerCells.push_back ({ x, row1y, cellW, row1h, ParamIds::defaultPitch, -24.0f, 24.0f, 0.1f, false, false, false, false });
+            headerCells.push_back ({ x, row1y, cellW, row1h, ParamIds::defaultPitch, -48.0f, 48.0f, 0.1f, false, false, false, false });
         }
         x += cellW + cellGap;
     }
