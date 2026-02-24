@@ -4,6 +4,13 @@
 #include "../PluginProcessor.h"
 #include "../audio/GrainEngine.h"
 
+namespace
+{
+constexpr int kParamCellTextX = 14;
+constexpr int kParamCellTextWidth = 60;
+constexpr int kParamCellWidth = kParamCellTextX + kParamCellTextWidth;
+}
+
 SliceControlBar::SliceControlBar (IntersectProcessor& p) : processor (p)
 {
 }
@@ -33,25 +40,25 @@ void SliceControlBar::drawParamCell (juce::Graphics& g, int x, int y,
                                      bool isBoolean, bool isChoice, int& outWidth)
 {
     int cellH = 32;
+    int cellW = kParamCellWidth;
+    int textW = kParamCellTextWidth;
 
     // Label
     g.setFont (IntersectLookAndFeel::makeFont (12.0f));
     g.setColour (locked ? getTheme().lockActive.withAlpha (0.8f)
                         : getTheme().foreground.withAlpha (0.45f));
-    g.drawText (label, x + 14, y + 2, 70, 13, juce::Justification::centredLeft);
+    g.drawText (label, x + kParamCellTextX, y + 2, textW, 13, juce::Justification::centredLeft);
 
     // Value
     g.setFont (IntersectLookAndFeel::makeFont (14.0f));
     g.setColour (locked ? getTheme().foreground
                         : getTheme().foreground.withAlpha (0.4f));
-    g.drawText (value, x + 14, y + 15, 70, 14, juce::Justification::centredLeft);
+    g.drawText (value, x + kParamCellTextX, y + 15, textW, 14, juce::Justification::centredLeft);
 
     // Lock icon
     drawLockIcon (g, x + 1, y + 4, locked);
 
-    int labelW = (int) IntersectLookAndFeel::makeFont (12.0f).getStringWidthFloat (label);
-    int valueW = (int) IntersectLookAndFeel::makeFont (14.0f).getStringWidthFloat (value);
-    outWidth = std::max (std::max (labelW, valueW) + 20, 55);
+    outWidth = cellW;
 
     cells.push_back ({ x, y, outWidth, cellH, lockBit, fieldId, minVal, maxVal, step, isBoolean, isChoice, false, false });
 }
