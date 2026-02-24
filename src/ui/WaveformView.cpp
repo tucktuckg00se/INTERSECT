@@ -449,7 +449,7 @@ void WaveformView::syncAltStateFromMods (const juce::ModifierKeys& mods)
     hoveredEdge = HoveredEdge::None;
 
     if (alt)
-        setMouseCursor (juce::MouseCursor::CrosshairCursor);
+        setMouseCursor (juce::MouseCursor::IBeamCursor);
     else if (dragMode != DrawSlice)
         setMouseCursor (juce::MouseCursor::NormalCursor);
 
@@ -479,7 +479,9 @@ void WaveformView::mouseMove (const juce::MouseEvent& e)
         }
     }
     if (altModeActive)
-        setMouseCursor (juce::MouseCursor::CrosshairCursor);
+        setMouseCursor (juce::MouseCursor::IBeamCursor);
+    else if (sliceDrawMode)
+        setMouseCursor (juce::MouseCursor::IBeamCursor);
     else
         setMouseCursor (newEdge != HoveredEdge::None
             ? juce::MouseCursor::LeftRightResizeCursor
