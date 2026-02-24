@@ -169,6 +169,13 @@ public:
     // Shift preview request: -2=no-op, -1=stop, >=0=start at this sample position
     std::atomic<int> shiftPreviewRequest { -2 };
 
+    // Live slice bounds during edge/move drag — updated every mouseDrag, no undo.
+    // Audio thread applies these each block so note-ons during drag use current bounds.
+    // Set liveDragSliceIdx to -1 to deactivate.
+    std::atomic<int> liveDragSliceIdx   { -1 };
+    std::atomic<int> liveDragBoundsStart {  0 };
+    std::atomic<int> liveDragBoundsEnd   {  0 };
+
     // Missing sample state (for relink UI)
     std::atomic<bool> sampleMissing { false };
     juce::String missingFilePath;

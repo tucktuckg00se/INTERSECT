@@ -2,20 +2,19 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 class IntersectProcessor;
-class WaveformView;
 
 class ScrollZoomBar : public juce::Component
 {
 public:
-    ScrollZoomBar (IntersectProcessor& p, WaveformView& wv);
+    explicit ScrollZoomBar (IntersectProcessor& p);
     void paint (juce::Graphics& g) override;
     void mouseDown (const juce::MouseEvent& e) override;
     void mouseDrag (const juce::MouseEvent& e) override;
     void mouseUp (const juce::MouseEvent& e) override;
+    bool isDraggingNow() const noexcept { return isDragging; }
 
 private:
     IntersectProcessor& processor;
-    WaveformView& waveformView;
 
     bool isDragging = false;
     float dragStartZoom = 1.0f;

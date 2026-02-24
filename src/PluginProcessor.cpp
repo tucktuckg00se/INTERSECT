@@ -462,6 +462,27 @@ void IntersectProcessor::drainCommands()
     const auto dropped = droppedCommandCount.exchange (0, std::memory_order_relaxed);
     if (handledAny || dropped > 0)
         updateHostDisplay (ChangeDetails().withNonParameterStateChanged (true));
+
+    // Apply live drag bounds every block so note-ons during edge/move drag use
+    // the current preview position. No snapshot — undo is handled by the
+    // CmdBeginGesture + CmdSetSliceBounds pair sent on mouseDown/mouseUp.
+    const int liveIdx = liveDragSliceIdx.load (std::memory_order_acquire);
+    if (liveIdx >= 0 && liveIdx < sliceManager.getNumSlices())
+    {
+        const int maxLen = sampleData.getNumFrames();
+        if (maxLen > 1)
+        {
+            auto& s = sliceManager.getSlice (liveIdx);
+            int start = liveDragBoundsStart.load (std::memory_order_relaxed);
+            int end   = liveDragBoundsEnd.load   (std::memory_order_relaxed);
+            start = juce::jlimit (0, juce::jmax (0, maxLen - 1), start);
+            end   = juce::jlimit (start + 1, juce::jmax (start + 1, maxLen), end);
+            if (end - start < 64)
+                end = juce::jmin (maxLen, start + 64);
+            s.startSample = start;
+            s.endSample   = end;
+        }
+    }
 }
 
 UndoManager::Snapshot IntersectProcessor::makeSnapshot()

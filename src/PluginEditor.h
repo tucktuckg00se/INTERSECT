@@ -31,6 +31,11 @@ private:
 
     IntersectProcessor& processor;
     float lastScale = -1.0f;  // sentinel so first timer tick always applies
+    float lastZoom = -1.0f;
+    float lastScroll = -1.0f;
+    int timerHz = 30;
+    bool lastWaveformAnimating = false;
+    bool lastPreviewActive = false;
     float savedScale = -1.0f;
     uint32_t lastUiSnapshotVersion = 0;
 

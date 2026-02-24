@@ -25,6 +25,9 @@ public:
     void filesDropped (const juce::StringArray& files, int x, int y) override;
 
     void rebuildCacheIfNeeded();
+    bool hasActiveSlicePreview() const noexcept;
+    bool getActiveSlicePreview (int& sliceIdx, int& startSample, int& endSample) const;
+    bool isInteracting() const noexcept;
 
     bool sliceDrawMode = false;
     bool altModeActive = false;
@@ -32,6 +35,16 @@ public:
     std::vector<int> transientPreviewPositions;
 
 private:
+    struct ViewState
+    {
+        int numFrames = 0;
+        int visibleStart = 0;
+        int visibleLen = 0;
+        int width = 0;
+        float samplesPerPixel = 1.0f;
+        bool valid = false;
+    };
+
     enum DragMode { None, DragEdgeLeft, DragEdgeRight, DrawSlice, MoveSlice, DuplicateSlice };
 
     enum class HoveredEdge { None, Left, Right };
@@ -39,6 +52,8 @@ private:
 
     int pixelToSample (int px) const;
     int sampleToPixel (int sample) const;
+    ViewState buildViewState (const SampleData::SnapshotPtr& sampleSnap) const;
+    void syncAltStateFromMods (const juce::ModifierKeys& mods);
 
     void drawWaveform (juce::Graphics& g);
     void drawSlices (juce::Graphics& g);
@@ -46,14 +61,19 @@ private:
 
     IntersectProcessor& processor;
     WaveformCache cache;
-    float prevZoom = -1.0f, prevScroll = -1.0f;
+    int prevVisibleStart = -1;
+    int prevVisibleLen = -1;
     int prevWidth = 0;
     int prevNumFrames = 0;
+    const void* prevSamplePtr = nullptr;
+    mutable ViewState cachedPaintViewState;   // valid only between paint() start and end
+    mutable bool paintViewStateActive = false; // true only during paint(); guards cachedPaintViewState
 
     DragMode dragMode = None;
     int dragSliceIdx = -1;
     int drawStart = 0;
     int drawEnd = 0;
+    bool drawStartedFromAlt = false;
     int dragOffset = 0;    // for MoveSlice: offset from mouse to slice start
     int dragSliceLen = 0;  // for MoveSlice: original slice length
     int dragPreviewStart = 0; // for edge/move drags: preview start sample

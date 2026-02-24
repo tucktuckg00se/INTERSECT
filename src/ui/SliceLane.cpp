@@ -1,6 +1,9 @@
 #include "SliceLane.h"
 #include "IntersectLookAndFeel.h"
+#include "WaveformView.h"
 #include "../PluginProcessor.h"
+#include <algorithm>
+#include <array>
 
 SliceLane::SliceLane (IntersectProcessor& p) : processor (p) {}
 
@@ -14,65 +17,93 @@ void SliceLane::paint (juce::Graphics& g)
         return;
 
     const auto& ui = processor.getUiSliceSnapshot();
-    float z = processor.zoom.load();
-    float sc = processor.scroll.load();
-    int visLen = (int) (numFrames / z);
-    int visStart = (int) (sc * (numFrames - visLen));
+    const float z = std::max (1.0f, processor.zoom.load());
+    const float sc = processor.scroll.load();
+    const int visLen = juce::jlimit (1, numFrames, (int) (numFrames / z));
+    const int maxStart = juce::jmax (0, numFrames - visLen);
+    const int visStart = juce::jlimit (0, maxStart, (int) (sc * (float) maxStart));
 
     int sel = ui.selectedSlice;
     int num = ui.numSlices;
     int w = getWidth();
     int h = getHeight();
+    int previewIdx = -1;
+    int previewStart = 0;
+    int previewEnd = 0;
+    const bool hasPreview = waveformView != nullptr
+        && waveformView->getActiveSlicePreview (previewIdx, previewStart, previewEnd);
 
-    // Collect visible slice info for two-pass rendering (selected slice drawn last)
+    // Collect visible slice info without per-frame heap allocations.
     struct SliceInfo { int idx; int x1; int x2; bool selected; juce::Colour col; };
-    std::vector<SliceInfo> visibleSlices;
+    std::array<SliceInfo, SliceManager::kMaxSlices> visibleSlices {};
+    int visibleCount = 0;
 
     for (int i = 0; i < num; ++i)
     {
         const auto& s = ui.slices[(size_t) i];
         if (! s.active) continue;
-        if (visLen <= 0) continue;
+        int startSample = s.startSample;
+        int endSample = s.endSample;
+        if (hasPreview && i == previewIdx)
+        {
+            startSample = previewStart;
+            endSample = previewEnd;
+        }
 
-        int x1 = (int) ((float) (s.startSample - visStart) / visLen * w);
-        int x2 = (int) ((float) (s.endSample - visStart) / visLen * w);
+        int x1 = (int) ((float) (startSample - visStart) / visLen * w);
+        int x2 = (int) ((float) (endSample - visStart) / visLen * w);
         x1 = std::max (0, x1);
         x2 = std::min (w, x2);
         if (x2 - x1 < 2) continue;
 
-        visibleSlices.push_back ({ i, x1, x2, (i == sel), s.colour });
+        if (visibleCount < SliceManager::kMaxSlices)
+            visibleSlices[(size_t) visibleCount++] = { i, x1, x2, (i == sel), s.colour };
     }
 
-    // Sort: non-selected first, selected last (so selected draws on top)
-    std::stable_sort (visibleSlices.begin(), visibleSlices.end(),
-                      [] (const SliceInfo& a, const SliceInfo& b) { return !a.selected && b.selected; });
-
-    // Pass 1: Draw bars and borders in selection order (z-order)
-    for (const auto& si : visibleSlices)
+    // Pass 1: Draw non-selected first, selected last (z-order) without sorting.
+    for (int pass = 0; pass < 2; ++pass)
     {
-        int sw = si.x2 - si.x1;
-
-        // Bar fill
-        g.setColour (si.selected ? si.col.withAlpha (0.55f) : si.col.withAlpha (0.25f));
-        g.fillRect (si.x1, 1, sw, h - 2);
-
-        // Border for selected
-        if (si.selected)
+        const bool drawSelected = (pass == 1);
+        for (int i = 0; i < visibleCount; ++i)
         {
-            g.setColour (si.col.withAlpha (0.9f));
-            g.drawRect (si.x1, 1, sw, h - 2, 1);
+            const auto& si = visibleSlices[(size_t) i];
+            if (si.selected != drawSelected)
+                continue;
+
+            int sw = si.x2 - si.x1;
+            g.setColour (si.selected ? si.col.withAlpha (0.55f) : si.col.withAlpha (0.25f));
+            g.fillRect (si.x1, 1, sw, h - 2);
+
+            if (si.selected)
+            {
+                g.setColour (si.col.withAlpha (0.9f));
+                g.drawRect (si.x1, 1, sw, h - 2, 1);
+            }
         }
     }
 
-    // Re-sort by x-position for correct label overlap avoidance
-    std::sort (visibleSlices.begin(), visibleSlices.end(),
-               [] (const SliceInfo& a, const SliceInfo& b) { return a.x1 < b.x1; });
+    // Build left-to-right label order by x position using insertion sort on indices.
+    std::array<int, SliceManager::kMaxSlices> labelOrder {};
+    int labelOrderCount = 0;
+    for (int i = 0; i < visibleCount; ++i)
+    {
+        int pos = labelOrderCount;
+        while (pos > 0 && visibleSlices[(size_t) labelOrder[(size_t) (pos - 1)]].x1 > visibleSlices[(size_t) i].x1)
+        {
+            labelOrder[(size_t) pos] = labelOrder[(size_t) (pos - 1)];
+            --pos;
+        }
+        labelOrder[(size_t) pos] = i;
+        ++labelOrderCount;
+    }
 
     // Pass 2: Draw labels in left-to-right order
-    std::vector<int> labelEnds;  // right edge of each drawn label
+    std::array<int, SliceManager::kMaxSlices> labelEnds {};
+    int labelEndCount = 0;
 
-    for (const auto& si : visibleSlices)
+    for (int oi = 0; oi < labelOrderCount; ++oi)
     {
+        const auto& si = visibleSlices[(size_t) labelOrder[(size_t) oi]];
         int sw = si.x2 - si.x1;
 
         // Slice number label — left-aligned, with overlap avoidance
@@ -80,12 +111,13 @@ void SliceLane::paint (juce::Graphics& g)
         {
             juce::String label = juce::String (si.idx + 1);
             g.setFont (IntersectLookAndFeel::makeFont (12.0f, true));
-            int labelW = (int) g.getCurrentFont().getStringWidthFloat (label) + 6;
+            int labelW = g.getCurrentFont().getStringWidth (label) + 6;
             int labelX = si.x1 + 3;
 
             // Push right until it clears all previously drawn labels
-            for (int end : labelEnds)
+            for (int li = 0; li < labelEndCount; ++li)
             {
+                int end = labelEnds[(size_t) li];
                 if (labelX < end)
                     labelX = end + 1;
             }
@@ -95,7 +127,8 @@ void SliceLane::paint (juce::Graphics& g)
             {
                 g.setColour (si.selected ? getTheme().foreground.withAlpha (0.9f) : si.col.withAlpha (0.7f));
                 g.drawText (label, labelX, 0, labelW, h, juce::Justification::centredLeft);
-                labelEnds.push_back (labelX + labelW);
+                if (labelEndCount < SliceManager::kMaxSlices)
+                    labelEnds[(size_t) labelEndCount++] = labelX + labelW;
             }
         }
     }
@@ -113,10 +146,11 @@ void SliceLane::mouseDown (const juce::MouseEvent& e)
         return;
 
     const auto& ui = processor.getUiSliceSnapshot();
-    float z = processor.zoom.load();
-    float sc = processor.scroll.load();
-    int visLen = (int) (numFrames / z);
-    int visStart = (int) (sc * (numFrames - visLen));
+    const float z = std::max (1.0f, processor.zoom.load());
+    const float sc = processor.scroll.load();
+    const int visLen = juce::jlimit (1, numFrames, (int) (numFrames / z));
+    const int maxStart = juce::jmax (0, numFrames - visLen);
+    const int visStart = juce::jlimit (0, maxStart, (int) (sc * (float) maxStart));
     int w = getWidth();
     int num = ui.numSlices;
 
@@ -128,7 +162,6 @@ void SliceLane::mouseDown (const juce::MouseEvent& e)
         const auto& s = ui.slices[(size_t) i];
         if (! s.active) continue;
 
-        if (visLen <= 0) continue;
         int x1 = (int) ((float) (s.startSample - visStart) / visLen * w);
         int x2 = (int) ((float) (s.endSample - visStart) / visLen * w);
 

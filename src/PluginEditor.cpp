@@ -1,4 +1,5 @@
 #include "PluginEditor.h"
+#include <algorithm>
 
 static constexpr int kBaseW      = 900;
 static constexpr int kBaseH      = 550;
@@ -31,7 +32,7 @@ IntersectEditor::IntersectEditor (IntersectProcessor& p)
       headerBar (p),
       sliceLane (p),
       waveformView (p),
-      scrollZoomBar (p, waveformView),
+      scrollZoomBar (p),
       sliceControlBar (p),
       actionPanel (p, waveformView)
 {
@@ -44,6 +45,8 @@ IntersectEditor::IntersectEditor (IntersectProcessor& p)
     addAndMakeVisible (scrollZoomBar);
     addAndMakeVisible (sliceControlBar);
     addAndMakeVisible (actionPanel);
+
+    sliceLane.setWaveformView (&waveformView);
 
     // Write default theme files if they don't exist
     ensureDefaultThemes();
@@ -62,7 +65,8 @@ IntersectEditor::IntersectEditor (IntersectProcessor& p)
     setWantsKeyboardFocus (true);
     setSize (kBaseW, kBaseH);
     lastUiSnapshotVersion = processor.getUiSliceSnapshotVersion();
-    startTimerHz (30);
+    timerHz = 30;
+    startTimerHz (timerHz);
 }
 
 IntersectEditor::~IntersectEditor()
@@ -249,14 +253,26 @@ bool IntersectEditor::keyPressed (const juce::KeyPress& key)
 
 void IntersectEditor::timerCallback()
 {
-    waveformView.rebuildCacheIfNeeded();
     bool uiChanged = false;
+    bool viewportChanged = false;
+    const bool previewActive = waveformView.hasActiveSlicePreview();
+    const bool waveformInteracting = waveformView.isInteracting();
+    const bool rulerDragging = scrollZoomBar.isDraggingNow();
 
     const auto snapshotVersion = processor.getUiSliceSnapshotVersion();
     if (snapshotVersion != lastUiSnapshotVersion)
     {
         lastUiSnapshotVersion = snapshotVersion;
         uiChanged = true;
+    }
+
+    const float zoom = processor.zoom.load();
+    const float scroll = processor.scroll.load();
+    if (zoom != lastZoom || scroll != lastScroll)
+    {
+        lastZoom = zoom;
+        lastScroll = scroll;
+        viewportChanged = true;
     }
 
     // Check if scale changed (lastScale starts at -1 so first tick always applies)
@@ -270,15 +286,55 @@ void IntersectEditor::timerCallback()
         uiChanged = true;
     }
 
-    // Waveform cursor/playhead animation updates continuously.
-    waveformView.repaint();
+    const bool playbackActive = std::any_of (processor.voicePool.voicePositions.begin(),
+                                             processor.voicePool.voicePositions.end(),
+                                             [] (const std::atomic<float>& pos)
+                                             {
+                                                 return pos.load (std::memory_order_relaxed) > 0.0f;
+                                             });
+
+    const bool waveformAnimating = waveformInteracting
+        || rulerDragging
+        || previewActive
+        || playbackActive
+        || processor.lazyChop.isActive();
+    const bool waveformNeedsRepaint = uiChanged
+        || viewportChanged
+        || waveformAnimating
+        || lastWaveformAnimating;
+
+    const bool laneNeedsRepaint = uiChanged
+        || viewportChanged
+        || previewActive
+        || lastPreviewActive;
+
+    const bool rulerNeedsRepaint = uiChanged
+        || viewportChanged
+        || rulerDragging;
+
+    lastWaveformAnimating = waveformAnimating;
+    lastPreviewActive = previewActive;
+
+    const int targetHz = waveformAnimating ? 60 : 30;
+    if (targetHz != timerHz)
+    {
+        startTimerHz (targetHz);
+        timerHz = targetHz;
+    }
+
+    if (waveformNeedsRepaint)
+        waveformView.repaint();
+
+    if (laneNeedsRepaint)
+        sliceLane.repaint();
+
+    if (rulerNeedsRepaint)
+        scrollZoomBar.repaint();
 
     // Other components only need repaint when snapshot/theme/scale changes.
     if (uiChanged)
     {
         headerBar.repaint();
-        sliceLane.repaint();
-        scrollZoomBar.repaint();
         sliceControlBar.repaint();
         actionPanel.repaint();
     }

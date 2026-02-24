@@ -5,46 +5,109 @@
 
 WaveformView::WaveformView (IntersectProcessor& p) : processor (p) {}
 
+bool WaveformView::hasActiveSlicePreview() const noexcept
+{
+    if (dragSliceIdx < 0)
+        return false;
+
+    return dragMode == DragEdgeLeft || dragMode == DragEdgeRight || dragMode == MoveSlice;
+}
+
+bool WaveformView::getActiveSlicePreview (int& sliceIdx, int& startSample, int& endSample) const
+{
+    if (! hasActiveSlicePreview())
+        return false;
+
+    sliceIdx = dragSliceIdx;
+    startSample = dragPreviewStart;
+    endSample = dragPreviewEnd;
+    return true;
+}
+
+bool WaveformView::isInteracting() const noexcept
+{
+    return dragMode != None || midDragging || shiftPreviewActive;
+}
+
+WaveformView::ViewState WaveformView::buildViewState (const SampleData::SnapshotPtr& sampleSnap) const
+{
+    ViewState state;
+    if (sampleSnap == nullptr)
+        return state;
+
+    const int numFrames = sampleSnap->buffer.getNumSamples();
+    const int width = getWidth();
+    if (numFrames <= 0 || width <= 0)
+        return state;
+
+    const float z = std::max (1.0f, processor.zoom.load());
+    const float sc = processor.scroll.load();
+    const int visibleLen = juce::jlimit (1, numFrames, (int) (numFrames / z));
+    const int maxStart = juce::jmax (0, numFrames - visibleLen);
+    const int visibleStart = juce::jlimit (0, maxStart, (int) (sc * (float) maxStart));
+
+    state.numFrames = numFrames;
+    state.visibleStart = visibleStart;
+    state.visibleLen = visibleLen;
+    state.width = width;
+    state.samplesPerPixel = (float) visibleLen / (float) width;
+    state.valid = true;
+    return state;
+}
+
 int WaveformView::pixelToSample (int px) const
 {
-    auto sampleSnap = processor.sampleData.getSnapshot();
-    int numFrames = sampleSnap ? sampleSnap->buffer.getNumSamples() : 0;
-    float z = std::max (1.0f, processor.zoom.load());
-    float sc = processor.scroll.load();
-    int visLen = (int) (numFrames / z);
-    if (visLen <= 0) return 0;
-    int visStart = (int) (sc * (numFrames - visLen));
-    return visStart + (int) ((float) px / getWidth() * visLen);
+    if (paintViewStateActive && cachedPaintViewState.valid)
+    {
+        return cachedPaintViewState.visibleStart
+            + (int) ((float) px / (float) cachedPaintViewState.width * cachedPaintViewState.visibleLen);
+    }
+
+    const auto state = buildViewState (processor.sampleData.getSnapshot());
+    if (! state.valid)
+        return 0;
+    return state.visibleStart + (int) ((float) px / (float) state.width * state.visibleLen);
 }
 
 int WaveformView::sampleToPixel (int sample) const
 {
-    auto sampleSnap = processor.sampleData.getSnapshot();
-    int numFrames = sampleSnap ? sampleSnap->buffer.getNumSamples() : 0;
-    float z = std::max (1.0f, processor.zoom.load());
-    float sc = processor.scroll.load();
-    int visLen = (int) (numFrames / z);
-    int visStart = (int) (sc * (numFrames - visLen));
-    if (visLen <= 0) return 0;
-    return (int) ((float) (sample - visStart) / visLen * getWidth());
+    if (paintViewStateActive && cachedPaintViewState.valid)
+    {
+        return (int) ((float) (sample - cachedPaintViewState.visibleStart)
+                      / (float) cachedPaintViewState.visibleLen
+                      * (float) cachedPaintViewState.width);
+    }
+
+    const auto state = buildViewState (processor.sampleData.getSnapshot());
+    if (! state.valid)
+        return 0;
+    return (int) ((float) (sample - state.visibleStart) / (float) state.visibleLen * (float) state.width);
 }
 
 void WaveformView::rebuildCacheIfNeeded()
 {
     auto sampleSnap = processor.sampleData.getSnapshot();
-    float z = processor.zoom.load();
-    float sc = processor.scroll.load();
-    int w = getWidth();
-    int numFrames = sampleSnap ? sampleSnap->buffer.getNumSamples() : 0;
-    if (z != prevZoom || sc != prevScroll || w != prevWidth || numFrames != prevNumFrames)
+    const auto view = buildViewState (sampleSnap);
+    if (! view.valid)
+        return;
+    const void* samplePtr = sampleSnap.get();
+
+    if (view.visibleStart == prevVisibleStart
+        && view.visibleLen == prevVisibleLen
+        && view.width == prevWidth
+        && view.numFrames == prevNumFrames
+        && samplePtr == prevSamplePtr)
     {
-        if (sampleSnap != nullptr)
-            cache.rebuild (sampleSnap->buffer, sampleSnap->peakMipmaps, numFrames, z, sc, w);
-        prevZoom = z;
-        prevScroll = sc;
-        prevWidth = w;
-        prevNumFrames = numFrames;
+        return;
     }
+
+    cache.rebuild (sampleSnap->buffer, sampleSnap->peakMipmaps,
+                   view.numFrames, processor.zoom.load(), processor.scroll.load(), view.width);
+    prevVisibleStart = view.visibleStart;
+    prevVisibleLen = view.visibleLen;
+    prevWidth = view.width;
+    prevNumFrames = view.numFrames;
+    prevSamplePtr = samplePtr;
 }
 
 void WaveformView::paint (juce::Graphics& g)
@@ -62,6 +125,8 @@ void WaveformView::paint (juce::Graphics& g)
 
     if (sampleSnap != nullptr)
     {
+        cachedPaintViewState = buildViewState (sampleSnap);
+        paintViewStateActive = cachedPaintViewState.valid;
         rebuildCacheIfNeeded();
         drawWaveform (g);
         drawSlices (g);
@@ -145,9 +210,11 @@ void WaveformView::paint (juce::Graphics& g)
         }
 
         drawPlaybackCursors (g);
+        paintViewStateActive = false;
     }
     else
     {
+        paintViewStateActive = false;
         g.setColour (getTheme().foreground.withAlpha (0.25f));
         g.setFont (IntersectLookAndFeel::makeFont (22.0f));
         g.drawText ("DROP AUDIO FILE", getLocalBounds(), juce::Justification::centred);
@@ -165,12 +232,17 @@ void WaveformView::drawWaveform (juce::Graphics& g)
     if (numPeaks <= 0)
         return;
 
-    // Determine if we're in sub-sample zoom (peaks are single points, not ranges)
-    auto sampleSnap = processor.sampleData.getSnapshot();
-    int numFrames = sampleSnap ? sampleSnap->buffer.getNumSamples() : 0;
-    float z = processor.zoom.load();
-    int visLen = (int) (numFrames / z);
-    float samplesPerPixel = (visLen > 0 && getWidth() > 0) ? (float) visLen / (float) getWidth() : 1.0f;
+    float samplesPerPixel = 1.0f;
+    if (paintViewStateActive && cachedPaintViewState.valid)
+    {
+        samplesPerPixel = cachedPaintViewState.samplesPerPixel;
+    }
+    else
+    {
+        const auto view = buildViewState (processor.sampleData.getSnapshot());
+        if (view.valid)
+            samplesPerPixel = view.samplesPerPixel;
+    }
 
     if (samplesPerPixel < 1.0f)
     {
@@ -361,8 +433,27 @@ void WaveformView::resized()
     prevWidth = -1;  // force cache rebuild
 }
 
+void WaveformView::syncAltStateFromMods (const juce::ModifierKeys& mods)
+{
+    const bool alt = mods.isAltDown();
+    if (alt == altModeActive)
+        return;
+
+    altModeActive = alt;
+    hoveredEdge = HoveredEdge::None;
+
+    if (alt)
+        setMouseCursor (juce::MouseCursor::CrosshairCursor);
+    else if (dragMode != DrawSlice)
+        setMouseCursor (juce::MouseCursor::NormalCursor);
+
+    repaint();
+}
+
 void WaveformView::mouseMove (const juce::MouseEvent& e)
 {
+    syncAltStateFromMods (e.mods);
+
     auto sampleSnap = processor.sampleData.getSnapshot();
     if (sampleSnap == nullptr) return;
     const auto& ui = processor.getUiSliceSnapshot();
@@ -381,9 +472,12 @@ void WaveformView::mouseMove (const juce::MouseEvent& e)
             else if (std::abs (e.x - x2) < 6) newEdge = HoveredEdge::Right;
         }
     }
-    setMouseCursor (newEdge != HoveredEdge::None
-        ? juce::MouseCursor::LeftRightResizeCursor
-        : juce::MouseCursor::NormalCursor);
+    if (altModeActive)
+        setMouseCursor (juce::MouseCursor::CrosshairCursor);
+    else
+        setMouseCursor (newEdge != HoveredEdge::None
+            ? juce::MouseCursor::LeftRightResizeCursor
+            : juce::MouseCursor::NormalCursor);
 
     if (newEdge != hoveredEdge) { hoveredEdge = newEdge; repaint(); }
 }
@@ -397,19 +491,13 @@ void WaveformView::mouseExit (const juce::MouseEvent&)
 
 void WaveformView::modifierKeysChanged (const juce::ModifierKeys& mods)
 {
-    bool alt = mods.isAltDown();
-    if (alt == altModeActive) return;
-    altModeActive = alt;
-    if (alt)
-        setMouseCursor (juce::MouseCursor::CrosshairCursor);
-    else if (dragMode != DrawSlice)
-        setMouseCursor (juce::MouseCursor::NormalCursor);
-    hoveredEdge = HoveredEdge::None;
-    repaint();
+    syncAltStateFromMods (mods);
 }
 
 void WaveformView::mouseDown (const juce::MouseEvent& e)
 {
+    syncAltStateFromMods (e.mods);
+
     auto sampleSnap = processor.sampleData.getSnapshot();
     if (sampleSnap == nullptr)
         return;
@@ -448,6 +536,7 @@ void WaveformView::mouseDown (const juce::MouseEvent& e)
     {
         drawStart = samplePos;
         drawEnd = samplePos;
+        drawStartedFromAlt = (! sliceDrawMode && e.mods.isAltDown());
         dragMode = DrawSlice;
         return;
     }
@@ -518,6 +607,8 @@ void WaveformView::mouseDown (const juce::MouseEvent& e)
 
 void WaveformView::mouseDrag (const juce::MouseEvent& e)
 {
+    syncAltStateFromMods (e.mods);
+
     auto sampleSnap = processor.sampleData.getSnapshot();
     if (sampleSnap == nullptr)
         return;
@@ -542,7 +633,6 @@ void WaveformView::mouseDrag (const juce::MouseEvent& e)
             processor.scroll.store (juce::jlimit (0.0f, 1.0f, newViewStart / maxScroll));
 
         prevWidth = -1;
-        repaint();
         return;
     }
 
@@ -551,7 +641,6 @@ void WaveformView::mouseDrag (const juce::MouseEvent& e)
     if (dragMode == DrawSlice)
     {
         drawEnd = samplePos;
-        repaint();
         return;
     }
 
@@ -560,14 +649,12 @@ void WaveformView::mouseDrag (const juce::MouseEvent& e)
         if (processor.snapToZeroCrossing.load())
             samplePos = AudioAnalysis::findNearestZeroCrossing (sampleSnap->buffer, samplePos);
         dragPreviewStart = std::min (samplePos, dragPreviewEnd - 64);
-        repaint();
     }
     else if (dragMode == DragEdgeRight && dragSliceIdx >= 0)
     {
         if (processor.snapToZeroCrossing.load())
             samplePos = AudioAnalysis::findNearestZeroCrossing (sampleSnap->buffer, samplePos);
         dragPreviewEnd = std::max (samplePos, dragPreviewStart + 64);
-        repaint();
     }
     else if (dragMode == MoveSlice && dragSliceIdx >= 0)
     {
@@ -581,20 +668,32 @@ void WaveformView::mouseDrag (const juce::MouseEvent& e)
 
         dragPreviewStart = newStart;
         dragPreviewEnd = newEnd;
-        repaint();
     }
-    else if (dragMode == DuplicateSlice && dragSliceIdx >= 0)
+
+    // Push live bounds to the audio engine so note-ons during drag use the
+    // current edge position. Written before the idx store (release) so the
+    // audio thread sees consistent values after its acquire load on idx.
+    if ((dragMode == DragEdgeLeft || dragMode == DragEdgeRight || dragMode == MoveSlice)
+        && dragSliceIdx >= 0)
+    {
+        processor.liveDragBoundsStart.store (dragPreviewStart, std::memory_order_relaxed);
+        processor.liveDragBoundsEnd.store   (dragPreviewEnd,   std::memory_order_relaxed);
+        processor.liveDragSliceIdx.store    (dragSliceIdx,     std::memory_order_release);
+    }
+
+    if (dragMode == DuplicateSlice && dragSliceIdx >= 0)
     {
         int maxLen   = sampleSnap->buffer.getNumSamples();
         int newStart = juce::jlimit (0, maxLen - dragSliceLen, samplePos - dragOffset);
         ghostStart   = newStart;
         ghostEnd     = newStart + dragSliceLen;
-        repaint();
     }
 }
 
 void WaveformView::mouseUp (const juce::MouseEvent& e)
 {
+    syncAltStateFromMods (e.mods);
+
     auto sampleSnap = processor.sampleData.getSnapshot();
 
     // Stop shift preview
@@ -613,6 +712,7 @@ void WaveformView::mouseUp (const juce::MouseEvent& e)
 
     if (dragMode == DrawSlice)
     {
+        const bool altStillDown = e.mods.isAltDown();
         const int maxFrames = sampleSnap ? sampleSnap->buffer.getNumSamples() : 0;
         int endPos = std::max (0, std::min (pixelToSample (e.x), maxFrames));
         if (sampleSnap != nullptr && processor.snapToZeroCrossing.load())
@@ -633,6 +733,13 @@ void WaveformView::mouseUp (const juce::MouseEvent& e)
                 setMouseCursor (juce::MouseCursor::NormalCursor);
             }
         }
+
+        if (drawStartedFromAlt && ! altStillDown)
+        {
+            sliceDrawMode = false;
+            setMouseCursor (juce::MouseCursor::NormalCursor);
+        }
+
         // If click without dragging (< 64 samples), keep draw mode active
     }
     else if (dragMode == DragEdgeLeft || dragMode == DragEdgeRight || dragMode == MoveSlice)
@@ -662,10 +769,16 @@ void WaveformView::mouseUp (const juce::MouseEvent& e)
         processor.pushCommand (cmd);
     }
 
+    // Deactivate live drag so the audio thread stops overriding slice bounds.
+    // Must happen before dragSliceIdx is cleared so there's no window where
+    // a stale idx could re-activate on the next block.
+    processor.liveDragSliceIdx.store (-1, std::memory_order_release);
+
     dragMode = None;
     dragSliceIdx = -1;
     dragPreviewStart = 0;
     dragPreviewEnd = 0;
+    drawStartedFromAlt = false;
 }
 
 void WaveformView::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w)
@@ -676,7 +789,6 @@ void WaveformView::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseW
         sc -= w.deltaX * 0.05f;
         processor.scroll.store (juce::jlimit (0.0f, 1.0f, sc));
         prevWidth = -1;
-        repaint();
         return;
     }
 
@@ -718,7 +830,6 @@ void WaveformView::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseW
             processor.scroll.store (0.0f);
     }
     prevWidth = -1;  // force cache rebuild
-    repaint();
 }
 
 bool WaveformView::isInterestedInFileDrag (const juce::StringArray& files)

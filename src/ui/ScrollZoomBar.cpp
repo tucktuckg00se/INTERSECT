@@ -1,12 +1,11 @@
 #include "ScrollZoomBar.h"
 #include "IntersectLookAndFeel.h"
-#include "WaveformView.h"
 #include "../PluginProcessor.h"
 #include <algorithm>
 #include <cmath>
 
-ScrollZoomBar::ScrollZoomBar (IntersectProcessor& p, WaveformView& wv)
-    : processor (p), waveformView (wv)
+ScrollZoomBar::ScrollZoomBar (IntersectProcessor& p)
+    : processor (p)
 {
 }
 
@@ -135,13 +134,9 @@ void ScrollZoomBar::mouseDrag (const juce::MouseEvent& e)
         float newScroll = juce::jlimit (0.0f, 1.0f, newViewStart / maxScroll);
         processor.scroll.store (newScroll);
     }
-
-    waveformView.repaint();
-    repaint();
 }
 
 void ScrollZoomBar::mouseUp (const juce::MouseEvent&)
 {
     isDragging = false;
-    repaint();
 }
