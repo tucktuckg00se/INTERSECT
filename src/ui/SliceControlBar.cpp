@@ -7,7 +7,7 @@
 namespace
 {
 constexpr int kParamCellTextX = 14;
-constexpr int kParamCellTextWidth = 60;
+constexpr int kParamCellTextWidth = 54;
 constexpr int kParamCellWidth = kParamCellTextX + kParamCellTextWidth;
 }
 

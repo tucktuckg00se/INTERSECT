@@ -750,6 +750,9 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                 int endS = srcCopy.endSample;
                 int count = juce::jlimit (2, 128, cmd.intParam1);
                 int len = endS - startS;
+                // Notes for sub-slices start one past the highest note any existing
+                // slice can have, so no existing note is disturbed.
+                int baseNote = sliceManager.rootNote.load() + sliceManager.getNumSlices();
 
                 sliceManager.deleteSlice (sel);
 
@@ -771,12 +774,11 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                     if (idx >= 0)
                     {
                         auto& dst = sliceManager.getSlice (idx);
-                        int savedNote      = dst.midiNote;  // assigned by createSlice
-                        juce::Colour savedColour = dst.colour;  // assigned from palette
-                        dst = srcCopy;         // copy all params + lockMask
+                        juce::Colour savedColour = dst.colour;
+                        dst = srcCopy;
                         dst.startSample = s;
                         dst.endSample   = e;
-                        dst.midiNote    = savedNote;
+                        dst.midiNote    = juce::jlimit (0, 127, baseNote + i);
                         dst.colour      = savedColour;
                         dst.active      = true;
                     }
@@ -798,8 +800,7 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                 Slice srcCopy = sliceManager.getSlice (sel);
                 int startS = srcCopy.startSample;
                 int endS = srcCopy.endSample;
-
-                sliceManager.deleteSlice (sel);
+                int baseNote = sliceManager.rootNote.load() + sliceManager.getNumSlices();
 
                 // Build fixed-size boundary list: [startS, ...positions..., endS]
                 int bounds[SliceManager::kMaxSlices + 2];
@@ -809,7 +810,10 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                     bounds[numBounds++] = cmd.positions[(size_t) bi];
                 bounds[numBounds++] = endS;
 
+                sliceManager.deleteSlice (sel);
+
                 int firstNew = -1;
+                int subIdx = 0;
                 for (int i = 0; i + 1 < numBounds; ++i)
                 {
                     int s = bounds[i];
@@ -819,16 +823,16 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                     if (idx >= 0)
                     {
                         auto& dst = sliceManager.getSlice (idx);
-                        int savedNote        = dst.midiNote;
                         juce::Colour savedColour = dst.colour;
                         dst = srcCopy;
                         dst.startSample = s;
                         dst.endSample   = e;
-                        dst.midiNote    = savedNote;
+                        dst.midiNote    = juce::jlimit (0, 127, baseNote + subIdx);
                         dst.colour      = savedColour;
                         dst.active      = true;
                     }
                     if (firstNew < 0) firstNew = idx;
+                    ++subIdx;
                 }
 
                 sliceManager.rebuildMidiMap();
