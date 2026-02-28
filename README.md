@@ -183,7 +183,7 @@ Single-letter action shortcuts are intentionally unbound so DAW keyboard-MIDI no
 
 INTERSECT supports NRPN-based slice editing from a hardware or software MIDI controller. Enable it via the **SET** button in the header bar — the popup contains an NRPN section with channel and consume options.
 
-**Controller requirements:** The controller must support NRPN mode with configurable MSB/LSB address values, and must send **relative** data bytes — CC 96 (Data Increment) and CC 97 (Data Decrement) — rather than absolute CC 6 (Data Entry). Most dedicated encoder-style controllers (e.g. Korg nanoKONTROL in NRPN mode, MIDI Fighter Twister) support this. Simple knob controllers that only send CC 6 absolute values will not work.
+**Controller requirements:** The controller must have **endless rotary encoders** (not fixed-range knobs) and must support NRPN mode with configurable MSB/LSB address values. Crucially, it must send **relative** data bytes — CC 96 (Data Increment) and CC 97 (Data Decrement) — one step per click. Controllers that only send absolute values (CC 6 Data Entry) will not work, nor will standard fixed-range knobs. Examples include the Akai MPD32 and MPD218. Results may vary.
 
 Select the slice to edit by enabling **FM** (Follow MIDI) and playing its MIDI note. Then use the start/end knobs to adjust the slice boundaries. Commit happens automatically ~300ms after the knob stops moving — the same feel as releasing a parameter slider. Zoom in for finer control; each knob step moves `viewWidth / 16383` samples.
 
