@@ -678,18 +678,32 @@ void SliceControlBar::mouseDoubleClick (const juce::MouseEvent& e)
         textEditor->selectAll();
         textEditor->grabKeyboardFocus();
 
-        textEditor->onReturnKey = [this] {
-            if (textEditor == nullptr) return;
-            int val = juce::jlimit (0, 127, textEditor->getText().getIntValue());
+        juce::Component::SafePointer<SliceControlBar> safeThis (this);
+        textEditor->onReturnKey = [safeThis] {
+            if (safeThis == nullptr) return;
+            auto& self = *safeThis;
+            if (self.textEditor == nullptr) return;
+            int val = juce::jlimit (0, 127, self.textEditor->getText().getIntValue());
             IntersectProcessor::Command cmd;
             cmd.type = IntersectProcessor::CmdSetRootNote;
             cmd.intParam1 = val;
-            processor.pushCommand (cmd);
-            textEditor.reset();
-            repaint();
+            self.processor.pushCommand (cmd);
+            self.textEditor->onFocusLost = nullptr;
+            self.textEditor.reset();
+            self.repaint();
         };
-        textEditor->onEscapeKey = [this] { textEditor.reset(); repaint(); };
-        textEditor->onFocusLost = [this] { textEditor.reset(); repaint(); };
+        textEditor->onEscapeKey = [safeThis] {
+            if (safeThis == nullptr) return;
+            safeThis->textEditor->onFocusLost = nullptr;
+            safeThis->textEditor.reset();
+            safeThis->repaint();
+        };
+        textEditor->onFocusLost = [safeThis] {
+            if (safeThis == nullptr) return;
+            safeThis->textEditor->onFocusLost = nullptr;
+            safeThis->textEditor.reset();
+            safeThis->repaint();
+        };
         return;
     }
 
@@ -806,9 +820,13 @@ void SliceControlBar::showTextEditor (const ParamCell& cell, float currentValue)
     float minV = cell.minVal;
     float maxV = cell.maxVal;
 
-    textEditor->onReturnKey = [this, fieldId, minV, maxV] {
-        if (textEditor == nullptr) return;
-        float val = textEditor->getText().getFloatValue();
+    juce::Component::SafePointer<SliceControlBar> safeThis (this);
+
+    textEditor->onReturnKey = [safeThis, fieldId, minV, maxV] {
+        if (safeThis == nullptr) return;
+        auto& self = *safeThis;
+        if (self.textEditor == nullptr) return;
+        float val = self.textEditor->getText().getFloatValue();
 
         // Convert ms to seconds for ATK/DEC/REL, percent to fraction for SUS
         if (fieldId == IntersectProcessor::FieldAttack ||
@@ -825,19 +843,26 @@ void SliceControlBar::showTextEditor (const ParamCell& cell, float currentValue)
         cmd.type = IntersectProcessor::CmdSetSliceParam;
         cmd.intParam1 = fieldId;
         cmd.floatParam1 = val;
-        processor.pushCommand (cmd);
-        textEditor.reset();
-        repaint();
+        self.processor.pushCommand (cmd);
+        self.textEditor->onFocusLost = nullptr;
+        self.textEditor.reset();
+        self.repaint();
     };
 
-    textEditor->onEscapeKey = [this] {
-        textEditor.reset();
-        repaint();
+    textEditor->onEscapeKey = [safeThis] {
+        if (safeThis == nullptr) return;
+        auto& self = *safeThis;
+        self.textEditor->onFocusLost = nullptr;
+        self.textEditor.reset();
+        self.repaint();
     };
 
-    textEditor->onFocusLost = [this] {
-        textEditor.reset();
-        repaint();
+    textEditor->onFocusLost = [safeThis] {
+        if (safeThis == nullptr) return;
+        auto& self = *safeThis;
+        self.textEditor->onFocusLost = nullptr;
+        self.textEditor.reset();
+        self.repaint();
     };
 }
 

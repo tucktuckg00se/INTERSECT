@@ -242,24 +242,73 @@ The **SET** button popup also controls interface scale (`0.5x` to `3.0x` in `0.2
 ### Prerequisites
 
 - CMake `3.22+`
-- C++20 compiler/toolchain
-- Git submodules initialized
-- Platform SDK requirements for JUCE (Visual Studio on Windows, Xcode/CLT on macOS, required dev packages on Linux)
+- C++20 compiler
+- Git
 
-### Build commands
+### Platform setup
 
-Linux users may need JUCE/system libraries first. On Debian/Ubuntu:
+Pick your platform below to install the required toolchain and libraries, then follow the shared **Clone and build** steps.
+
+<details>
+<summary><strong>Windows</strong></summary>
+
+1. Install [Visual Studio 2022](https://visualstudio.microsoft.com/vs/community/) (Community edition is free).
+   During installation, select the **"Desktop development with C++"** workload.
+2. Install [CMake](https://cmake.org/download/) (add to PATH during install) and [Git](https://git-scm.com/download/win).
+
+</details>
+
+<details>
+<summary><strong>macOS</strong></summary>
+
+1. Install Xcode Command Line Tools:
+   ```bash
+   xcode-select --install
+   ```
+2. Install CMake via [Homebrew](https://brew.sh/):
+   ```bash
+   brew install cmake
+   ```
+
+</details>
+
+<details>
+<summary><strong>Linux — Debian / Ubuntu</strong></summary>
 
 ```bash
-sudo apt-get update
-sudo apt-get install -y libasound2-dev libfreetype-dev libx11-dev libxrandr-dev \
-  libxcursor-dev libxinerama-dev libwebkit2gtk-4.1-dev libcurl4-openssl-dev
+sudo apt update
+sudo apt install -y build-essential cmake git libasound2-dev libfreetype-dev \
+  libx11-dev libxrandr-dev libxcursor-dev libxinerama-dev \
+  libwebkit2gtk-4.1-dev libcurl4-openssl-dev
 ```
 
-Then build:
+</details>
+
+<details>
+<summary><strong>Linux — Fedora</strong></summary>
 
 ```bash
-git clone --recursive git@github.com:tucktuckg00se/INTERSECT.git
+sudo dnf install -y gcc-c++ cmake git alsa-lib-devel freetype-devel \
+  libX11-devel libXrandr-devel libXcursor-devel libXinerama-devel \
+  webkit2gtk4.1-devel libcurl-devel
+```
+
+</details>
+
+<details>
+<summary><strong>Linux — Arch</strong></summary>
+
+```bash
+sudo pacman -S --needed base-devel cmake git alsa-lib freetype2 \
+  libx11 libxrandr libxcursor libxinerama webkit2gtk-4.1 curl
+```
+
+</details>
+
+### Clone and build
+
+```bash
+git clone --recursive https://github.com/tucktuckg00se/INTERSECT.git
 cd INTERSECT
 cmake -B build
 cmake --build build --config Release

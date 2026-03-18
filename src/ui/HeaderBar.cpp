@@ -608,26 +608,37 @@ void HeaderBar::showTextEditor (const HeaderCell& cell)
     float minV = cell.minVal;
     float maxV = cell.maxVal;
 
-    textEditor->onReturnKey = [this, paramId, minV, maxV] {
-        if (textEditor == nullptr) return;
-        float val = textEditor->getText().getFloatValue();
+    juce::Component::SafePointer<HeaderBar> safeThis (this);
+
+    textEditor->onReturnKey = [safeThis, paramId, minV, maxV] {
+        if (safeThis == nullptr) return;
+        auto& self = *safeThis;
+        if (self.textEditor == nullptr) return;
+        float val = self.textEditor->getText().getFloatValue();
         val = juce::jlimit (minV, maxV, val);
 
-        if (auto* p = processor.apvts.getParameter (paramId))
+        if (auto* p = self.processor.apvts.getParameter (paramId))
             p->setValueNotifyingHost (p->convertTo0to1 (val));
 
-        textEditor.reset();
-        repaint();
+        self.textEditor->onFocusLost = nullptr;
+        self.textEditor.reset();
+        self.repaint();
     };
 
-    textEditor->onEscapeKey = [this] {
-        textEditor.reset();
-        repaint();
+    textEditor->onEscapeKey = [safeThis] {
+        if (safeThis == nullptr) return;
+        auto& self = *safeThis;
+        self.textEditor->onFocusLost = nullptr;
+        self.textEditor.reset();
+        self.repaint();
     };
 
-    textEditor->onFocusLost = [this] {
-        textEditor.reset();
-        repaint();
+    textEditor->onFocusLost = [safeThis] {
+        if (safeThis == nullptr) return;
+        auto& self = *safeThis;
+        self.textEditor->onFocusLost = nullptr;
+        self.textEditor.reset();
+        self.repaint();
     };
 }
 
