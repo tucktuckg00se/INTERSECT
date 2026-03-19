@@ -712,41 +712,134 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                 auto& s = sliceManager.getSlice (sel);
                 int field = cmd.intParam1;
                 float val = cmd.floatParam1;
+                constexpr float kCompareTolerance = 1.0e-4f;
+
+                auto setFloatField = [&s, kCompareTolerance] (float& target, float newValue, float globalValue, uint32_t lockBit)
+                {
+                    target = newValue;
+                    if (std::abs (target - globalValue) <= kCompareTolerance)
+                        s.lockMask &= ~lockBit;
+                    else
+                        s.lockMask |= lockBit;
+                };
+
+                auto setIntField = [&s] (int& target, int newValue, int globalValue, uint32_t lockBit)
+                {
+                    target = newValue;
+                    if (target == globalValue)
+                        s.lockMask &= ~lockBit;
+                    else
+                        s.lockMask |= lockBit;
+                };
+
+                auto setBoolField = [&s] (bool& target, bool newValue, bool globalValue, uint32_t lockBit)
+                {
+                    target = newValue;
+                    if (target == globalValue)
+                        s.lockMask &= ~lockBit;
+                    else
+                        s.lockMask |= lockBit;
+                };
 
                 switch (field)
                 {
-                    case FieldBpm:       s.bpm = val;            s.lockMask |= kLockBpm;       break;
-                    case FieldPitch:     s.pitchSemitones = val; s.lockMask |= kLockPitch;     break;
-                    case FieldAlgorithm: s.algorithm = (int) val; s.lockMask |= kLockAlgorithm; break;
-                    case FieldAttack:    s.attackSec = val;      s.lockMask |= kLockAttack;    break;
-                    case FieldDecay:     s.decaySec = val;       s.lockMask |= kLockDecay;     break;
-                    case FieldSustain:   s.sustainLevel = val;   s.lockMask |= kLockSustain;   break;
-                    case FieldRelease:   s.releaseSec = val;     s.lockMask |= kLockRelease;   break;
-                    case FieldMuteGroup: s.muteGroup = (int) val; s.lockMask |= kLockMuteGroup; break;
-                    case FieldStretchEnabled: s.stretchEnabled = val > 0.5f; s.lockMask |= kLockStretch; break;
-                    case FieldTonality:  s.tonalityHz = val;        s.lockMask |= kLockTonality;    break;
-                    case FieldFormant:   s.formantSemitones = val;   s.lockMask |= kLockFormant;     break;
-                    case FieldFormantComp: s.formantComp = val > 0.5f; s.lockMask |= kLockFormantComp; break;
-                    case FieldGrainMode:  s.grainMode = (int) val;   s.lockMask |= kLockGrainMode;  break;
-                    case FieldVolume:     s.volume = val;            s.lockMask |= kLockVolume;    break;
-                    case FieldReleaseTail: s.releaseTail = val > 0.5f; s.lockMask |= kLockReleaseTail; break;
-                    case FieldReverse:    s.reverse = val > 0.5f;    s.lockMask |= kLockReverse;    break;
-                    case FieldOutputBus:  s.outputBus = juce::jlimit (0, 15, (int) val); s.lockMask |= kLockOutputBus; break;
-                    case FieldLoop:       s.loopMode = (int) val;    s.lockMask |= kLockLoop;      break;
-                    case FieldOneShot:    s.oneShot = val > 0.5f;    s.lockMask |= kLockOneShot;   break;
-                    case FieldCentsDetune: s.centsDetune = val;         s.lockMask |= kLockCentsDetune; break;
-                    case FieldFilterEnabled: s.filterEnabled = val > 0.5f; s.lockMask |= kLockFilterEnabled; break;
-                    case FieldFilterType:    s.filterType = juce::jlimit (0, 3, (int) val); s.lockMask |= kLockFilterType; break;
-                    case FieldFilterSlope:   s.filterSlope = juce::jlimit (0, 1, (int) val); s.lockMask |= kLockFilterSlope; break;
-                    case FieldFilterCutoff:  s.filterCutoff = val; s.lockMask |= kLockFilterCutoff; break;
-                    case FieldFilterReso:    s.filterReso = val; s.lockMask |= kLockFilterReso; break;
-                    case FieldFilterDrive:   s.filterDrive = val; s.lockMask |= kLockFilterDrive; break;
-                    case FieldFilterKeyTrack: s.filterKeyTrack = val; s.lockMask |= kLockFilterKeyTrack; break;
-                    case FieldFilterEnvAttack: s.filterEnvAttackSec = val; s.lockMask |= kLockFilterEnvAttack; break;
-                    case FieldFilterEnvDecay: s.filterEnvDecaySec = val; s.lockMask |= kLockFilterEnvDecay; break;
-                    case FieldFilterEnvSustain: s.filterEnvSustain = val; s.lockMask |= kLockFilterEnvSustain; break;
-                    case FieldFilterEnvRelease: s.filterEnvReleaseSec = val; s.lockMask |= kLockFilterEnvRelease; break;
-                    case FieldFilterEnvAmount: s.filterEnvAmount = val; s.lockMask |= kLockFilterEnvAmount; break;
+                    case FieldBpm:
+                        setFloatField (s.bpm, val, bpmParam->load(), kLockBpm);
+                        break;
+                    case FieldPitch:
+                        setFloatField (s.pitchSemitones, val, pitchParam->load(), kLockPitch);
+                        break;
+                    case FieldAlgorithm:
+                        setIntField (s.algorithm, (int) val, (int) algoParam->load(), kLockAlgorithm);
+                        break;
+                    case FieldAttack:
+                        setFloatField (s.attackSec, val, attackParam->load() / 1000.0f, kLockAttack);
+                        break;
+                    case FieldDecay:
+                        setFloatField (s.decaySec, val, decayParam->load() / 1000.0f, kLockDecay);
+                        break;
+                    case FieldSustain:
+                        setFloatField (s.sustainLevel, val, sustainParam->load() / 100.0f, kLockSustain);
+                        break;
+                    case FieldRelease:
+                        setFloatField (s.releaseSec, val, releaseParam->load() / 1000.0f, kLockRelease);
+                        break;
+                    case FieldMuteGroup:
+                        setIntField (s.muteGroup, (int) val, (int) muteGroupParam->load(), kLockMuteGroup);
+                        break;
+                    case FieldStretchEnabled:
+                        setBoolField (s.stretchEnabled, val > 0.5f, stretchParam->load() > 0.5f, kLockStretch);
+                        break;
+                    case FieldTonality:
+                        setFloatField (s.tonalityHz, val, tonalityParam->load(), kLockTonality);
+                        break;
+                    case FieldFormant:
+                        setFloatField (s.formantSemitones, val, formantParam->load(), kLockFormant);
+                        break;
+                    case FieldFormantComp:
+                        setBoolField (s.formantComp, val > 0.5f, formantCompParam->load() > 0.5f, kLockFormantComp);
+                        break;
+                    case FieldGrainMode:
+                        setIntField (s.grainMode, (int) val, (int) grainModeParam->load(), kLockGrainMode);
+                        break;
+                    case FieldVolume:
+                        setFloatField (s.volume, val, masterVolParam->load(), kLockVolume);
+                        break;
+                    case FieldReleaseTail:
+                        setBoolField (s.releaseTail, val > 0.5f, releaseTailParam->load() > 0.5f, kLockReleaseTail);
+                        break;
+                    case FieldReverse:
+                        setBoolField (s.reverse, val > 0.5f, reverseParam->load() > 0.5f, kLockReverse);
+                        break;
+                    case FieldOutputBus:
+                        s.outputBus = juce::jlimit (0, 15, (int) val);
+                        s.lockMask |= kLockOutputBus;
+                        break;
+                    case FieldLoop:
+                        setIntField (s.loopMode, (int) val, (int) loopParam->load(), kLockLoop);
+                        break;
+                    case FieldOneShot:
+                        setBoolField (s.oneShot, val > 0.5f, oneShotParam->load() > 0.5f, kLockOneShot);
+                        break;
+                    case FieldCentsDetune:
+                        setFloatField (s.centsDetune, val, centsDetuneParam->load(), kLockCentsDetune);
+                        break;
+                    case FieldFilterEnabled:
+                        setBoolField (s.filterEnabled, val > 0.5f, filterEnabledParam->load() > 0.5f, kLockFilterEnabled);
+                        break;
+                    case FieldFilterType:
+                        setIntField (s.filterType, juce::jlimit (0, 3, (int) val), (int) filterTypeParam->load(), kLockFilterType);
+                        break;
+                    case FieldFilterSlope:
+                        setIntField (s.filterSlope, juce::jlimit (0, 1, (int) val), (int) filterSlopeParam->load(), kLockFilterSlope);
+                        break;
+                    case FieldFilterCutoff:
+                        setFloatField (s.filterCutoff, val, filterCutoffParam->load(), kLockFilterCutoff);
+                        break;
+                    case FieldFilterReso:
+                        setFloatField (s.filterReso, val, filterResoParam->load(), kLockFilterReso);
+                        break;
+                    case FieldFilterDrive:
+                        setFloatField (s.filterDrive, val, filterDriveParam->load(), kLockFilterDrive);
+                        break;
+                    case FieldFilterKeyTrack:
+                        setFloatField (s.filterKeyTrack, val, filterKeyTrackParam->load(), kLockFilterKeyTrack);
+                        break;
+                    case FieldFilterEnvAttack:
+                        setFloatField (s.filterEnvAttackSec, val, filterEnvAttackParam->load() / 1000.0f, kLockFilterEnvAttack);
+                        break;
+                    case FieldFilterEnvDecay:
+                        setFloatField (s.filterEnvDecaySec, val, filterEnvDecayParam->load() / 1000.0f, kLockFilterEnvDecay);
+                        break;
+                    case FieldFilterEnvSustain:
+                        setFloatField (s.filterEnvSustain, val, filterEnvSustainParam->load() / 100.0f, kLockFilterEnvSustain);
+                        break;
+                    case FieldFilterEnvRelease:
+                        setFloatField (s.filterEnvReleaseSec, val, filterEnvReleaseParam->load() / 1000.0f, kLockFilterEnvRelease);
+                        break;
+                    case FieldFilterEnvAmount:
+                        setFloatField (s.filterEnvAmount, val, filterEnvAmountParam->load(), kLockFilterEnvAmount);
+                        break;
                     case FieldMidiNote:
                         s.midiNote = juce::jlimit (0, 127, (int) val);
                         sliceManager.rebuildMidiMap();

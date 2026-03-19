@@ -25,9 +25,9 @@ IntersectLookAndFeel::IntersectLookAndFeel()
     setColour (juce::ResizableWindow::backgroundColourId, getTheme().background);
 
     regularTypeface = juce::Typeface::createSystemTypefaceFor (
-        BinaryData::IBMPlexSansRegular_ttf, BinaryData::IBMPlexSansRegular_ttfSize);
+        BinaryData::Inter_24ptRegular_ttf, BinaryData::Inter_24ptRegular_ttfSize);
     boldTypeface = juce::Typeface::createSystemTypefaceFor (
-        BinaryData::IBMPlexSansBold_ttf, BinaryData::IBMPlexSansBold_ttfSize);
+        BinaryData::Inter_24ptBold_ttf, BinaryData::Inter_24ptBold_ttfSize);
 
     sRegularTypeface = regularTypeface;
     sBoldTypeface = boldTypeface;
@@ -58,6 +58,19 @@ juce::Font IntersectLookAndFeel::fitFontToWidth (const juce::String& text, float
     return font;
 }
 
+void IntersectLookAndFeel::drawShellButton (juce::Graphics& g,
+                                            juce::Rectangle<float> bounds,
+                                            const juce::Colour& fill,
+                                            const juce::Colour& outline,
+                                            float cornerRadius)
+{
+    auto buttonBounds = bounds.reduced (0.5f, 1.0f);
+    g.setColour (fill);
+    g.fillRoundedRectangle (buttonBounds, cornerRadius);
+    g.setColour (outline);
+    g.drawRoundedRectangle (buttonBounds, cornerRadius, 1.0f);
+}
+
 juce::Typeface::Ptr IntersectLookAndFeel::getTypefaceForFont (const juce::Font& f)
 {
     if (f.isBold())
@@ -70,15 +83,28 @@ void IntersectLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button
                                                   bool isHighlighted, bool isDown)
 {
     auto bounds = button.getLocalBounds().toFloat();
+    const auto baseFill = button.findColour (juce::TextButton::buttonColourId).isTransparent()
+        ? getTheme().button
+        : button.findColour (juce::TextButton::buttonColourId);
+    const auto textColour = button.findColour (button.getToggleState()
+        ? juce::TextButton::textColourOnId
+        : juce::TextButton::textColourOffId);
 
-    // Use the button's own colour if it has been explicitly set
-    auto btnCol = button.findColour (juce::TextButton::buttonColourId);
-    auto baseBg = (btnCol != juce::Colour()) ? btnCol : getTheme().button;
+    auto fill = baseFill;
+    auto outline = juce::Colour (0xFF181C24);
 
-    g.setColour (isDown ? baseBg.brighter (0.15f)
-                        : isHighlighted ? baseBg.brighter (0.08f)
-                                        : baseBg);
-    g.fillRect (bounds);
+    if (isHighlighted)
+    {
+        fill = fill.brighter (0.08f);
+        outline = juce::Colour (0xFF283040);
+    }
+    if (isDown)
+        fill = fill.brighter (0.14f);
+
+    if (button.getToggleState())
+        outline = outline.interpolatedWith (textColour, 0.25f);
+
+    drawShellButton (g, bounds, fill, outline, 4.0f);
 }
 
 void IntersectLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& button,
@@ -88,10 +114,14 @@ void IntersectLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& 
                                        ? juce::TextButton::textColourOnId
                                        : juce::TextButton::textColourOffId);
     g.setColour (textCol.isTransparent() ? getTheme().foreground : textCol);
-    float fontSize = juce::jlimit (10.0f, 15.0f, button.getHeight() * 0.42f);
-    g.setFont (makeFont (fontSize));
-    g.drawText (button.getButtonText(), button.getLocalBounds(),
-                juce::Justification::centred);
+    auto font = fitFontToWidth (button.getButtonText(),
+                                juce::jlimit (8.5f, 11.0f, button.getHeight() * 0.44f),
+                                7.0f,
+                                button.getWidth() - 12,
+                                false);
+    g.setFont (font);
+    g.drawFittedText (button.getButtonText(), button.getLocalBounds(),
+                      juce::Justification::centred, 1);
 }
 
 void IntersectLookAndFeel::drawPopupMenuBackground (juce::Graphics& g, int width, int height)

@@ -1,5 +1,6 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <vector>
 
 class IntersectProcessor;
 class WaveformView;
@@ -12,6 +13,9 @@ public:
     ~ActionPanel() override;
     void resized() override;
     void paint (juce::Graphics& g) override;
+    void mouseDown (const juce::MouseEvent& e) override;
+    void mouseMove (const juce::MouseEvent& e) override;
+    void mouseExit (const juce::MouseEvent& e) override;
     void triggerAddSliceMode();
     void triggerLazyChop();
     void triggerDuplicateSlice();
@@ -26,16 +30,18 @@ private:
     IntersectProcessor& processor;
     WaveformView& waveformView;
 
-    void updateMidiButtonAppearance (bool active);
-    void updateSnapButtonAppearance (bool active);
+    struct ActionItem
+    {
+        juce::String text;
+        juce::Rectangle<int> bounds;
+        int id;
+        bool isNarrow;
+    };
 
-    juce::TextButton addSliceBtn   { "ADD" };
-    juce::TextButton lazyChopBtn   { "LAZY" };
-    juce::TextButton dupBtn        { "COPY" };
-    juce::TextButton splitBtn      { "AUTO" };
-    juce::TextButton deleteBtn     { "DEL" };
-    juce::TextButton snapBtn       { "ZX" };
-    juce::TextButton midiSelectBtn { "FM" };
+    std::vector<ActionItem> items;
+    int hoveredIndex = -1;
+
+    int hitTestItem (juce::Point<int> pos) const;
 
     std::unique_ptr<AutoChopPanel> autoChopPanel;
 };

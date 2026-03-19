@@ -57,15 +57,14 @@ HeaderBar::HeaderBar (IntersectProcessor& p) : processor (p)
 void HeaderBar::resized()
 {
     auto area = getLocalBounds().reduced (16, 0);
-    const int contentHeight = 26;
-    const int contentY = (getHeight() - contentHeight) / 2;
-    const int buttonHeight = 20;
-    const int buttonGap = 4;
+    const int contentHeight = 20;
+    const int buttonHeight = 16;
+    const int buttonGap = 2;
     const auto buttonFont = IntersectLookAndFeel::makeFont (9.0f);
 
     auto buttonWidth = [&] (const juce::String& text, int minWidth)
     {
-        return juce::jmax (minWidth, juce::roundToInt (measureTextWidth (buttonFont, text)) + 20);
+        return juce::jmax (minWidth, juce::roundToInt (measureTextWidth (buttonFont, text)) + 18);
     };
 
     const int setW = buttonWidth (themeBtn.getButtonText(), 38);
@@ -74,41 +73,63 @@ void HeaderBar::resized()
     const int redoW = buttonWidth (redoBtn.getButtonText(), 44);
     const int undoW = buttonWidth (undoBtn.getButtonText(), 44);
     const int buttonStripW = undoW + redoW + panicW + loadW + setW + buttonGap * 4;
+    juce::FlexItem fileItem;
+    juce::FlexItem gapAfterFile;
+    juce::FlexItem slicesItem;
+    juce::FlexItem gapAfterSlices;
+    juce::FlexItem rootItem;
+    juce::FlexItem gapBeforeButtons;
+    juce::FlexItem buttonClusterItem;
 
-    auto buttonStrip = area.removeFromRight (buttonStripW);
-    const int buttonY = contentY + (contentHeight - buttonHeight) / 2;
+    fileItem = juce::FlexItem().withWidth (250.0f).withMinWidth (100.0f).withHeight ((float) contentHeight);
+    gapAfterFile = juce::FlexItem().withWidth (10.0f).withHeight ((float) contentHeight);
+    slicesItem = juce::FlexItem().withWidth (46.0f).withHeight ((float) contentHeight);
+    gapAfterSlices = juce::FlexItem().withWidth (10.0f).withHeight ((float) contentHeight);
+    rootItem = juce::FlexItem().withWidth (42.0f).withHeight ((float) contentHeight);
+    gapBeforeButtons = juce::FlexItem().withFlex (1.0f).withMinWidth (4.0f).withHeight ((float) contentHeight);
+    buttonClusterItem = juce::FlexItem().withWidth ((float) buttonStripW).withHeight ((float) contentHeight);
 
-    auto placeButton = [&] (juce::TextButton& button, int width)
-    {
-        auto bounds = buttonStrip.removeFromRight (width);
-        button.setBounds (bounds.withY (buttonY).withHeight (buttonHeight));
-        if (buttonStrip.getWidth() > 0)
-            buttonStrip.removeFromRight (buttonGap);
-    };
+    juce::FlexBox row;
+    row.flexDirection = juce::FlexBox::Direction::row;
+    row.flexWrap = juce::FlexBox::Wrap::noWrap;
+    row.alignItems = juce::FlexBox::AlignItems::center;
+    row.items.add (fileItem);
+    row.items.add (gapAfterFile);
+    row.items.add (slicesItem);
+    row.items.add (gapAfterSlices);
+    row.items.add (rootItem);
+    row.items.add (gapBeforeButtons);
+    row.items.add (buttonClusterItem);
+    row.performLayout (area.toFloat());
 
-    placeButton (themeBtn, setW);
-    placeButton (loadBtn, loadW);
-    placeButton (panicBtn, panicW);
-    placeButton (redoBtn, redoW);
-    placeButton (undoBtn, undoW);
+    sampleInfoBounds = row.items[0].currentBounds.getSmallestIntegerContainer();
+    slicesBounds = row.items[2].currentBounds.getSmallestIntegerContainer();
+    rootBounds = row.items[4].currentBounds.getSmallestIntegerContainer();
 
-    const int rootW = 42;
-    const int slicesW = 46;
-    area.removeFromRight (12);
-    rootBounds = area.removeFromRight (rootW).withY (contentY).withHeight (contentHeight);
-    area.removeFromRight (12);
-    slicesBounds = area.removeFromRight (slicesW).withY (contentY).withHeight (contentHeight);
-    area.removeFromRight (25);
-    sampleInfoBounds = area.withY (contentY).withHeight (contentHeight);
+    const auto buttonArea = row.items[6].currentBounds.getSmallestIntegerContainer();
+    juce::FlexBox buttons;
+    buttons.flexDirection = juce::FlexBox::Direction::row;
+    buttons.flexWrap = juce::FlexBox::Wrap::noWrap;
+    buttons.alignItems = juce::FlexBox::AlignItems::center;
+    buttons.items.add (juce::FlexItem (undoBtn).withWidth ((float) undoW).withHeight ((float) buttonHeight));
+    buttons.items.add (juce::FlexItem().withWidth ((float) buttonGap).withHeight ((float) buttonHeight));
+    buttons.items.add (juce::FlexItem (redoBtn).withWidth ((float) redoW).withHeight ((float) buttonHeight));
+    buttons.items.add (juce::FlexItem().withWidth ((float) buttonGap).withHeight ((float) buttonHeight));
+    buttons.items.add (juce::FlexItem (panicBtn).withWidth ((float) panicW).withHeight ((float) buttonHeight));
+    buttons.items.add (juce::FlexItem().withWidth ((float) buttonGap).withHeight ((float) buttonHeight));
+    buttons.items.add (juce::FlexItem (loadBtn).withWidth ((float) loadW).withHeight ((float) buttonHeight));
+    buttons.items.add (juce::FlexItem().withWidth ((float) buttonGap).withHeight ((float) buttonHeight));
+    buttons.items.add (juce::FlexItem (themeBtn).withWidth ((float) setW).withHeight ((float) buttonHeight));
+    buttons.performLayout (buttonArea.toFloat());
 }
 
 void HeaderBar::paint (juce::Graphics& g)
 {
     for (auto* btn : { &undoBtn, &redoBtn, &panicBtn, &loadBtn, &themeBtn })
     {
-        auto text = btn->isMouseOverOrDragging() ? getTheme().foreground.withAlpha (0.92f)
-                                                 : getTheme().paramLabel.withAlpha (0.96f);
-        btn->setColour (juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+        auto text = btn->isMouseOverOrDragging() ? juce::Colour (0xFF7090A8)
+                                                 : juce::Colour (0xFF384050);
+        btn->setColour (juce::TextButton::buttonColourId, getTheme().button.withAlpha (0.92f));
         btn->setColour (juce::TextButton::textColourOnId, text);
         btn->setColour (juce::TextButton::textColourOffId, text);
     }
@@ -118,23 +139,8 @@ void HeaderBar::paint (juce::Graphics& g)
     g.drawHorizontalLine (getHeight() - 1, 0.0f, (float) getWidth());
 
     const auto& ui = processor.getUiSliceSnapshot();
-    auto area = getLocalBounds().reduced (16, 0);
     const int rowY = (getHeight() - 26) / 2;
     const int rowH = 26;
-
-    auto drawButtonPill = [&] (juce::TextButton& btn)
-    {
-        auto bounds = btn.getBounds().toFloat();
-        auto outline = getTheme().moduleBorder.withAlpha (btn.isMouseOverOrDragging() ? 0.95f : 0.7f);
-        auto fill = getTheme().button.withAlpha (btn.isMouseOverOrDragging() ? 0.82f : 0.32f);
-        g.setColour (fill);
-        g.fillRoundedRectangle (bounds, 4.0f);
-        g.setColour (outline);
-        g.drawRoundedRectangle (bounds, 4.0f, 1.0f);
-    };
-
-    for (auto* btn : { &undoBtn, &redoBtn, &panicBtn, &loadBtn, &themeBtn })
-        drawButtonPill (*btn);
 
     auto drawMetric = [&] (const juce::Rectangle<int>& bounds, const juce::String& label,
                            const juce::String& value, juce::Colour valueColour)
@@ -146,7 +152,7 @@ void HeaderBar::paint (juce::Graphics& g)
         const int pairY = bounds.getY() + (bounds.getHeight() - 12) / 2;
 
         g.setFont (labelFont);
-        g.setColour (getTheme().paramLabel.withAlpha (0.82f));
+        g.setColour (juce::Colour (0xFF384050));
         g.drawText (label, bounds.getX(), pairY, labelW, 12,
                     juce::Justification::centredLeft);
 
@@ -169,7 +175,7 @@ void HeaderBar::paint (juce::Graphics& g)
             srate = 44100.0;
         const double lenSec = ui.sampleNumFrames / srate;
         fileText = ui.sampleFileName + " (" + juce::String (lenSec, 2) + "s)";
-        g.setColour (getTheme().foreground.withAlpha (0.62f));
+        g.setColour (juce::Colour (0xFF505868));
     }
     else
     {
@@ -181,15 +187,16 @@ void HeaderBar::paint (juce::Graphics& g)
     g.drawText (fileText, sampleInfoBounds, juce::Justification::centredLeft);
 
     const bool rootEditable = (ui.numSlices == 0);
-    drawMetric (slicesBounds, "SLICES", juce::String (ui.numSlices), getTheme().foreground.withAlpha (0.88f));
+    drawMetric (slicesBounds, "SLICES", juce::String (ui.numSlices), juce::Colour (0xFF607080));
     drawMetric (rootBounds,
                 "ROOT",
                 juce::String (ui.rootNote),
                 (rootEditable ? juce::Colour (0xFF607080) : getTheme().foreground.withAlpha (0.6f)));
 
-    g.setColour (getTheme().moduleBorder.withAlpha (0.55f));
-    const float sepX = (float) sampleInfoBounds.getRight() + 12.0f;
-    g.drawLine (sepX, (float) rowY + 6.0f, sepX, (float) (rowY + rowH - 6), 1.0f);
+    g.setColour (juce::Colour (0xFF1A1E28));
+    const int sepX = sampleInfoBounds.getRight() + 12;
+    const int centerY = rowY + rowH / 2;
+    g.fillRect (sepX, centerY - 7, 1, 14);
 }
 
 void HeaderBar::mouseDown (const juce::MouseEvent& e)
