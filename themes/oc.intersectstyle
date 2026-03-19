@@ -1,0 +1,51 @@
+# INTERSECT Open Color's inspired theme
+# Source: https://github.com/yeun/open-color
+#
+# Themes folder:
+#   Windows:  %APPDATA%\Roaming\INTERSECT\themes\
+#   macOS:    ~/Library/Application Support/INTERSECT/themes/
+#   Linux:    ~/.config/INTERSECT/themes/
+#
+# Colours are 6-digit hex (RRGGBB). Restart the plugin to apply changes.
+
+name: oc
+
+# Main surfaces
+background: 212529          # window background
+waveformBg: 191C1F          # waveform area background
+darkBar: 212529             # slice control bar / action panel background
+header: 212529              # header bar background
+
+# Text & lines
+foreground: ced4da          # primary text colour
+gridLine: 343a40            # waveform grid lines
+separator: 495057           # horizontal separator lines
+
+# Waveform & slices
+waveform: adb5bd            # waveform draw colour
+selectionOverlay: 66a80f    # selected slice translucent overlay
+
+# Controls
+accent: 82c91e              # accent colour (labels, highlights)
+lockActive: ff922b          # locked/overridden parameter indicator
+lockInactive: 495057        # unlocked/inherited parameter indicator
+button: 343a40              # button background
+buttonHover: 495057         # button hover background
+
+# Slice palette (colours assigned to new slices)
+slice1: ffa8a8              # 
+slice2: e599f7              # 
+slice3: 91a7ff              # 
+slice4: 66d9e8              # 
+slice5: 8ce99a              # 
+slice6: ffe066              # 
+slice7: ff6b6b              # 
+slice8: cc5de8              # 
+slice9: faa2c1              # 
+slice10: b197fc             # 
+slice11: 74c0fc             # 
+slice12: 63e6be             # 
+slice13: c0eb75             # 
+slice14: ffc078             # 
+slice15: f06595             # 
+slice16: 845ef7             # 

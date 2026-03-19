@@ -1,0 +1,50 @@
+# INTERSECT Callisto theme
+#
+# Themes folder:
+#   Windows:  %APPDATA%\Roaming\INTERSECT\themes\
+#   macOS:    ~/Library/Application Support/INTERSECT/themes/
+#   Linux:    ~/.config/INTERSECT/themes/
+#
+# Colours are 6-digit hex (RRGGBB). Restart the plugin to apply changes.
+
+name: callisto
+
+# Main surfaces
+background: 262833          # window background
+waveformBg: 161b21          # waveform area background
+darkBar: 161b21             # slice control bar / action panel background
+header: 161b21              # header bar background
+
+# Text & lines
+foreground: d1e0ef          # primary text colour
+gridLine: 5e6d7c            # waveform grid lines
+separator: 5e6d7c           # horizontal separator lines
+
+# Waveform & slices
+waveform: 00a08d            # waveform draw colour
+selectionOverlay: 00e1c6    # selected slice translucent overlay
+
+# Controls
+accent: 00d0b8              # accent colour (labels, highlights)
+lockActive: 00d0b8          # locked/overridden parameter indicator
+lockInactive: 5e6d7c        # unlocked/inherited parameter indicator
+button: 262833              # button background
+buttonHover: 5e6d7c         # button hover background
+
+# Slice palette (colours assigned to new slices)
+slice1: 8f9fae              # 
+slice2: 5e6d7c              # 
+slice3: 8f9fae              # 
+slice4: 5e6d7c              # 
+slice5: 8f9fae              # 
+slice6: 5e6d7c              # 
+slice7: 8f9fae              # 
+slice8: 5e6d7c              # 
+slice9: 8f9fae              # 
+slice10: 5e6d7c             # 
+slice11: 8f9fae             # 
+slice12: 5e6d7c             # 
+slice13: 8f9fae             # 
+slice14: 5e6d7c             # 
+slice15: 8f9fae             # 
+slice16: 5e6d7c             # 
