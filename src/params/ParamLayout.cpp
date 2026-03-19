@@ -138,6 +138,79 @@ juce::AudioProcessorValueTreeState::ParameterLayout ParamLayout::createLayout()
         juce::StringArray { "Fast", "Normal", "Smooth" },
         1));  // default = Normal
 
+    // ── Filter ────────────────────────────────────────────────────────────────
+
+    params.push_back (std::make_unique<juce::AudioParameterBool> (
+        juce::ParameterID { ParamIds::defaultFilterEnabled, 1 },
+        "Filter Enabled",
+        false));
+
+    params.push_back (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { ParamIds::defaultFilterType, 1 },
+        "Filter Type",
+        juce::StringArray { "LP", "HP", "BP", "NT" },
+        0));
+
+    params.push_back (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { ParamIds::defaultFilterSlope, 1 },
+        "Filter Slope",
+        juce::StringArray { "12dB", "24dB" },
+        0));
+
+    params.push_back (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { ParamIds::defaultFilterCutoff, 1 },
+        "Filter Cutoff",
+        juce::NormalisableRange<float> (20.0f, 20000.0f, 1.0f),
+        8200.0f));
+
+    params.push_back (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { ParamIds::defaultFilterReso, 1 },
+        "Filter Resonance",
+        juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f),
+        0.0f));
+
+    params.push_back (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { ParamIds::defaultFilterDrive, 1 },
+        "Filter Drive",
+        juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f),
+        0.0f));
+
+    params.push_back (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { ParamIds::defaultFilterKeyTrack, 1 },
+        "Filter Key Track",
+        juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f),
+        0.0f));
+
+    params.push_back (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { ParamIds::defaultFilterEnvAttack, 1 },
+        "Filter Env Attack",
+        juce::NormalisableRange<float> (0.0f, 10000.0f, 0.1f),
+        0.0f));
+
+    params.push_back (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { ParamIds::defaultFilterEnvDecay, 1 },
+        "Filter Env Decay",
+        juce::NormalisableRange<float> (0.0f, 10000.0f, 0.1f),
+        0.0f));
+
+    params.push_back (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { ParamIds::defaultFilterEnvSustain, 1 },
+        "Filter Env Sustain",
+        juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f),
+        100.0f));
+
+    params.push_back (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { ParamIds::defaultFilterEnvRelease, 1 },
+        "Filter Env Release",
+        juce::NormalisableRange<float> (0.0f, 10000.0f, 0.1f),
+        0.0f));
+
+    params.push_back (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { ParamIds::defaultFilterEnvAmount, 1 },
+        "Filter Env Amount",
+        juce::NormalisableRange<float> (-20000.0f, 20000.0f, 1.0f),
+        0.0f));
+
     // ── Global utility ─────────────────────────────────────────────────────────
 
     // Max Voices: 1..31 playable voices, preview voice is reserved

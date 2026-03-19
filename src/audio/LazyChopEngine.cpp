@@ -48,6 +48,16 @@ void LazyChopEngine::startPreview (VoicePool& voicePool, int fromPos)
     v.bungeePPFade  = 0;
     v.volume        = 1.0f;
     v.speed         = 1.0;
+    v.filterEnabled = false;
+    v.filterCutoff  = 8200.0f;
+    v.filterReso    = 0.0f;
+    v.filterDrive   = 0.0f;
+    v.filterEnvAmount = 0.0f;
+    v.filterKeyTrackRatio = 1.0f;
+    v.filterL1.reset();
+    v.filterR1.reset();
+    v.filterL2.reset();
+    v.filterR2.reset();
 
     // Apply stretch from cached sample-level params
     const auto& p = cachedParams;

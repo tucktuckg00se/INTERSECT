@@ -103,6 +103,18 @@ public:
         FieldLoop,
         FieldOneShot,
         FieldCentsDetune,
+        FieldFilterEnabled,
+        FieldFilterType,
+        FieldFilterSlope,
+        FieldFilterCutoff,
+        FieldFilterReso,
+        FieldFilterDrive,
+        FieldFilterKeyTrack,
+        FieldFilterEnvAttack,
+        FieldFilterEnvDecay,
+        FieldFilterEnvSustain,
+        FieldFilterEnvRelease,
+        FieldFilterEnvAmount,
     };
 
     enum class MidiEditAction
@@ -347,6 +359,18 @@ private:
     std::atomic<float>* oneShotParam     = nullptr;
     std::atomic<float>* maxVoicesParam   = nullptr;
     std::atomic<float>* centsDetuneParam = nullptr;
+    std::atomic<float>* filterEnabledParam    = nullptr;
+    std::atomic<float>* filterTypeParam       = nullptr;
+    std::atomic<float>* filterSlopeParam      = nullptr;
+    std::atomic<float>* filterCutoffParam     = nullptr;
+    std::atomic<float>* filterResoParam       = nullptr;
+    std::atomic<float>* filterDriveParam      = nullptr;
+    std::atomic<float>* filterKeyTrackParam   = nullptr;
+    std::atomic<float>* filterEnvAttackParam  = nullptr;
+    std::atomic<float>* filterEnvDecayParam   = nullptr;
+    std::atomic<float>* filterEnvSustainParam = nullptr;
+    std::atomic<float>* filterEnvReleaseParam = nullptr;
+    std::atomic<float>* filterEnvAmountParam  = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (IntersectProcessor)
 };

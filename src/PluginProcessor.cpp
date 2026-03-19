@@ -54,7 +54,10 @@ static constexpr uint32_t kValidLockMask =
     kLockBpm | kLockPitch | kLockAlgorithm | kLockAttack | kLockDecay | kLockSustain
     | kLockRelease | kLockMuteGroup | kLockStretch | kLockTonality | kLockFormant
     | kLockFormantComp | kLockGrainMode | kLockVolume | kLockReleaseTail | kLockReverse
-    | kLockOutputBus | kLockLoop | kLockOneShot | kLockCentsDetune;
+    | kLockOutputBus | kLockLoop | kLockOneShot | kLockCentsDetune | kLockFilterEnabled
+    | kLockFilterType | kLockFilterSlope | kLockFilterCutoff | kLockFilterReso
+    | kLockFilterDrive | kLockFilterKeyTrack | kLockFilterEnvAttack | kLockFilterEnvDecay
+    | kLockFilterEnvSustain | kLockFilterEnvRelease | kLockFilterEnvAmount;
 
 static Slice sanitiseRestoredSlice (Slice s)
 {
@@ -79,6 +82,17 @@ static Slice sanitiseRestoredSlice (Slice s)
     s.volume = juce::jlimit (-100.0f, 24.0f, s.volume);
     s.outputBus = juce::jlimit (0, 15, s.outputBus);
     s.centsDetune = juce::jlimit (-100.0f, 100.0f, s.centsDetune);
+    s.filterType = juce::jlimit (0, 3, s.filterType);
+    s.filterSlope = juce::jlimit (0, 1, s.filterSlope);
+    s.filterCutoff = juce::jlimit (20.0f, 20000.0f, s.filterCutoff);
+    s.filterReso = juce::jlimit (0.0f, 100.0f, s.filterReso);
+    s.filterDrive = juce::jlimit (0.0f, 100.0f, s.filterDrive);
+    s.filterKeyTrack = juce::jlimit (0.0f, 100.0f, s.filterKeyTrack);
+    s.filterEnvAttackSec = juce::jlimit (0.0f, 10.0f, s.filterEnvAttackSec);
+    s.filterEnvDecaySec = juce::jlimit (0.0f, 10.0f, s.filterEnvDecaySec);
+    s.filterEnvSustain = juce::jlimit (0.0f, 1.0f, s.filterEnvSustain);
+    s.filterEnvReleaseSec = juce::jlimit (0.0f, 10.0f, s.filterEnvReleaseSec);
+    s.filterEnvAmount = juce::jlimit (-20000.0f, 20000.0f, s.filterEnvAmount);
     s.lockMask &= kValidLockMask;
     return s;
 }
@@ -165,6 +179,18 @@ IntersectProcessor::IntersectProcessor()
     oneShotParam     = apvts.getRawParameterValue (ParamIds::defaultOneShot);
     maxVoicesParam   = apvts.getRawParameterValue (ParamIds::maxVoices);
     centsDetuneParam = apvts.getRawParameterValue (ParamIds::defaultCentsDetune);
+    filterEnabledParam = apvts.getRawParameterValue (ParamIds::defaultFilterEnabled);
+    filterTypeParam = apvts.getRawParameterValue (ParamIds::defaultFilterType);
+    filterSlopeParam = apvts.getRawParameterValue (ParamIds::defaultFilterSlope);
+    filterCutoffParam = apvts.getRawParameterValue (ParamIds::defaultFilterCutoff);
+    filterResoParam = apvts.getRawParameterValue (ParamIds::defaultFilterReso);
+    filterDriveParam = apvts.getRawParameterValue (ParamIds::defaultFilterDrive);
+    filterKeyTrackParam = apvts.getRawParameterValue (ParamIds::defaultFilterKeyTrack);
+    filterEnvAttackParam = apvts.getRawParameterValue (ParamIds::defaultFilterEnvAttack);
+    filterEnvDecayParam = apvts.getRawParameterValue (ParamIds::defaultFilterEnvDecay);
+    filterEnvSustainParam = apvts.getRawParameterValue (ParamIds::defaultFilterEnvSustain);
+    filterEnvReleaseParam = apvts.getRawParameterValue (ParamIds::defaultFilterEnvRelease);
+    filterEnvAmountParam = apvts.getRawParameterValue (ParamIds::defaultFilterEnvAmount);
     publishUiSliceSnapshot();
 }
 
@@ -658,6 +684,18 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                     else if (bit == kLockFormantComp)  s.formantComp       = formantCompParam->load() > 0.5f;
                     else if (bit == kLockGrainMode)    s.grainMode         = (int) grainModeParam->load();
                     else if (bit == kLockVolume)       s.volume            = masterVolParam->load();
+                    else if (bit == kLockFilterEnabled)    s.filterEnabled      = filterEnabledParam->load() > 0.5f;
+                    else if (bit == kLockFilterType)       s.filterType         = (int) filterTypeParam->load();
+                    else if (bit == kLockFilterSlope)      s.filterSlope        = (int) filterSlopeParam->load();
+                    else if (bit == kLockFilterCutoff)     s.filterCutoff       = filterCutoffParam->load();
+                    else if (bit == kLockFilterReso)       s.filterReso         = filterResoParam->load();
+                    else if (bit == kLockFilterDrive)      s.filterDrive        = filterDriveParam->load();
+                    else if (bit == kLockFilterKeyTrack)   s.filterKeyTrack     = filterKeyTrackParam->load();
+                    else if (bit == kLockFilterEnvAttack)  s.filterEnvAttackSec  = filterEnvAttackParam->load() / 1000.0f;
+                    else if (bit == kLockFilterEnvDecay)   s.filterEnvDecaySec   = filterEnvDecayParam->load() / 1000.0f;
+                    else if (bit == kLockFilterEnvSustain) s.filterEnvSustain    = filterEnvSustainParam->load() / 100.0f;
+                    else if (bit == kLockFilterEnvRelease) s.filterEnvReleaseSec = filterEnvReleaseParam->load() / 1000.0f;
+                    else if (bit == kLockFilterEnvAmount)  s.filterEnvAmount     = filterEnvAmountParam->load();
                     // kLockOutputBus: no global default param — slice default (0) is correct
                 }
 
@@ -697,6 +735,18 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                     case FieldLoop:       s.loopMode = (int) val;    s.lockMask |= kLockLoop;      break;
                     case FieldOneShot:    s.oneShot = val > 0.5f;    s.lockMask |= kLockOneShot;   break;
                     case FieldCentsDetune: s.centsDetune = val;         s.lockMask |= kLockCentsDetune; break;
+                    case FieldFilterEnabled: s.filterEnabled = val > 0.5f; s.lockMask |= kLockFilterEnabled; break;
+                    case FieldFilterType:    s.filterType = juce::jlimit (0, 3, (int) val); s.lockMask |= kLockFilterType; break;
+                    case FieldFilterSlope:   s.filterSlope = juce::jlimit (0, 1, (int) val); s.lockMask |= kLockFilterSlope; break;
+                    case FieldFilterCutoff:  s.filterCutoff = val; s.lockMask |= kLockFilterCutoff; break;
+                    case FieldFilterReso:    s.filterReso = val; s.lockMask |= kLockFilterReso; break;
+                    case FieldFilterDrive:   s.filterDrive = val; s.lockMask |= kLockFilterDrive; break;
+                    case FieldFilterKeyTrack: s.filterKeyTrack = val; s.lockMask |= kLockFilterKeyTrack; break;
+                    case FieldFilterEnvAttack: s.filterEnvAttackSec = val; s.lockMask |= kLockFilterEnvAttack; break;
+                    case FieldFilterEnvDecay: s.filterEnvDecaySec = val; s.lockMask |= kLockFilterEnvDecay; break;
+                    case FieldFilterEnvSustain: s.filterEnvSustain = val; s.lockMask |= kLockFilterEnvSustain; break;
+                    case FieldFilterEnvRelease: s.filterEnvReleaseSec = val; s.lockMask |= kLockFilterEnvRelease; break;
+                    case FieldFilterEnvAmount: s.filterEnvAmount = val; s.lockMask |= kLockFilterEnvAmount; break;
                     case FieldMidiNote:
                         s.midiNote = juce::jlimit (0, 127, (int) val);
                         sliceManager.rebuildMidiMap();
@@ -1232,6 +1282,19 @@ void IntersectProcessor::processMidi (juce::MidiBuffer& midi)
                 p.globalLoopMode   = (int) loopParam->load();
                 p.globalOneShot    = oneShotParam->load()      > 0.5f;
                 p.globalCentsDetune = centsDetuneParam->load();
+                p.globalFilterEnabled = filterEnabledParam->load() > 0.5f;
+                p.globalFilterType = (int) filterTypeParam->load();
+                p.globalFilterSlope = (int) filterSlopeParam->load();
+                p.globalFilterCutoff = filterCutoffParam->load();
+                p.globalFilterReso = filterResoParam->load();
+                p.globalFilterDrive = filterDriveParam->load();
+                p.globalFilterKeyTrack = filterKeyTrackParam->load();
+                p.globalFilterEnvAttackSec = filterEnvAttackParam->load() / 1000.0f;
+                p.globalFilterEnvDecaySec = filterEnvDecayParam->load() / 1000.0f;
+                p.globalFilterEnvSustain = filterEnvSustainParam->load() / 100.0f;
+                p.globalFilterEnvReleaseSec = filterEnvReleaseParam->load() / 1000.0f;
+                p.globalFilterEnvAmount = filterEnvAmountParam->load();
+                p.rootNote = sliceManager.rootNote.load();
 
                 const auto& sliceIndices = sliceManager.midiNoteToSlices (note);
                 for (int sliceIdx : sliceIndices)
@@ -1512,7 +1575,7 @@ void IntersectProcessor::getStateInformation (juce::MemoryBlock& destData)
     juce::MemoryOutputStream stream (destData, false);
 
     // Version
-    stream.writeInt (19);
+    stream.writeInt (20);
 
     // APVTS state
     auto state = apvts.copyState();
@@ -1566,6 +1629,19 @@ void IntersectProcessor::getStateInformation (juce::MemoryBlock& destData)
         stream.writeBool (s.oneShot);
         // v16 fields
         stream.writeFloat (s.centsDetune);
+        // v20 fields
+        stream.writeBool (s.filterEnabled);
+        stream.writeInt (s.filterType);
+        stream.writeInt (s.filterSlope);
+        stream.writeFloat (s.filterCutoff);
+        stream.writeFloat (s.filterReso);
+        stream.writeFloat (s.filterDrive);
+        stream.writeFloat (s.filterKeyTrack);
+        stream.writeFloat (s.filterEnvAttackSec);
+        stream.writeFloat (s.filterEnvDecaySec);
+        stream.writeFloat (s.filterEnvSustain);
+        stream.writeFloat (s.filterEnvReleaseSec);
+        stream.writeFloat (s.filterEnvAmount);
     }
 
     // v9: store file path only (no PCM)
@@ -1586,7 +1662,7 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
     juce::MemoryInputStream stream (data, (size_t) sizeInBytes, false);
 
     int version = stream.readInt();
-    if (version != 19)
+    if (version != 19 && version != 20)
         return;
 
     // APVTS state
@@ -1640,6 +1716,21 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
         parsed.outputBus      = stream.readInt();
         parsed.oneShot        = stream.readBool();
         parsed.centsDetune    = stream.readFloat();
+        if (version >= 20)
+        {
+            parsed.filterEnabled = stream.readBool();
+            parsed.filterType = stream.readInt();
+            parsed.filterSlope = stream.readInt();
+            parsed.filterCutoff = stream.readFloat();
+            parsed.filterReso = stream.readFloat();
+            parsed.filterDrive = stream.readFloat();
+            parsed.filterKeyTrack = stream.readFloat();
+            parsed.filterEnvAttackSec = stream.readFloat();
+            parsed.filterEnvDecaySec = stream.readFloat();
+            parsed.filterEnvSustain = stream.readFloat();
+            parsed.filterEnvReleaseSec = stream.readFloat();
+            parsed.filterEnvAmount = stream.readFloat();
+        }
 
         if (i < validatedNumSlices)
             sliceManager.getSlice (i) = sanitiseRestoredSlice (parsed);

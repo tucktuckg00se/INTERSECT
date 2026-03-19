@@ -34,6 +34,8 @@ public:
     juce::Typeface::Ptr getTypefaceForFont (const juce::Font& f) override;
 
     static juce::Font makeFont (float pointSize, bool bold = false);
+    static juce::Font fitFontToWidth (const juce::String& text, float maxPointSize,
+                                      float minPointSize, int width, bool bold = false);
 
 private:
     static juce::Typeface::Ptr sRegularTypeface;

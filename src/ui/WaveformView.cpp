@@ -152,7 +152,6 @@ void WaveformView::paint (juce::Graphics& g)
     auto sampleSnap = processor.sampleData.getSnapshot();
     g.fillAll (getTheme().waveformBg);
 
-    // Grid lines
     int cy = getHeight() / 2;
     g.setColour (getTheme().gridLine.withAlpha (0.5f));
     g.drawHorizontalLine (cy, 0.0f, (float) getWidth());
@@ -365,11 +364,15 @@ void WaveformView::drawWaveform (juce::Graphics& g)
         // Top envelope (max peaks, left to right)
         fillPath.startNewSubPath (0.0f, (float) cy - peaks[0].maxVal * scale);
         for (int px = 1; px < numPeaks; ++px)
+        {
             fillPath.lineTo ((float) px, (float) cy - peaks[(size_t) px].maxVal * scale);
+        }
 
         // Bottom envelope (min peaks, right to left)
         for (int px = numPeaks - 1; px >= 0; --px)
+        {
             fillPath.lineTo ((float) px, (float) cy - peaks[(size_t) px].minVal * scale);
+        }
 
         fillPath.closeSubPath();
         g.fillPath (fillPath);
@@ -422,59 +425,25 @@ void WaveformView::drawSlices (juce::Graphics& g)
 
         if (i == sel || (previewActive && previewIdx == i))
         {
-            // Selected: purple overlay
-            g.setColour (getTheme().selectionOverlay.withAlpha (0.22f));
+            g.setColour (s.colour.withAlpha (0.05f));
             g.fillRect (x1, 0, sw, getHeight());
 
-            // Markers with triangle handles at bottom
-            g.setColour (getTheme().foreground.withAlpha (0.8f));
+            g.setColour (s.colour.withAlpha (0.42f));
             g.drawVerticalLine (x1, 0.0f, (float) getHeight());
             g.drawVerticalLine (x2 - 1, 0.0f, (float) getHeight());
 
-            // Triangle handles at bottom for start (larger/brighter when hovered)
-            {
-                bool hov = (hoveredEdge == HoveredEdge::Left);
-                float tw = hov ? 10.0f : 7.0f;
-                float th = hov ? 12.0f : 9.0f;
-                float alpha = hov ? 1.0f : 0.9f;
-                juce::Path triS;
-                triS.addTriangle ((float) x1, (float) getHeight(),
-                                  (float) x1 + tw, (float) getHeight(),
-                                  (float) x1, (float) getHeight() - th);
-                g.setColour (getTheme().foreground.withAlpha (alpha));
-                g.fillPath (triS);
-            }
+            auto handleHeight = hoveredEdge == HoveredEdge::Left || hoveredEdge == HoveredEdge::Right ? 30.0f : 24.0f;
+            auto handleY = (float) getHeight() - handleHeight;
+            g.fillRoundedRectangle ((float) x1 - 2.0f, handleY, 5.0f, handleHeight, 2.0f);
+            g.fillRoundedRectangle ((float) x2 - 3.0f, handleY, 5.0f, handleHeight, 2.0f);
 
-            // Triangle handles at bottom for end (larger/brighter when hovered)
-            {
-                bool hov = (hoveredEdge == HoveredEdge::Right);
-                float tw = hov ? 10.0f : 7.0f;
-                float th = hov ? 12.0f : 9.0f;
-                float alpha = hov ? 1.0f : 0.9f;
-                juce::Path triE;
-                triE.addTriangle ((float) (x2 - 1), (float) getHeight(),
-                                  (float) (x2 - 1) - tw, (float) getHeight(),
-                                  (float) (x2 - 1), (float) getHeight() - th);
-                g.setColour (getTheme().foreground.withAlpha (alpha));
-                g.fillPath (triE);
-            }
-
-            // "S" and "E" labels near handles
-            g.setFont (IntersectLookAndFeel::makeFont (10.0f, true));
-            g.setColour (getTheme().foreground.withAlpha (0.7f));
-            g.drawText ("S", x1 + 2, getHeight() - 24, 12, 12, juce::Justification::centredLeft);
-            g.drawText ("E", x2 - 14, getHeight() - 24, 12, 12, juce::Justification::centredRight);
-
-            // Label
-            g.setColour (getTheme().foreground.withAlpha (0.85f));
-            g.setFont (IntersectLookAndFeel::makeFont (13.0f, true));
-            g.drawText ("Slice " + juce::String (i + 1), x1 + 3, 3, 70, 14,
-                         juce::Justification::centredLeft);
+            g.setColour (s.colour.withAlpha (0.92f));
+            g.setFont (IntersectLookAndFeel::makeFont (9.0f, true));
+            g.drawText ("Slice " + juce::String (i + 1), x1, 7, sw, 12, juce::Justification::centredTop);
         }
         else
         {
-            // Non-selected: thin vertical edge lines only (no overlay fill)
-            g.setColour (s.colour.withAlpha (0.30f));
+            g.setColour (s.colour.withAlpha (0.12f));
             g.drawVerticalLine (x1, 0.0f, (float) getHeight());
             g.drawVerticalLine (x2 - 1, 0.0f, (float) getHeight());
         }

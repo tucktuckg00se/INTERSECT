@@ -22,6 +22,18 @@ namespace ParamIds
     inline const juce::String defaultReverse      { "defaultReverse" };
     inline const juce::String defaultOneShot      { "defaultOneShot" };
     inline const juce::String defaultCentsDetune  { "defaultCentsDetune" };
+    inline const juce::String defaultFilterEnabled     { "defaultFilterEnabled" };
+    inline const juce::String defaultFilterType        { "defaultFilterType" };
+    inline const juce::String defaultFilterSlope       { "defaultFilterSlope" };
+    inline const juce::String defaultFilterCutoff      { "defaultFilterCutoff" };
+    inline const juce::String defaultFilterReso        { "defaultFilterReso" };
+    inline const juce::String defaultFilterDrive       { "defaultFilterDrive" };
+    inline const juce::String defaultFilterKeyTrack    { "defaultFilterKeyTrack" };
+    inline const juce::String defaultFilterEnvAttack   { "defaultFilterEnvAttack" };
+    inline const juce::String defaultFilterEnvDecay    { "defaultFilterEnvDecay" };
+    inline const juce::String defaultFilterEnvSustain  { "defaultFilterEnvSustain" };
+    inline const juce::String defaultFilterEnvRelease  { "defaultFilterEnvRelease" };
+    inline const juce::String defaultFilterEnvAmount   { "defaultFilterEnvAmount" };
     inline const juce::String maxVoices           { "maxVoices" };
     inline const juce::String uiScale             { "uiScale" };
 }

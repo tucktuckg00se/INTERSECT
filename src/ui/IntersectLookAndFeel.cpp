@@ -3,6 +3,16 @@
 
 static ThemeData globalTheme = ThemeData::darkTheme();
 
+namespace
+{
+float measureTextWidth (const juce::Font& font, const juce::String& text)
+{
+    juce::GlyphArrangement glyphs;
+    glyphs.addLineOfText (font, text, 0.0f, 0.0f);
+    return glyphs.getBoundingBox (0, -1, true).getWidth();
+}
+}
+
 ThemeData& getTheme() { return globalTheme; }
 void setTheme (const ThemeData& t) { globalTheme = t; }
 
@@ -29,6 +39,23 @@ juce::Font IntersectLookAndFeel::makeFont (float pointSize, bool bold)
     if (tf != nullptr)
         return juce::Font (juce::FontOptions (tf).withPointHeight (pointSize));
     return juce::Font (juce::FontOptions().withHeight (pointSize));
+}
+
+juce::Font IntersectLookAndFeel::fitFontToWidth (const juce::String& text, float maxPointSize,
+                                                 float minPointSize, int width, bool bold)
+{
+    auto font = makeFont (maxPointSize, bold);
+    if (width <= 0 || text.isEmpty())
+        return font;
+
+    auto size = maxPointSize;
+    while (size > minPointSize && measureTextWidth (font, text) > (float) width)
+    {
+        size -= 0.25f;
+        font = makeFont (size, bold);
+    }
+
+    return font;
 }
 
 juce::Typeface::Ptr IntersectLookAndFeel::getTypefaceForFont (const juce::Font& f)
@@ -61,7 +88,7 @@ void IntersectLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& 
                                        ? juce::TextButton::textColourOnId
                                        : juce::TextButton::textColourOffId);
     g.setColour (textCol.isTransparent() ? getTheme().foreground : textCol);
-    float fontSize = button.getHeight() < 20 ? 10.0f : 15.0f;
+    float fontSize = juce::jlimit (10.0f, 15.0f, button.getHeight() * 0.42f);
     g.setFont (makeFont (fontSize));
     g.drawText (button.getButtonText(), button.getLocalBounds(),
                 juce::Justification::centred);
@@ -131,7 +158,9 @@ juce::Rectangle<int> IntersectLookAndFeel::getTooltipBounds (const juce::String&
                                                               juce::Point<int> screenPos,
                                                               juce::Rectangle<int> parentArea)
 {
-    int w = (int) makeFont (14.0f).getStringWidthFloat (text) + 14;
+    juce::GlyphArrangement glyphs;
+    glyphs.addLineOfText (makeFont (14.0f), text, 0.0f, 0.0f);
+    int w = juce::roundToInt (glyphs.getBoundingBox (0, -1, true).getWidth()) + 14;
     int h = 24;
     int x = screenPos.x;
     int y = screenPos.y + 18;

@@ -32,6 +32,19 @@ struct VoiceStartParams
     int   globalLoopMode   = 0;
     bool  globalOneShot    = false;
     float globalCentsDetune = 0.0f;
+    bool  globalFilterEnabled = false;
+    int   globalFilterType    = 0;
+    int   globalFilterSlope   = 0;
+    float globalFilterCutoff  = 8200.0f;
+    float globalFilterReso    = 0.0f;
+    float globalFilterDrive   = 0.0f;
+    float globalFilterKeyTrack = 0.0f;
+    float globalFilterEnvAttackSec  = 0.0f;
+    float globalFilterEnvDecaySec   = 0.0f;
+    float globalFilterEnvSustain    = 1.0f;
+    float globalFilterEnvReleaseSec = 0.0f;
+    float globalFilterEnvAmount     = 0.0f;
+    int   rootNote = 36;
 };
 
 struct PreviewStretchParams

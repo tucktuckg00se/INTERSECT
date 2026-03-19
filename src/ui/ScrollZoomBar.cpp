@@ -15,11 +15,9 @@ void ScrollZoomBar::paint (juce::Graphics& g)
     int w = getWidth();
     int h = getHeight();
 
-    // Slightly lighter background so it reads as a ruler even when empty
-    g.fillAll (getTheme().darkBar.brighter (0.04f));
+    g.fillAll (getTheme().waveformBg.withAlpha (0.98f));
 
-    // Top edge line
-    g.setColour (getTheme().separator);
+    g.setColour (getTheme().moduleBorder.withAlpha (0.42f));
     g.drawHorizontalLine (0, 0.0f, (float) w);
 
     auto sampleSnap = processor.sampleData.getSnapshot();
@@ -33,56 +31,61 @@ void ScrollZoomBar::paint (juce::Graphics& g)
     float viewStart = sc * (1.0f - viewFrac);
     float viewEnd = viewStart + viewFrac;
 
-    // Choose major tick spacing — aim for ~80-150px between labelled ticks
-    float viewPercent = viewFrac * 100.0f;
-    float rawStep = viewPercent * 80.0f / (float) w;
-    // Nice values spanning deep zoom to full view
-    const float niceSteps[] = { 0.01f, 0.02f, 0.05f, 0.1f, 0.2f, 0.5f,
-                                1.0f, 2.0f, 5.0f, 10.0f, 25.0f, 50.0f };
+    double sampleRate = processor.getSampleRate();
+    if (sampleRate <= 0.0)
+        sampleRate = 44100.0;
+
+    const float totalSeconds = (float) numFrames / (float) sampleRate;
+    const float viewStartSeconds = viewStart * totalSeconds;
+    const float viewEndSeconds = viewEnd * totalSeconds;
+    const float viewSeconds = juce::jmax (0.001f, viewEndSeconds - viewStartSeconds);
+
+    float rawStep = viewSeconds * 90.0f / (float) w;
+    const float niceSteps[] = { 0.1f, 0.2f, 0.5f, 1.0f, 2.0f, 5.0f, 10.0f, 15.0f,
+                                20.0f, 30.0f, 60.0f, 120.0f };
     auto stepIt = std::find_if (std::begin (niceSteps), std::end (niceSteps),
                                 [rawStep] (float ns) { return ns >= rawStep; });
-    float majorStep = (stepIt != std::end (niceSteps)) ? *stepIt : 50.0f;
+    float majorStep = (stepIt != std::end (niceSteps)) ? *stepIt : 120.0f;
 
-    float startPct = viewStart * 100.0f;
-    float endPct = viewEnd * 100.0f;
-
-    // Minor ticks: 4 subdivisions between each major tick
+    const float startSeconds = viewStartSeconds;
+    const float endSeconds = viewEndSeconds;
     float minorStep = majorStep / 4.0f;
-    float firstMinor = std::floor (startPct / minorStep) * minorStep;
+    float firstMinor = std::floor (startSeconds / minorStep) * minorStep;
 
-    for (float pct = firstMinor; pct <= endPct; pct += minorStep)
+    auto formatTime = [] (float seconds)
     {
-        float frac = pct / 100.0f;
-        float px = (frac - viewStart) / viewFrac * (float) w;
+        const int wholeSeconds = juce::jmax (0, (int) std::floor (seconds + 0.0001f));
+        const int minutes = wholeSeconds / 60;
+        const int secs = wholeSeconds % 60;
+        return juce::String (minutes) + ":" + juce::String (secs).paddedLeft ('0', 2);
+    };
+
+    for (float sec = firstMinor; sec <= endSeconds; sec += minorStep)
+    {
+        float px = (sec - startSeconds) / viewSeconds * (float) w;
         int tx = (int) px;
         if (tx < 0 || tx >= w) continue;
 
-        // Is this a major tick?
-        bool isMajor = (std::fmod (pct + 0.0001f, majorStep) < minorStep * 0.5f);
+        bool isMajor = (std::fmod (sec + 0.0001f, majorStep) < minorStep * 0.5f);
 
         if (isMajor)
         {
-            g.setColour (getTheme().foreground.withAlpha (0.3f));
-            g.drawVerticalLine (tx, 1.0f, (float) h * 0.5f);
+            g.setColour (getTheme().paramLabel.withAlpha (0.32f));
+            g.drawVerticalLine (tx, 1.0f, (float) h * 0.35f);
 
-            // Label
-            g.setFont (IntersectLookAndFeel::makeFont (10.0f));
-            g.setColour (getTheme().foreground.withAlpha (0.45f));
-            juce::String label;
-            if (majorStep >= 1.0f)
-                label = juce::String ((int) std::round (pct)) + "%";
-            else
-                label = juce::String (pct, 1) + "%";
-            int labelW = 36;
+            g.setFont (IntersectLookAndFeel::makeFont (7.0f));
+            g.setColour (juce::Colour (0xFF404858).withAlpha (0.78f));
+            juce::String label = formatTime (sec);
+            int labelW = 42;
             int labelX = tx - labelW / 2;
             labelX = std::max (0, std::min (w - labelW, labelX));
-            g.drawText (label, labelX, (int) (h * 0.45f), labelW, (int) (h * 0.55f),
-                         juce::Justification::centred);
+            g.drawText (label, labelX, (int) (h * 0.18f), labelW, h - (int) (h * 0.18f),
+                        juce::Justification::centred);
         }
         else
         {
-            g.setColour (getTheme().foreground.withAlpha (0.15f));
-            g.drawVerticalLine (tx, 1.0f, (float) h * 0.3f);
+            g.setColour (getTheme().paramLabel.withAlpha (0.15f));
+            g.drawVerticalLine (tx, 1.0f, (float) h * 0.18f);
         }
     }
 }

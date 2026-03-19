@@ -18,7 +18,7 @@ ActionPanel::ActionPanel (IntersectProcessor& p, WaveformView& wv)
     for (auto* btn : { &addSliceBtn, &lazyChopBtn, &dupBtn, &splitBtn, &deleteBtn,
                        &snapBtn, &midiSelectBtn })
     {
-        btn->setColour (juce::TextButton::buttonColourId, getTheme().button);
+        btn->setColour (juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
         btn->setColour (juce::TextButton::textColourOnId, getTheme().foreground);
         btn->setColour (juce::TextButton::textColourOffId, getTheme().foreground);
     }
@@ -152,84 +152,124 @@ void ActionPanel::toggleAutoChop()
 
 void ActionPanel::resized()
 {
-    const int gap       = 6;
-    const int btnH      = getHeight();
-    const int snapW     = 30;
-    const int midiW     = 30;
-    const int utilityTotal = snapW + midiW + gap;
-    const int availW    = getWidth() - utilityTotal - gap;
-    const int numBtns   = 5;
-    const int totalGap  = gap * (numBtns - 1);
-    const int btnW      = (availW - totalGap) / numBtns;
+    const int btnH = getHeight();
+    const int snapW = 42;
+    const int midiW = 42;
+    const int mainW = juce::jmax (0, getWidth() - snapW - midiW);
+    const int btnW = mainW / 5;
 
-    addSliceBtn.setBounds (0,                0, btnW, btnH);
-    lazyChopBtn.setBounds (btnW + gap,       0, btnW, btnH);
-    splitBtn.setBounds    (2 * (btnW + gap), 0, btnW, btnH);
-    dupBtn.setBounds      (3 * (btnW + gap), 0, btnW, btnH);
-    deleteBtn.setBounds   (4 * (btnW + gap), 0, btnW, btnH);
+    addSliceBtn.setBounds (0, 0, btnW, btnH);
+    lazyChopBtn.setBounds (btnW, 0, btnW, btnH);
+    splitBtn.setBounds (btnW * 2, 0, btnW, btnH);
+    dupBtn.setBounds (btnW * 3, 0, btnW, btnH);
+    deleteBtn.setBounds (btnW * 4, 0, mainW - btnW * 4, btnH);
 
-    midiSelectBtn.setBounds (getWidth() - midiW,            0, midiW, btnH);
-    snapBtn.setBounds       (getWidth() - midiW - gap - snapW, 0, snapW, btnH);
+    snapBtn.setBounds (mainW, 0, snapW, btnH);
+    midiSelectBtn.setBounds (mainW + snapW, 0, midiW, btnH);
 }
 
 void ActionPanel::paint (juce::Graphics& g)
 {
-    for (auto* btn : { &addSliceBtn, &lazyChopBtn, &dupBtn, &splitBtn, &deleteBtn })
+    auto inactiveText = juce::Colour (0xFF384858);
+    auto activeText = getTheme().accent;
+
+    for (auto* btn : { &addSliceBtn, &lazyChopBtn, &dupBtn, &splitBtn, &deleteBtn, &snapBtn, &midiSelectBtn })
     {
-        btn->setColour (juce::TextButton::buttonColourId, getTheme().button);
-        btn->setColour (juce::TextButton::textColourOnId, getTheme().foreground);
-        btn->setColour (juce::TextButton::textColourOffId, getTheme().foreground);
+        btn->setColour (juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+        btn->setColour (juce::TextButton::textColourOnId, inactiveText);
+        btn->setColour (juce::TextButton::textColourOffId, inactiveText);
     }
 
     updateMidiButtonAppearance (processor.midiSelectsSlice.load());
     updateSnapButtonAppearance (processor.snapToZeroCrossing.load());
 
-    if (waveformView.isSliceDrawModeActive())
+    g.fillAll (getTheme().header);
+    g.setColour (getTheme().moduleBorder.withAlpha (0.95f));
+    g.drawHorizontalLine (0, 0.0f, (float) getWidth());
+    g.drawHorizontalLine (getHeight() - 1, 0.0f, (float) getWidth());
+
+    auto drawSegment = [&] (juce::TextButton& btn, juce::Colour fill, juce::Colour line)
     {
-        g.setColour (getTheme().accent.withAlpha (0.25f));
-        g.fillRect (addSliceBtn.getBounds());
-    }
+        auto bounds = btn.getBounds();
+        if (! fill.isTransparent())
+        {
+            g.setColour (fill);
+            g.fillRect (bounds);
+        }
+
+        if (bounds.getX() > 0)
+        {
+            g.setColour (line);
+            g.drawVerticalLine (bounds.getX(), 3.0f, (float) getHeight() - 3.0f);
+        }
+    };
+
+    drawSegment (addSliceBtn,
+                 waveformView.isSliceDrawModeActive() ? juce::Colour (0xFF081818) : juce::Colours::transparentBlack,
+                 getTheme().moduleBorder.withAlpha (0.55f));
+    drawSegment (lazyChopBtn,
+                 processor.lazyChop.isActive() ? juce::Colour (0xFF180808) : juce::Colours::transparentBlack,
+                 getTheme().moduleBorder.withAlpha (0.55f));
+    drawSegment (splitBtn,
+                 autoChopPanel != nullptr ? juce::Colour (0xFF0E1218) : juce::Colours::transparentBlack,
+                 getTheme().moduleBorder.withAlpha (0.55f));
+    drawSegment (dupBtn, juce::Colours::transparentBlack, getTheme().moduleBorder.withAlpha (0.55f));
+    drawSegment (deleteBtn, juce::Colours::transparentBlack, getTheme().moduleBorder.withAlpha (0.55f));
+    drawSegment (snapBtn,
+                 processor.snapToZeroCrossing.load() ? juce::Colour (0xFF081818) : juce::Colours::transparentBlack,
+                 getTheme().moduleBorder.withAlpha (0.55f));
+    drawSegment (midiSelectBtn,
+                 processor.midiSelectsSlice.load() ? juce::Colour (0xFF081018) : juce::Colours::transparentBlack,
+                 getTheme().moduleBorder.withAlpha (0.55f));
 
     if (processor.lazyChop.isActive())
     {
         lazyChopBtn.setButtonText ("STOP");
-        g.setColour (juce::Colours::red.withAlpha (0.25f));
-        g.fillRect (lazyChopBtn.getBounds());
+        lazyChopBtn.setColour (juce::TextButton::textColourOnId, juce::Colours::red.brighter (0.2f));
+        lazyChopBtn.setColour (juce::TextButton::textColourOffId, juce::Colours::red.brighter (0.2f));
     }
     else
-    {
         lazyChopBtn.setButtonText ("LAZY");
+
+    if (waveformView.isSliceDrawModeActive())
+    {
+        addSliceBtn.setColour (juce::TextButton::textColourOnId, activeText);
+        addSliceBtn.setColour (juce::TextButton::textColourOffId, activeText);
+    }
+
+    if (autoChopPanel != nullptr)
+    {
+        splitBtn.setColour (juce::TextButton::textColourOnId, getTheme().tabGlobalActive);
+        splitBtn.setColour (juce::TextButton::textColourOffId, getTheme().tabGlobalActive);
     }
 }
 
 void ActionPanel::updateMidiButtonAppearance (bool active)
 {
+    midiSelectBtn.setColour (juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
     if (active)
     {
         midiSelectBtn.setColour (juce::TextButton::textColourOnId,  getTheme().accent);
         midiSelectBtn.setColour (juce::TextButton::textColourOffId, getTheme().accent);
-        midiSelectBtn.setColour (juce::TextButton::buttonColourId,  getTheme().accent.withAlpha (0.2f));
     }
     else
     {
-        midiSelectBtn.setColour (juce::TextButton::textColourOnId,  getTheme().foreground);
-        midiSelectBtn.setColour (juce::TextButton::textColourOffId, getTheme().foreground);
-        midiSelectBtn.setColour (juce::TextButton::buttonColourId,  getTheme().button);
+        midiSelectBtn.setColour (juce::TextButton::textColourOnId,  juce::Colour (0xFF384858));
+        midiSelectBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xFF384858));
     }
 }
 
 void ActionPanel::updateSnapButtonAppearance (bool active)
 {
+    snapBtn.setColour (juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
     if (active)
     {
         snapBtn.setColour (juce::TextButton::textColourOnId,  getTheme().accent);
         snapBtn.setColour (juce::TextButton::textColourOffId, getTheme().accent);
-        snapBtn.setColour (juce::TextButton::buttonColourId,  getTheme().accent.withAlpha (0.2f));
     }
     else
     {
-        snapBtn.setColour (juce::TextButton::textColourOnId,  getTheme().foreground);
-        snapBtn.setColour (juce::TextButton::textColourOffId, getTheme().foreground);
-        snapBtn.setColour (juce::TextButton::buttonColourId,  getTheme().button);
+        snapBtn.setColour (juce::TextButton::textColourOnId,  juce::Colour (0xFF384858));
+        snapBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xFF384858));
     }
 }

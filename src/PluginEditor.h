@@ -3,8 +3,8 @@
 #include "PluginProcessor.h"
 #include "ui/IntersectLookAndFeel.h"
 #include "ui/HeaderBar.h"
+#include "ui/SignalChainBar.h"
 #include "ui/SliceLane.h"
-#include "ui/SliceControlBar.h"
 #include "ui/WaveformView.h"
 #include "ui/ScrollZoomBar.h"
 #include "ui/ActionPanel.h"
@@ -42,10 +42,10 @@ private:
 
     IntersectLookAndFeel lnf;
     HeaderBar       headerBar;
+    SignalChainBar  signalChainBar;
     SliceLane       sliceLane;
     WaveformView    waveformView;
     ScrollZoomBar   scrollZoomBar;
-    SliceControlBar sliceControlBar;
     ActionPanel     actionPanel;
 
     juce::TooltipWindow tooltipWindow { this, 500 };

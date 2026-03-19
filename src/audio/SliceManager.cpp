@@ -39,6 +39,18 @@ int SliceManager::createSlice (int start, int end)
     s.releaseSec     = 0.02f;
     s.muteGroup      = 1;
     s.loopMode       = 0;
+    s.filterEnabled  = false;
+    s.filterType     = 0;
+    s.filterSlope    = 0;
+    s.filterCutoff   = 8200.0f;
+    s.filterReso     = 0.0f;
+    s.filterDrive    = 0.0f;
+    s.filterKeyTrack = 0.0f;
+    s.filterEnvAttackSec  = 0.0f;
+    s.filterEnvDecaySec   = 0.0f;
+    s.filterEnvSustain    = 1.0f;
+    s.filterEnvReleaseSec = 0.0f;
+    s.filterEnvAmount     = 0.0f;
 
     // Assign colour from palette
     const auto* p = palette.load (std::memory_order_relaxed);

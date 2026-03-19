@@ -14,27 +14,11 @@ public:
     void mouseDoubleClick (const juce::MouseEvent& e) override;
 
 private:
-    struct HeaderCell
-    {
-        int x, y, w, h;
-        juce::String paramId;
-        float minVal, maxVal, step;
-        bool isChoice;
-        bool isBoolean;
-        bool isReadOnly = false;
-        bool isSetBpm = false;
-    };
-
-    std::vector<HeaderCell> headerCells;
-
-    void paintRow1 (juce::Graphics& g);
-    void paintRow2 (juce::Graphics& g);
-    void showTextEditor (const HeaderCell& cell);
-    void showSetBpmPopup (bool forSampleDefault);
     void showThemePopup();
     void adjustScale (float delta);
     void openFileBrowser();
     void openRelinkBrowser();
+    void showRootEditor();
 
     IntersectProcessor& processor;
     juce::TextButton undoBtn  { "UNDO" };
@@ -44,15 +28,13 @@ private:
     juce::TextButton themeBtn { "SET" };
 
     std::unique_ptr<juce::FileChooser> fileChooser;
-
-    // Drag state
-    int activeDragCell = -1;
-    float dragStartValue = 0.0f;
-    int dragStartY = 0;
-
-    // Text editor overlay
     std::unique_ptr<juce::TextEditor> textEditor;
 
-    // Sample info area bounds for click-to-relink
     juce::Rectangle<int> sampleInfoBounds;
+    juce::Rectangle<int> slicesBounds;
+    juce::Rectangle<int> rootBounds;
+
+    bool draggingRoot = false;
+    int dragStartY = 0;
+    float dragStartValue = 36.0f;
 };
