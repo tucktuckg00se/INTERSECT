@@ -90,6 +90,8 @@ juce::Rectangle<int> toIntBounds (juce::Rectangle<float> bounds)
     return bounds.getSmallestIntegerContainer();
 }
 
+constexpr float kBaseCellWidth = 46.0f;
+
 std::vector<juce::Rectangle<int>> makeRowCells (juce::Rectangle<int> rowBounds,
                                                 std::initializer_list<RowCellSpec> specs)
 {
@@ -101,6 +103,7 @@ std::vector<juce::Rectangle<int>> makeRowCells (juce::Rectangle<int> rowBounds,
     row.flexDirection = juce::FlexBox::Direction::row;
     row.flexWrap = juce::FlexBox::Wrap::noWrap;
     row.alignItems = juce::FlexBox::AlignItems::stretch;
+    row.justifyContent = juce::FlexBox::JustifyContent::flexStart;
 
     std::vector<int> cellIndices;
     cellIndices.reserve (specs.size());
@@ -108,7 +111,9 @@ std::vector<juce::Rectangle<int>> makeRowCells (juce::Rectangle<int> rowBounds,
     for (const auto& spec : specs)
     {
         cellIndices.push_back (row.items.size());
-        row.items.add (juce::FlexItem().withFlex (spec.weight).withMinWidth (14.0f));
+        auto item = juce::FlexItem().withWidth (spec.weight * kBaseCellWidth).withMinWidth (14.0f);
+        item.flexShrink = 1.0f;
+        row.items.add (item);
         ++index;
         if (index != specs.size() && spec.gapAfter > 0)
             row.items.add (juce::FlexItem().withWidth ((float) spec.gapAfter));
@@ -402,20 +407,20 @@ void SignalChainBar::rebuildLayout()
     {
         // Time · Note · MIDI layout with fixed-width items
         const int timeItemIndex = contextRow.items.size();
-        contextRow.items.add (juce::FlexItem().withWidth (50.0f));  // time
+        contextRow.items.add (juce::FlexItem().withWidth (42.0f));  // time
         const int dot1ItemIndex = contextRow.items.size();
-        contextRow.items.add (juce::FlexItem().withWidth (12.0f));  // dot 1
+        contextRow.items.add (juce::FlexItem().withWidth (10.0f));  // dot 1
         const int noteItemIndex = contextRow.items.size();
-        contextRow.items.add (juce::FlexItem().withWidth (28.0f));  // note name
+        contextRow.items.add (juce::FlexItem().withWidth (24.0f));  // note name
         const int dot2ItemIndex = contextRow.items.size();
-        contextRow.items.add (juce::FlexItem().withWidth (12.0f));  // dot 2
+        contextRow.items.add (juce::FlexItem().withWidth (10.0f));  // dot 2
         const int midiItemIndex = contextRow.items.size();
-        contextRow.items.add (juce::FlexItem().withWidth (55.0f));  // MIDI number
+        contextRow.items.add (juce::FlexItem().withWidth (50.0f));  // MIDI number
         contextRow.items.add (juce::FlexItem().withFlex (1.0f));    // spacer
         const int statusItemIndex = contextRow.items.size();
-        contextRow.items.add (juce::FlexItem().withWidth (80.0f));  // status
+        contextRow.items.add (juce::FlexItem().withWidth (90.0f));  // status (with right margin)
 
-        contextRow.performLayout (contextBounds.reduced (10, 0).toFloat());
+        contextRow.performLayout (contextBounds.toFloat());
 
         addTabCell (toIntBounds (contextRow.items[0].currentBounds), "GLOBAL", TabTarget::Global, ! sliceScope, true);
         addTabCell (toIntBounds (contextRow.items[2].currentBounds), sliceTabText, TabTarget::Slice, sliceScope, hasValidSlice);
@@ -466,7 +471,7 @@ void SignalChainBar::rebuildLayout()
         const int infoItemIndex = contextRow.items.size();
         contextRow.items.add (juce::FlexItem().withFlex (1.0f).withMinWidth (90.0f));
 
-        contextRow.performLayout (contextBounds.reduced (10, 0).toFloat());
+        contextRow.performLayout (contextBounds.toFloat());
 
         addTabCell (toIntBounds (contextRow.items[0].currentBounds), "GLOBAL", TabTarget::Global, ! sliceScope, true);
         addTabCell (toIntBounds (contextRow.items[2].currentBounds), sliceTabText, TabTarget::Slice, sliceScope, hasValidSlice);
@@ -485,7 +490,7 @@ void SignalChainBar::rebuildLayout()
     }
 
     auto moduleArea = moduleStripBounds;
-    const std::array<float, 4> moduleWeights { 1.6f, 2.5f, 1.0f, 1.1f };
+    const std::array<float, 4> moduleWeights { 2.2f, 2.0f, 1.0f, 1.1f };
     std::array<juce::String, 4> names { "PLAYBACK", "FILTER", "AMP", "OUTPUT" };
     std::array<juce::Colour, 4> colours {
         getTheme().moduleNamePlayback,
@@ -1196,14 +1201,14 @@ void SignalChainBar::paint (juce::Graphics& g)
 
     if (contextDot1Bounds.getWidth() > 0)
     {
-        g.setFont (IntersectLookAndFeel::makeFont (10.0f, false));
+        g.setFont (IntersectLookAndFeel::makeFont (13.0f, true));
         g.setColour (juce::Colour (0xFF586070));
         g.drawText (juce::String::charToString (0x00B7), contextDot1Bounds, juce::Justification::centred);
     }
 
     if (contextDot2Bounds.getWidth() > 0)
     {
-        g.setFont (IntersectLookAndFeel::makeFont (10.0f, false));
+        g.setFont (IntersectLookAndFeel::makeFont (13.0f, true));
         g.setColour (juce::Colour (0xFF586070));
         g.drawText (juce::String::charToString (0x00B7), contextDot2Bounds, juce::Justification::centred);
     }
@@ -1222,7 +1227,7 @@ void SignalChainBar::paint (juce::Graphics& g)
     {
         g.setFont (IntersectLookAndFeel::makeFont (8.6f, true));
         g.setColour (getTheme().overrideCount);
-        g.drawText (contextStatus, contextStatusBounds, juce::Justification::centredRight);
+        g.drawText (contextStatus, contextStatusBounds.withTrimmedRight (14), juce::Justification::centredRight);
     }
 
     g.setColour (getTheme().darkBar);

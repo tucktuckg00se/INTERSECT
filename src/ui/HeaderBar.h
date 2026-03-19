@@ -31,6 +31,7 @@ private:
     std::unique_ptr<juce::TextEditor> textEditor;
 
     juce::Rectangle<int> sampleInfoBounds;
+    juce::Rectangle<int> separatorBounds;
     juce::Rectangle<int> slicesBounds;
     juce::Rectangle<int> rootBounds;
 

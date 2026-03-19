@@ -103,7 +103,6 @@ void SliceLane::paint (juce::Graphics& g)
     }
 
     g.setColour (getTheme().moduleBorder.withAlpha (0.8f));
-    g.drawHorizontalLine (0, 0.0f, (float) w);
     g.drawHorizontalLine (h - 1, 0.0f, (float) w);
 }
 

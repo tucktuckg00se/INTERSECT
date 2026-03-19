@@ -73,36 +73,24 @@ void HeaderBar::resized()
     const int redoW = buttonWidth (redoBtn.getButtonText(), 44);
     const int undoW = buttonWidth (undoBtn.getButtonText(), 44);
     const int buttonStripW = undoW + redoW + panicW + loadW + setW + buttonGap * 4;
-    juce::FlexItem fileItem;
-    juce::FlexItem gapAfterFile;
-    juce::FlexItem slicesItem;
-    juce::FlexItem gapAfterSlices;
-    juce::FlexItem rootItem;
-    juce::FlexItem gapBeforeButtons;
-    juce::FlexItem buttonClusterItem;
-
-    fileItem = juce::FlexItem().withWidth (250.0f).withMinWidth (100.0f).withHeight ((float) contentHeight);
-    gapAfterFile = juce::FlexItem().withWidth (10.0f).withHeight ((float) contentHeight);
-    slicesItem = juce::FlexItem().withWidth (46.0f).withHeight ((float) contentHeight);
-    gapAfterSlices = juce::FlexItem().withWidth (10.0f).withHeight ((float) contentHeight);
-    rootItem = juce::FlexItem().withWidth (42.0f).withHeight ((float) contentHeight);
-    gapBeforeButtons = juce::FlexItem().withFlex (1.0f).withMinWidth (4.0f).withHeight ((float) contentHeight);
-    buttonClusterItem = juce::FlexItem().withWidth ((float) buttonStripW).withHeight ((float) contentHeight);
 
     juce::FlexBox row;
     row.flexDirection = juce::FlexBox::Direction::row;
     row.flexWrap = juce::FlexBox::Wrap::noWrap;
     row.alignItems = juce::FlexBox::AlignItems::center;
-    row.items.add (fileItem);
-    row.items.add (gapAfterFile);
-    row.items.add (slicesItem);
-    row.items.add (gapAfterSlices);
-    row.items.add (rootItem);
-    row.items.add (gapBeforeButtons);
-    row.items.add (buttonClusterItem);
+
+    // File | sep area (12+1+12) | SLICES | 12px gap | ROOT | flex spacer | buttons
+    row.items.add (juce::FlexItem().withWidth (200.0f).withMinWidth (80.0f).withHeight ((float) contentHeight));
+    row.items.add (juce::FlexItem().withWidth (25.0f).withHeight ((float) contentHeight));   // sep: 12+1+12
+    row.items.add (juce::FlexItem().withWidth (58.0f).withHeight ((float) contentHeight));   // SLICES
+    row.items.add (juce::FlexItem().withWidth (12.0f).withHeight ((float) contentHeight));   // gap
+    row.items.add (juce::FlexItem().withWidth (42.0f).withHeight ((float) contentHeight));   // ROOT
+    row.items.add (juce::FlexItem().withFlex (1.0f).withMinWidth (4.0f).withHeight ((float) contentHeight));
+    row.items.add (juce::FlexItem().withWidth ((float) buttonStripW).withHeight ((float) contentHeight));
     row.performLayout (area.toFloat());
 
     sampleInfoBounds = row.items[0].currentBounds.getSmallestIntegerContainer();
+    separatorBounds = row.items[1].currentBounds.getSmallestIntegerContainer();
     slicesBounds = row.items[2].currentBounds.getSmallestIntegerContainer();
     rootBounds = row.items[4].currentBounds.getSmallestIntegerContainer();
 
@@ -194,7 +182,7 @@ void HeaderBar::paint (juce::Graphics& g)
                 (rootEditable ? juce::Colour (0xFF607080) : getTheme().foreground.withAlpha (0.6f)));
 
     g.setColour (juce::Colour (0xFF1A1E28));
-    const int sepX = sampleInfoBounds.getRight() + 12;
+    const int sepX = separatorBounds.getX() + separatorBounds.getWidth() / 2;
     const int centerY = rowY + rowH / 2;
     g.fillRect (sepX, centerY - 7, 1, 14);
 }

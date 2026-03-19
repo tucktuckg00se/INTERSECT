@@ -164,12 +164,19 @@ void ActionPanel::paint (juce::Graphics& g)
     const auto& theme = getTheme();
     g.fillAll (theme.header);
 
-    // Bottom border
+    // Top and bottom borders
     g.setColour (theme.moduleBorder);
+    g.drawHorizontalLine (0, 0.0f, (float) getWidth());
     g.drawHorizontalLine (getHeight() - 1, 0.0f, (float) getWidth());
 
     const bool lazyActive = processor.lazyChop.isActive();
     const bool addActive = waveformView.isSliceDrawModeActive();
+
+    // Auto chop panel removes itself from parent on cancel/apply;
+    // detect orphaned panel and clean up the unique_ptr.
+    if (autoChopPanel != nullptr && autoChopPanel->getParentComponent() == nullptr)
+        autoChopPanel.reset();
+
     const bool autoActive = autoChopPanel != nullptr;
     const bool snapActive = processor.snapToZeroCrossing.load();
     const bool fmActive = processor.midiSelectsSlice.load();
