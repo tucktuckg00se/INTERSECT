@@ -1,14 +1,14 @@
 #include "PluginEditor.h"
 #include <algorithm>
 
-static constexpr int kBaseW      = 980;
-static constexpr int kBaseH      = 430;
-static constexpr int kHeaderH    = 36;
-static constexpr int kSignalChainH = 104;
-static constexpr int kSliceLaneH = 20;
-static constexpr int kScrollbarH = 16;
-static constexpr int kActionH    = 28;
-static constexpr int kMargin     = 0;
+static constexpr int kBaseW        = 800;
+static constexpr int kBaseH        = 400;
+static constexpr float kHeaderH    = 28.0f;
+static constexpr float kSliceLaneH = 20.0f;
+static constexpr float kScrollbarH = 10.0f;
+static constexpr float kActionH    = 22.0f;
+static constexpr float kSignalChainH = 94.0f;
+static constexpr float kWaveformMinH = 180.0f;
 
 static juce::File getSettingsDir()
 {
@@ -82,14 +82,35 @@ void IntersectEditor::paint (juce::Graphics& g)
 
 void IntersectEditor::resized()
 {
-    auto area = juce::Rectangle<int> (0, 0, kBaseW, kBaseH);
+    juce::FlexBox shell;
+    shell.flexDirection = juce::FlexBox::Direction::column;
+    shell.flexWrap = juce::FlexBox::Wrap::noWrap;
 
-    headerBar.setBounds (area.removeFromTop (kHeaderH));
-    sliceLane.setBounds (area.removeFromTop (kSliceLaneH).reduced (kMargin, 0));
-    signalChainBar.setBounds (area.removeFromBottom (kSignalChainH).reduced (kMargin, 0));
-    actionPanel.setBounds (area.removeFromBottom (kActionH).reduced (kMargin, 0));
-    scrollZoomBar.setBounds (area.removeFromBottom (kScrollbarH).reduced (kMargin, 0));
-    waveformView.setBounds (area.reduced (kMargin, 0));
+    shell.items.add (juce::FlexItem (headerBar)
+                         .withMinHeight (kHeaderH)
+                         .withMaxHeight (kHeaderH)
+                         .withHeight (kHeaderH));
+    shell.items.add (juce::FlexItem (sliceLane)
+                         .withMinHeight (kSliceLaneH)
+                         .withMaxHeight (kSliceLaneH)
+                         .withHeight (kSliceLaneH));
+    shell.items.add (juce::FlexItem (waveformView)
+                         .withFlex (1.0f)
+                         .withMinHeight (kWaveformMinH));
+    shell.items.add (juce::FlexItem (scrollZoomBar)
+                         .withMinHeight (kScrollbarH)
+                         .withMaxHeight (kScrollbarH)
+                         .withHeight (kScrollbarH));
+    shell.items.add (juce::FlexItem (actionPanel)
+                         .withMinHeight (kActionH)
+                         .withMaxHeight (kActionH)
+                         .withHeight (kActionH));
+    shell.items.add (juce::FlexItem (signalChainBar)
+                         .withMinHeight (kSignalChainH)
+                         .withMaxHeight (kSignalChainH)
+                         .withHeight (kSignalChainH));
+
+    shell.performLayout (getLocalBounds().toFloat());
 }
 
 bool IntersectEditor::keyPressed (const juce::KeyPress& key)

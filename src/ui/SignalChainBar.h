@@ -5,6 +5,7 @@
 #include <vector>
 
 class IntersectProcessor;
+struct Slice;
 
 class SignalChainBar : public juce::Component
 {
@@ -122,7 +123,9 @@ private:
     void showTextEditor (const Cell& cell);
 
     int countModuleOverrides (const ModuleLayout& module, uint32_t lockMask) const;
+    int countEffectiveModuleOverrides (Module module, const Slice& slice) const;
     int countAllOverrides (uint32_t lockMask) const;
+    int countAllEffectiveOverrides (const Slice& slice) const;
 
     IntersectProcessor& processor;
     Scope scope = Scope::Global;
@@ -136,6 +139,8 @@ private:
     juce::Rectangle<int> contextBounds;
     juce::Rectangle<int> contextInfoBounds;
     juce::Rectangle<int> contextStatusBounds;
+    juce::Rectangle<int> contextDot1Bounds;
+    juce::Rectangle<int> contextDot2Bounds;
     juce::Rectangle<int> moduleStripBounds;
     juce::String contextTitle;
     juce::String contextSubtitle;
