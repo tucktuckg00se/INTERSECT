@@ -1629,10 +1629,11 @@ void SignalChainBar::showTextEditor (const Cell& cell)
         auto storedValue = safeThis->displayToStored (cell, displayValue);
         if (cell.step > 0.0f)
             storedValue = std::round (storedValue / cell.step) * cell.step;
-        safeThis->applyCellValue (cell, storedValue, ! safeThis->isSliceScopeActive());
         safeThis->textEditor->onFocusLost = nullptr;
         safeThis->textEditor.reset();
-        safeThis->repaint();
+        safeThis->applyCellValue (cell, storedValue, ! safeThis->isSliceScopeActive());
+        if (safeThis != nullptr)
+            safeThis->repaint();
     };
 
     textEditor->onEscapeKey = [safeThis]

@@ -250,13 +250,16 @@ void HeaderBar::showRootEditor()
     {
         if (safeThis == nullptr || safeThis->textEditor == nullptr)
             return;
-        IntersectProcessor::Command cmd;
-        cmd.type = IntersectProcessor::CmdSetRootNote;
-        cmd.intParam1 = juce::jlimit (0, 127, safeThis->textEditor->getText().getIntValue());
-        safeThis->processor.pushCommand (cmd);
+        const int newRootNote = juce::jlimit (0, 127, safeThis->textEditor->getText().getIntValue());
         safeThis->textEditor->onFocusLost = nullptr;
         safeThis->textEditor.reset();
-        safeThis->repaint();
+
+        IntersectProcessor::Command cmd;
+        cmd.type = IntersectProcessor::CmdSetRootNote;
+        cmd.intParam1 = newRootNote;
+        safeThis->processor.pushCommand (cmd);
+        if (safeThis != nullptr)
+            safeThis->repaint();
     };
     textEditor->onEscapeKey = [safeThis]
     {

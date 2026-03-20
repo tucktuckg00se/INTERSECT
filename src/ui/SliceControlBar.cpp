@@ -680,17 +680,17 @@ void SliceControlBar::mouseDoubleClick (const juce::MouseEvent& e)
 
         juce::Component::SafePointer<SliceControlBar> safeThis (this);
         textEditor->onReturnKey = [safeThis] {
-            if (safeThis == nullptr) return;
-            auto& self = *safeThis;
-            if (self.textEditor == nullptr) return;
-            int val = juce::jlimit (0, 127, self.textEditor->getText().getIntValue());
+            if (safeThis == nullptr || safeThis->textEditor == nullptr) return;
+            const int val = juce::jlimit (0, 127, safeThis->textEditor->getText().getIntValue());
+            safeThis->textEditor->onFocusLost = nullptr;
+            safeThis->textEditor.reset();
+
             IntersectProcessor::Command cmd;
             cmd.type = IntersectProcessor::CmdSetRootNote;
             cmd.intParam1 = val;
-            self.processor.pushCommand (cmd);
-            self.textEditor->onFocusLost = nullptr;
-            self.textEditor.reset();
-            self.repaint();
+            safeThis->processor.pushCommand (cmd);
+            if (safeThis != nullptr)
+                safeThis->repaint();
         };
         textEditor->onEscapeKey = [safeThis] {
             if (safeThis == nullptr) return;
@@ -823,10 +823,8 @@ void SliceControlBar::showTextEditor (const ParamCell& cell, float currentValue)
     juce::Component::SafePointer<SliceControlBar> safeThis (this);
 
     textEditor->onReturnKey = [safeThis, fieldId, minV, maxV] {
-        if (safeThis == nullptr) return;
-        auto& self = *safeThis;
-        if (self.textEditor == nullptr) return;
-        float val = self.textEditor->getText().getFloatValue();
+        if (safeThis == nullptr || safeThis->textEditor == nullptr) return;
+        float val = safeThis->textEditor->getText().getFloatValue();
 
         // Convert ms to seconds for ATK/DEC/REL, percent to fraction for SUS
         if (fieldId == IntersectProcessor::FieldAttack ||
@@ -843,10 +841,11 @@ void SliceControlBar::showTextEditor (const ParamCell& cell, float currentValue)
         cmd.type = IntersectProcessor::CmdSetSliceParam;
         cmd.intParam1 = fieldId;
         cmd.floatParam1 = val;
-        self.processor.pushCommand (cmd);
-        self.textEditor->onFocusLost = nullptr;
-        self.textEditor.reset();
-        self.repaint();
+        safeThis->textEditor->onFocusLost = nullptr;
+        safeThis->textEditor.reset();
+        safeThis->processor.pushCommand (cmd);
+        if (safeThis != nullptr)
+            safeThis->repaint();
     };
 
     textEditor->onEscapeKey = [safeThis] {
