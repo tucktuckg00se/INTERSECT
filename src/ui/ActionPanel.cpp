@@ -39,6 +39,7 @@ void ActionPanel::triggerDuplicateSlice()
     IntersectProcessor::Command cmd;
     cmd.type = IntersectProcessor::CmdDuplicateSlice;
     cmd.intParam1 = -1;
+    cmd.sliceIdx = processor.sliceManager.selectedSlice.load();
     processor.pushCommand (cmd);
     repaint();
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <juce_gui_basics/juce_gui_basics.h>
+#include "../params/GlobalParamSnapshot.h"
 #include <array>
 #include <vector>
 
@@ -25,6 +26,8 @@ public:
     void mouseDrag (const juce::MouseEvent& e) override;
     void mouseUp (const juce::MouseEvent& e) override;
     void mouseDoubleClick (const juce::MouseEvent& e) override;
+
+    void markLayoutDirty() { layoutDirty = true; }
 
 private:
     enum class Scope
@@ -98,7 +101,30 @@ private:
         int overrideCount = 0;
     };
 
+    struct LayoutInput
+    {
+        GlobalParamSnapshot globals;
+        const Slice* selectedSlice = nullptr;
+        int numSlices = 0;
+        int selectedSliceIndex = -1;
+        int sampleNumFrames = 0;
+        bool sampleLoaded = false;
+        bool sampleMissing = false;
+        bool hasValidSlice = false;
+        bool sliceScope = false;
+        float sampleRate = 44100.0f;
+    };
+
     void rebuildLayout();
+    void rebuildContextBar (const LayoutInput& input);
+    void rebuildPlaybackModule (const LayoutInput& input,
+                                const std::pair<juce::Rectangle<int>, juce::Rectangle<int>>& rows);
+    void rebuildFilterModule (const LayoutInput& input,
+                              const std::pair<juce::Rectangle<int>, juce::Rectangle<int>>& rows);
+    void rebuildAmpModule (const LayoutInput& input,
+                           const std::pair<juce::Rectangle<int>, juce::Rectangle<int>>& rows);
+    void rebuildOutputModule (const LayoutInput& input,
+                              const std::pair<juce::Rectangle<int>, juce::Rectangle<int>>& rows);
     void syncScopeFromSelection();
     bool isSliceScopeActive() const;
 
@@ -133,9 +159,9 @@ private:
     void showTextEditor (const Cell& cell);
 
     int countModuleOverrides (const ModuleLayout& module, uint32_t lockMask) const;
-    int countEffectiveModuleOverrides (Module module, const Slice& slice) const;
+    int countEffectiveModuleOverrides (Module module, const Slice& slice, const GlobalParamSnapshot& globals) const;
     int countAllOverrides (uint32_t lockMask) const;
-    int countAllEffectiveOverrides (const Slice& slice) const;
+    int countAllEffectiveOverrides (const Slice& slice, const GlobalParamSnapshot& globals) const;
 
     IntersectProcessor& processor;
     Scope scope = Scope::Global;
@@ -159,6 +185,12 @@ private:
     std::vector<Cell> cells;
     std::array<ModuleLayout, 4> modules {};
     std::unique_ptr<juce::TextEditor> textEditor;
+
+    // Layout cache: rebuild only when inputs have changed.
+    bool layoutDirty = true;
+    uint32_t lastSnapshotVersion = 0;
+    juce::Rectangle<int> lastBounds;
+    void resized() override { layoutDirty = true; }
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SignalChainBar)
 };

@@ -98,7 +98,6 @@ target_sources(Intersect PRIVATE
     src/ui/IntersectLookAndFeel.cpp
     src/ui/HeaderBar.cpp
     src/ui/SignalChainBar.cpp
-    src/ui/SliceControlBar.cpp
     src/ui/WaveformView.cpp
     src/ui/WaveformCache.cpp
     src/ui/ScrollZoomBar.cpp

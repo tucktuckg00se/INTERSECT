@@ -38,6 +38,11 @@ param_value_off: d0d0d0       # light gray
 context_bar_bg: ececec        # light gray bg
 signal_chain_bg: f0f0f0       # near white bg
 module_border: c0c0c0         # gray border
+context_text: 606060         # context primary text
+context_dim_text: 808080     # context secondary text
+tab_inactive: 808080         # inactive tab text
+lazy_chop_overlay: cc0000    # lazy chop preview overlay
+preview_cursor: cc0000       # preview cursor
 
 slice1: 800000
 slice2: 008000

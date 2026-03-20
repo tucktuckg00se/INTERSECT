@@ -1,4 +1,5 @@
 #include "ParamLayout.h"
+#include "../Constants.h"
 #include "ParamIds.h"
 
 juce::AudioProcessorValueTreeState::ParameterLayout ParamLayout::createLayout()
@@ -160,7 +161,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout ParamLayout::createLayout()
     params.push_back (std::make_unique<juce::AudioParameterFloat> (
         juce::ParameterID { ParamIds::defaultFilterCutoff, 1 },
         "Filter Cutoff",
-        juce::NormalisableRange<float> (20.0f, 20000.0f, 1.0f),
+        juce::NormalisableRange<float> (kMinFilterCutoffHz, kMaxFilterCutoffHz, 1.0f),
         8200.0f));
 
     params.push_back (std::make_unique<juce::AudioParameterFloat> (

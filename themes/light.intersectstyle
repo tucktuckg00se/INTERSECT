@@ -56,6 +56,11 @@ param_value_off: c8ccd0       # boolean parameter OFF colour
 context_bar_bg: e0e0ec        # context bar background
 signal_chain_bg: e4e4f0       # signal chain background
 module_border: c8c8d4         # module separator border
+context_text: 5e6874         # context primary text
+context_dim_text: 7a8692     # context secondary text
+tab_inactive: 7a8692         # inactive tab text
+lazy_chop_overlay: cc4444    # lazy chop preview overlay
+preview_cursor: cc4444       # preview cursor
 
 # Slice palette (colours assigned to new slices)
 slice1: 5aabb8              # Cold Teal

@@ -36,7 +36,6 @@ IntersectEditor::IntersectEditor (IntersectProcessor& p)
       scrollZoomBar (p),
       actionPanel (p, waveformView)
 {
-    juce::LookAndFeel::setDefaultLookAndFeel (&lnf);
     setLookAndFeel (&lnf);
 
     addAndMakeVisible (headerBar);
@@ -71,7 +70,6 @@ IntersectEditor::IntersectEditor (IntersectProcessor& p)
 
 IntersectEditor::~IntersectEditor()
 {
-    juce::LookAndFeel::setDefaultLookAndFeel (nullptr);
     setLookAndFeel (nullptr);
 }
 
@@ -234,6 +232,10 @@ bool IntersectEditor::keyPressed (const juce::KeyPress& key)
 
 void IntersectEditor::timerCallback()
 {
+    // Cache APVTS state for RT-safe undo snapshots and apply deferred restores.
+    processor.cacheApvtsState();
+    processor.applyDeferredApvtsRestore();
+
     bool uiChanged = false;
     bool viewportChanged = false;
     const bool previewActive = waveformView.hasActiveSlicePreview();

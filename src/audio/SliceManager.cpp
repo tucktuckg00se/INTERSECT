@@ -1,4 +1,5 @@
 #include "SliceManager.h"
+#include "../Constants.h"
 #include <algorithm>
 #include <cmath>
 
@@ -12,9 +13,9 @@ int SliceManager::createSlice (int start, int end)
     if (numSlices >= kMaxSlices)
         return -1;
 
-    // Enforce minimum 64 samples
-    if (std::abs (end - start) < 64)
-        end = start + 64;
+    // Enforce minimum slice length
+    if (std::abs (end - start) < kMinSliceLengthSamples)
+        end = start + kMinSliceLengthSamples;
 
     // Ensure start < end
     if (start > end)

@@ -1,6 +1,7 @@
 #include "WaveformView.h"
 #include "UIHelpers.h"
 #include "IntersectLookAndFeel.h"
+#include "../Constants.h"
 #include "../PluginProcessor.h"
 #include "../audio/AudioAnalysis.h"
 
@@ -238,9 +239,9 @@ void WaveformView::paintLazyChopOverlay (juce::Graphics& g)
     int x2 = sampleToPixel (std::max (chopSample, headSample));
     if (x2 > x1)
     {
-        g.setColour (juce::Colour (0xFFCC4444).withAlpha (0.15f));
+        g.setColour (getTheme().lazyChopOverlay.withAlpha (0.15f));
         g.fillRect (x1, 0, x2 - x1, getHeight());
-        g.setColour (juce::Colour (0xFFCC4444).withAlpha (0.5f));
+        g.setColour (getTheme().lazyChopOverlay.withAlpha (0.5f));
         g.drawVerticalLine (sampleToPixel (chopSample), 0.0f, (float) getHeight());
     }
 }
@@ -462,7 +463,7 @@ void WaveformView::drawPlaybackCursors (juce::Graphics& g)
             if (px >= 0 && px < getWidth())
             {
                 if (i == previewIdx && processor.lazyChop.isActive())
-                    g.setColour (juce::Colour (0xFFCC4444));  // red for preview
+                    g.setColour (getTheme().previewCursor);
                 else
                     g.setColour (getTheme().accent.withAlpha (0.7f));  // yellow
 
@@ -724,13 +725,13 @@ void WaveformView::mouseDrag (const juce::MouseEvent& e)
     {
         if (processor.snapToZeroCrossing.load())
             samplePos = AudioAnalysis::findNearestZeroCrossing (sampleSnap->buffer, samplePos);
-        dragPreviewStart = std::min (samplePos, dragPreviewEnd - 64);
+        dragPreviewStart = std::min (samplePos, dragPreviewEnd - kMinSliceLengthSamples);
     }
     else if (dragMode == DragEdgeRight && dragSliceIdx >= 0)
     {
         if (processor.snapToZeroCrossing.load())
             samplePos = AudioAnalysis::findNearestZeroCrossing (sampleSnap->buffer, samplePos);
-        dragPreviewEnd = std::max (samplePos, dragPreviewStart + 64);
+        dragPreviewEnd = std::max (samplePos, dragPreviewStart + kMinSliceLengthSamples);
     }
     else if (dragMode == MoveSlice && dragSliceIdx >= 0)
     {
@@ -800,7 +801,7 @@ void WaveformView::mouseUp (const juce::MouseEvent& e)
             drawStart = AudioAnalysis::findNearestZeroCrossing (sampleSnap->buffer, drawStart);
             endPos = AudioAnalysis::findNearestZeroCrossing (sampleSnap->buffer, endPos);
         }
-        if (std::abs (endPos - drawStart) >= 64)
+        if (std::abs (endPos - drawStart) >= kMinSliceLengthSamples)
         {
             IntersectProcessor::Command cmd;
             cmd.type = IntersectProcessor::CmdCreateSlice;
@@ -814,7 +815,7 @@ void WaveformView::mouseUp (const juce::MouseEvent& e)
         if (drawStartedFromAlt && ! altStillDown)
             setSliceDrawMode (false);
 
-        // If click without dragging (< 64 samples), keep draw mode active
+        // If click without dragging (< min slice length), keep draw mode active
     }
     else if (dragMode == DragEdgeLeft || dragMode == DragEdgeRight || dragMode == MoveSlice)
     {
@@ -840,6 +841,7 @@ void WaveformView::mouseUp (const juce::MouseEvent& e)
         cmd.type      = IntersectProcessor::CmdDuplicateSlice;
         cmd.intParam1 = ghostStart;
         cmd.intParam2 = ghostEnd;
+        cmd.sliceIdx  = dragSliceIdx;
         processor.pushCommand (cmd);
     }
 

@@ -1,5 +1,6 @@
 #include "SignalChainBar.h"
 #include "IntersectLookAndFeel.h"
+#include "../Constants.h"
 #include "../PluginProcessor.h"
 #include "../audio/GrainEngine.h"
 
@@ -9,26 +10,20 @@
 
 namespace
 {
-constexpr int kOuterPad = 0;
-constexpr int kTopPad = 0;
 constexpr int kContextHeight = 26;
-constexpr int kSectionGap = 0;
-constexpr int kModuleGap = 0;
 constexpr int kModuleHeaderHeight = 16;
-constexpr int kRowGap = 0;
 constexpr int kContextTabGap = 0;
 constexpr int kContextTextGap = 12;
 constexpr int kCellInsetX = 3;
 constexpr int kCellGap = 6;
 constexpr int kGroupGap = 10;
-constexpr int kLabelYOffset = 0;
 constexpr int kLabelHeight = 9;
 constexpr int kValueYOffset = 9;
 constexpr int kMinValueHeight = 13;
 
 const juce::NormalisableRange<float>& getFilterCutoffDragRange()
 {
-    static const juce::NormalisableRange<float> range (20.0f, 20000.0f, 1.0f, 0.25f);
+    static const juce::NormalisableRange<float> range (kMinFilterCutoffHz, kMaxFilterCutoffHz, 1.0f, 0.25f);
     return range;
 }
 
@@ -133,6 +128,29 @@ std::vector<juce::Rectangle<int>> makeRowCells (juce::Rectangle<int> rowBounds,
         rects.push_back (toIntBounds (row.items[(int) itemIndex].currentBounds));
 
     return rects;
+}
+
+std::pair<juce::Rectangle<int>, juce::Rectangle<int>> splitRows (juce::Rectangle<int> bounds)
+{
+    juce::FlexBox rows;
+    rows.flexDirection = juce::FlexBox::Direction::column;
+    rows.flexWrap = juce::FlexBox::Wrap::noWrap;
+    rows.items.add (juce::FlexItem().withFlex (1.0f).withMinHeight (18.0f));
+    rows.items.add (juce::FlexItem().withFlex (1.0f).withMinHeight (18.0f));
+    rows.performLayout (bounds.toFloat());
+
+    return { toIntBounds (rows.items[0].currentBounds),
+             toIntBounds (rows.items[1].currentBounds) };
+}
+
+template <typename ValueType>
+std::pair<ValueType, bool> resolveLockedValue (const Slice* selectedSlice,
+                                               uint32_t bit,
+                                               ValueType sliceValue,
+                                               ValueType globalValue)
+{
+    const bool locked = selectedSlice != nullptr && (selectedSlice->lockMask & bit) != 0;
+    return std::pair<ValueType, bool> { locked ? sliceValue : globalValue, locked };
 }
 
 float measureTextWidth (const juce::Font& font, const juce::String& text)
@@ -291,29 +309,28 @@ int SignalChainBar::countModuleOverrides (const ModuleLayout& module, uint32_t l
     return count;
 }
 
-int SignalChainBar::countEffectiveModuleOverrides (Module module, const Slice& slice) const
+int SignalChainBar::countEffectiveModuleOverrides (Module module,
+                                                   const Slice& slice,
+                                                   const GlobalParamSnapshot& globals) const
 {
     if ((slice.lockMask) == 0)
         return 0;
 
-    auto checkBool = [&] (uint32_t bit, bool sliceVal, const juce::String& paramId) -> int
+    auto checkBool = [&] (uint32_t bit, bool sliceVal, bool globalVal) -> int
     {
         if ((slice.lockMask & bit) == 0) return 0;
-        bool globalVal = processor.apvts.getRawParameterValue (paramId)->load() > 0.5f;
         return (sliceVal != globalVal) ? 1 : 0;
     };
 
-    auto checkInt = [&] (uint32_t bit, int sliceVal, const juce::String& paramId) -> int
+    auto checkInt = [&] (uint32_t bit, int sliceVal, int globalVal) -> int
     {
         if ((slice.lockMask & bit) == 0) return 0;
-        int globalVal = (int) processor.apvts.getRawParameterValue (paramId)->load();
         return (sliceVal != globalVal) ? 1 : 0;
     };
 
-    auto checkFloat = [&] (uint32_t bit, float sliceVal, const juce::String& paramId, float scale = 1.0f) -> int
+    auto checkFloat = [&] (uint32_t bit, float sliceVal, float globalVal) -> int
     {
         if ((slice.lockMask & bit) == 0) return 0;
-        float globalVal = processor.apvts.getRawParameterValue (paramId)->load() * scale;
         return (std::abs (sliceVal - globalVal) > 1e-4f) ? 1 : 0;
     };
 
@@ -322,46 +339,46 @@ int SignalChainBar::countEffectiveModuleOverrides (Module module, const Slice& s
     switch (module)
     {
         case Module::Playback:
-            count += checkFloat (kLockBpm, slice.bpm, ParamIds::defaultBpm);
-            count += checkFloat (kLockPitch, slice.pitchSemitones, ParamIds::defaultPitch);
-            count += checkFloat (kLockCentsDetune, slice.centsDetune, ParamIds::defaultCentsDetune);
-            count += checkInt (kLockAlgorithm, slice.algorithm, ParamIds::defaultAlgorithm);
-            count += checkBool (kLockStretch, slice.stretchEnabled, ParamIds::defaultStretchEnabled);
-            count += checkFloat (kLockTonality, slice.tonalityHz, ParamIds::defaultTonality);
-            count += checkFloat (kLockFormant, slice.formantSemitones, ParamIds::defaultFormant);
-            count += checkBool (kLockFormantComp, slice.formantComp, ParamIds::defaultFormantComp);
-            count += checkInt (kLockGrainMode, slice.grainMode, ParamIds::defaultGrainMode);
-            count += checkBool (kLockOneShot, slice.oneShot, ParamIds::defaultOneShot);
+            count += checkFloat (kLockBpm, slice.bpm, globals.bpm);
+            count += checkFloat (kLockPitch, slice.pitchSemitones, globals.pitchSemitones);
+            count += checkFloat (kLockCentsDetune, slice.centsDetune, globals.centsDetune);
+            count += checkInt (kLockAlgorithm, slice.algorithm, globals.algorithm);
+            count += checkBool (kLockStretch, slice.stretchEnabled, globals.stretchEnabled);
+            count += checkFloat (kLockTonality, slice.tonalityHz, globals.tonalityHz);
+            count += checkFloat (kLockFormant, slice.formantSemitones, globals.formantSemitones);
+            count += checkBool (kLockFormantComp, slice.formantComp, globals.formantComp);
+            count += checkInt (kLockGrainMode, slice.grainMode, globals.grainMode);
+            count += checkBool (kLockOneShot, slice.oneShot, globals.oneShot);
             break;
 
         case Module::Filter:
-            count += checkBool (kLockFilterEnabled, slice.filterEnabled, ParamIds::defaultFilterEnabled);
-            count += checkInt (kLockFilterType, slice.filterType, ParamIds::defaultFilterType);
-            count += checkInt (kLockFilterSlope, slice.filterSlope, ParamIds::defaultFilterSlope);
-            count += checkFloat (kLockFilterCutoff, slice.filterCutoff, ParamIds::defaultFilterCutoff);
-            count += checkFloat (kLockFilterReso, slice.filterReso, ParamIds::defaultFilterReso);
-            count += checkFloat (kLockFilterDrive, slice.filterDrive, ParamIds::defaultFilterDrive);
-            count += checkFloat (kLockFilterKeyTrack, slice.filterKeyTrack, ParamIds::defaultFilterKeyTrack);
-            count += checkFloat (kLockFilterEnvAttack, slice.filterEnvAttackSec, ParamIds::defaultFilterEnvAttack, 1.0f / 1000.0f);
-            count += checkFloat (kLockFilterEnvDecay, slice.filterEnvDecaySec, ParamIds::defaultFilterEnvDecay, 1.0f / 1000.0f);
-            count += checkFloat (kLockFilterEnvSustain, slice.filterEnvSustain, ParamIds::defaultFilterEnvSustain, 1.0f / 100.0f);
-            count += checkFloat (kLockFilterEnvRelease, slice.filterEnvReleaseSec, ParamIds::defaultFilterEnvRelease, 1.0f / 1000.0f);
-            count += checkFloat (kLockFilterEnvAmount, slice.filterEnvAmount, ParamIds::defaultFilterEnvAmount);
+            count += checkBool (kLockFilterEnabled, slice.filterEnabled, globals.filterEnabled);
+            count += checkInt (kLockFilterType, slice.filterType, globals.filterType);
+            count += checkInt (kLockFilterSlope, slice.filterSlope, globals.filterSlope);
+            count += checkFloat (kLockFilterCutoff, slice.filterCutoff, globals.filterCutoffHz);
+            count += checkFloat (kLockFilterReso, slice.filterReso, globals.filterReso);
+            count += checkFloat (kLockFilterDrive, slice.filterDrive, globals.filterDrive);
+            count += checkFloat (kLockFilterKeyTrack, slice.filterKeyTrack, globals.filterKeyTrack);
+            count += checkFloat (kLockFilterEnvAttack, slice.filterEnvAttackSec, globals.filterEnvAttackSec);
+            count += checkFloat (kLockFilterEnvDecay, slice.filterEnvDecaySec, globals.filterEnvDecaySec);
+            count += checkFloat (kLockFilterEnvSustain, slice.filterEnvSustain, globals.filterEnvSustain);
+            count += checkFloat (kLockFilterEnvRelease, slice.filterEnvReleaseSec, globals.filterEnvReleaseSec);
+            count += checkFloat (kLockFilterEnvAmount, slice.filterEnvAmount, globals.filterEnvAmount);
             break;
 
         case Module::Amp:
-            count += checkFloat (kLockAttack, slice.attackSec, ParamIds::defaultAttack, 1.0f / 1000.0f);
-            count += checkFloat (kLockDecay, slice.decaySec, ParamIds::defaultDecay, 1.0f / 1000.0f);
-            count += checkFloat (kLockSustain, slice.sustainLevel, ParamIds::defaultSustain, 1.0f / 100.0f);
-            count += checkFloat (kLockRelease, slice.releaseSec, ParamIds::defaultRelease, 1.0f / 1000.0f);
-            count += checkBool (kLockReleaseTail, slice.releaseTail, ParamIds::defaultReleaseTail);
+            count += checkFloat (kLockAttack, slice.attackSec, globals.attackSec);
+            count += checkFloat (kLockDecay, slice.decaySec, globals.decaySec);
+            count += checkFloat (kLockSustain, slice.sustainLevel, globals.sustain);
+            count += checkFloat (kLockRelease, slice.releaseSec, globals.releaseSec);
+            count += checkBool (kLockReleaseTail, slice.releaseTail, globals.releaseTail);
             break;
 
         case Module::Output:
-            count += checkBool (kLockReverse, slice.reverse, ParamIds::defaultReverse);
-            count += checkInt (kLockLoop, slice.loopMode, ParamIds::defaultLoop);
-            count += checkInt (kLockMuteGroup, slice.muteGroup, ParamIds::defaultMuteGroup);
-            count += checkFloat (kLockVolume, slice.volume, ParamIds::masterVolume);
+            count += checkBool (kLockReverse, slice.reverse, globals.reverse);
+            count += checkInt (kLockLoop, slice.loopMode, globals.loopMode);
+            count += checkInt (kLockMuteGroup, slice.muteGroup, globals.muteGroup);
+            count += checkFloat (kLockVolume, slice.volume, globals.volumeDb);
             if ((slice.lockMask & kLockOutputBus) != 0)
                 ++count; // no global equivalent
             break;
@@ -382,11 +399,12 @@ int SignalChainBar::countAllOverrides (uint32_t lockMask) const
     return count;
 }
 
-int SignalChainBar::countAllEffectiveOverrides (const Slice& slice) const
+int SignalChainBar::countAllEffectiveOverrides (const Slice& slice,
+                                                const GlobalParamSnapshot& globals) const
 {
     int count = 0;
     for (auto moduleId : { Module::Playback, Module::Filter, Module::Amp, Module::Output })
-        count += countEffectiveModuleOverrides (moduleId, slice);
+        count += countEffectiveModuleOverrides (moduleId, slice, globals);
     return count;
 }
 
@@ -396,11 +414,18 @@ void SignalChainBar::rebuildLayout()
     syncScopeFromSelection();
 
     const auto& ui = processor.getUiSliceSnapshot();
-    const bool hasValidSlice = ui.selectedSlice >= 0 && ui.selectedSlice < ui.numSlices;
-    const bool sliceScope = isSliceScopeActive();
-    const Slice* selectedSlice = hasValidSlice ? &ui.slices[(size_t) ui.selectedSlice] : nullptr;
 
-    const float sampleRate = processor.getSampleRate() > 0.0 ? (float) processor.getSampleRate() : 44100.0f;
+    LayoutInput input;
+    input.globals = GlobalParamSnapshot::loadFrom (processor.apvts, ui.rootNote);
+    input.numSlices = ui.numSlices;
+    input.selectedSliceIndex = ui.selectedSlice;
+    input.sampleNumFrames = ui.sampleNumFrames;
+    input.sampleLoaded = ui.sampleLoaded;
+    input.sampleMissing = ui.sampleMissing;
+    input.hasValidSlice = ui.selectedSlice >= 0 && ui.selectedSlice < ui.numSlices;
+    input.sliceScope = isSliceScopeActive();
+    input.sampleRate = processor.getSampleRate() > 0.0 ? (float) processor.getSampleRate() : 44100.0f;
+    input.selectedSlice = input.hasValidSlice ? &ui.slices[(size_t) ui.selectedSlice] : nullptr;
 
     contextTitle.clear();
     contextSubtitle.clear();
@@ -409,122 +434,21 @@ void SignalChainBar::rebuildLayout()
     contextDot1Bounds = {};
     contextDot2Bounds = {};
 
-    auto area = getLocalBounds().reduced (kOuterPad, kTopPad);
     juce::FlexBox shell;
     shell.flexDirection = juce::FlexBox::Direction::column;
     shell.flexWrap = juce::FlexBox::Wrap::noWrap;
     shell.items.add (juce::FlexItem().withFlex (1.0f));
-    if (kSectionGap > 0)
-        shell.items.add (juce::FlexItem().withHeight ((float) kSectionGap));
     shell.items.add (juce::FlexItem().withHeight ((float) kContextHeight));
-    shell.performLayout (area.toFloat());
+    shell.performLayout (getLocalBounds().toFloat());
 
     moduleStripBounds = toIntBounds (shell.items[0].currentBounds);
-    contextBounds = toIntBounds (shell.items[shell.items.size() - 1].currentBounds);
+    contextBounds = toIntBounds (shell.items[1].currentBounds);
 
-    const int globalTabWidth = 56;
-    const juce::String sliceTabText = hasValidSlice ? "SLICE " + juce::String (ui.selectedSlice + 1) : "SLICE";
-    const int sliceTabWidth = hasValidSlice ? 76 : 56;
-    juce::FlexBox contextRow;
-    contextRow.flexDirection = juce::FlexBox::Direction::row;
-    contextRow.flexWrap = juce::FlexBox::Wrap::noWrap;
-    contextRow.alignItems = juce::FlexBox::AlignItems::stretch;
+    rebuildContextBar (input);
 
-    contextRow.items.add (juce::FlexItem().withWidth ((float) globalTabWidth));
-    contextRow.items.add (juce::FlexItem().withWidth ((float) kContextTabGap));
-    contextRow.items.add (juce::FlexItem().withWidth ((float) sliceTabWidth));
-    contextRow.items.add (juce::FlexItem().withWidth ((float) kContextTextGap));
-
-    if (sliceScope && selectedSlice != nullptr)
-    {
-        // Time · Note · MIDI layout with fixed-width items
-        const int timeItemIndex = contextRow.items.size();
-        contextRow.items.add (juce::FlexItem().withWidth (42.0f));  // time
-        const int dot1ItemIndex = contextRow.items.size();
-        contextRow.items.add (juce::FlexItem().withWidth (10.0f));  // dot 1
-        const int noteItemIndex = contextRow.items.size();
-        contextRow.items.add (juce::FlexItem().withWidth (24.0f));  // note name
-        const int dot2ItemIndex = contextRow.items.size();
-        contextRow.items.add (juce::FlexItem().withWidth (10.0f));  // dot 2
-        const int midiItemIndex = contextRow.items.size();
-        contextRow.items.add (juce::FlexItem().withWidth (50.0f));  // MIDI number
-        contextRow.items.add (juce::FlexItem().withFlex (1.0f));    // spacer
-        const int statusItemIndex = contextRow.items.size();
-        contextRow.items.add (juce::FlexItem().withWidth (90.0f));  // status (with right margin)
-
-        contextRow.performLayout (contextBounds.toFloat());
-
-        addTabCell (toIntBounds (contextRow.items[0].currentBounds), "GLOBAL", TabTarget::Global, ! sliceScope, true);
-        addTabCell (toIntBounds (contextRow.items[2].currentBounds), sliceTabText, TabTarget::Slice, sliceScope, hasValidSlice);
-
-        contextInfoBounds = toIntBounds (contextRow.items[timeItemIndex].currentBounds);
-        contextDot1Bounds = toIntBounds (contextRow.items[dot1ItemIndex].currentBounds);
-        contextDot2Bounds = toIntBounds (contextRow.items[dot2ItemIndex].currentBounds);
-        contextStatusBounds = toIntBounds (contextRow.items[statusItemIndex].currentBounds);
-
-        const int overrideCount = countAllEffectiveOverrides (*selectedSlice);
-        const float lenSec = (float) (selectedSlice->endSample - selectedSlice->startSample) / sampleRate;
-        contextTitle = formatTrimmed (lenSec, 2) + "s";
-        contextSubtitle.clear();
-        contextStatus = overrideCount > 0 ? juce::String (overrideCount) + " overrides" : juce::String();
-
-        // Note name cell (e.g. "D2") — interactive
-        Cell noteCell;
-        noteCell.module = Module::Playback;
-        noteCell.bounds = toIntBounds (contextRow.items[noteItemIndex].currentBounds);
-        noteCell.label = "";
-        noteCell.valueText = midiNoteName (selectedSlice->midiNote);
-        noteCell.isContextInline = true;
-        noteCell.fieldId = IntersectProcessor::FieldMidiNote;
-        noteCell.currentValue = (float) selectedSlice->midiNote;
-        noteCell.minVal = 0.0f;
-        noteCell.maxVal = 127.0f;
-        noteCell.step = 1.0f;
-        noteCell.dragPerPixel = 0.25f;
-        addParamCell (noteCell);
-
-        // MIDI number cell (e.g. "MIDI 38") — interactive
-        Cell midiCell;
-        midiCell.module = Module::Playback;
-        midiCell.bounds = toIntBounds (contextRow.items[midiItemIndex].currentBounds);
-        midiCell.label = "MIDI";
-        midiCell.valueText = juce::String (selectedSlice->midiNote);
-        midiCell.isContextInline = true;
-        midiCell.fieldId = IntersectProcessor::FieldMidiNote;
-        midiCell.currentValue = (float) selectedSlice->midiNote;
-        midiCell.minVal = 0.0f;
-        midiCell.maxVal = 127.0f;
-        midiCell.step = 1.0f;
-        midiCell.dragPerPixel = 0.25f;
-        addParamCell (midiCell);
-    }
-    else
-    {
-        const int infoItemIndex = contextRow.items.size();
-        contextRow.items.add (juce::FlexItem().withFlex (1.0f).withMinWidth (90.0f));
-
-        contextRow.performLayout (contextBounds.toFloat());
-
-        addTabCell (toIntBounds (contextRow.items[0].currentBounds), "GLOBAL", TabTarget::Global, ! sliceScope, true);
-        addTabCell (toIntBounds (contextRow.items[2].currentBounds), sliceTabText, TabTarget::Slice, sliceScope, hasValidSlice);
-
-        contextInfoBounds = toIntBounds (contextRow.items[infoItemIndex].currentBounds);
-
-        contextTitle.clear();
-        if (ui.sampleLoaded)
-            contextSubtitle = formatTrimmed ((float) ui.sampleNumFrames / sampleRate, 2) + "s";
-        else if (ui.sampleMissing)
-            contextSubtitle = "MISSING SAMPLE, RELINK REQUIRED";
-        else if (hasValidSlice)
-            contextSubtitle = "SLICE SELECTED, EDITS STAY GLOBAL";
-        else
-            contextSubtitle = "NO SLICE SELECTED";
-    }
-
-    auto moduleArea = moduleStripBounds;
     const std::array<float, 4> moduleWeights { 2.2f, 2.0f, 1.0f, 1.1f };
-    std::array<juce::String, 4> names { "PLAYBACK", "FILTER", "AMP", "OUTPUT" };
-    std::array<juce::Colour, 4> colours {
+    const std::array<juce::String, 4> names { "PLAYBACK", "FILTER", "AMP", "OUTPUT" };
+    const std::array<juce::Colour, 4> colours {
         getTheme().moduleNamePlayback,
         getTheme().moduleNameFilter,
         getTheme().moduleNameAmp,
@@ -535,15 +459,14 @@ void SignalChainBar::rebuildLayout()
     moduleRow.flexDirection = juce::FlexBox::Direction::row;
     moduleRow.flexWrap = juce::FlexBox::Wrap::noWrap;
     moduleRow.alignItems = juce::FlexBox::AlignItems::stretch;
+
     std::array<int, 4> moduleItemIndices {};
     for (int i = 0; i < 4; ++i)
     {
         moduleItemIndices[(size_t) i] = moduleRow.items.size();
         moduleRow.items.add (juce::FlexItem().withFlex (moduleWeights[(size_t) i]).withMinWidth (68.0f));
-        if (i < 3)
-            moduleRow.items.add (juce::FlexItem().withWidth ((float) kModuleGap));
     }
-    moduleRow.performLayout (moduleArea.toFloat());
+    moduleRow.performLayout (moduleStripBounds.toFloat());
 
     for (int i = 0; i < 4; ++i)
     {
@@ -570,148 +493,166 @@ void SignalChainBar::rebuildLayout()
         module.bodyBounds = toIntBounds (moduleColumn.items[1].currentBounds);
         module.bodyBounds.removeFromLeft (8);
         module.bodyBounds.removeFromRight (8);
-        module.overrideCount = sliceScope && selectedSlice != nullptr
-            ? countEffectiveModuleOverrides (module.module, *selectedSlice)
+        module.overrideCount = input.sliceScope && input.selectedSlice != nullptr
+            ? countEffectiveModuleOverrides (module.module, *input.selectedSlice, input.globals)
             : 0;
     }
 
-    const float gBpm = processor.apvts.getRawParameterValue (ParamIds::defaultBpm)->load();
-    const float gPitch = processor.apvts.getRawParameterValue (ParamIds::defaultPitch)->load();
-    const float gCents = processor.apvts.getRawParameterValue (ParamIds::defaultCentsDetune)->load();
-    const int gAlgo = (int) processor.apvts.getRawParameterValue (ParamIds::defaultAlgorithm)->load();
-    const float gAttackMs = processor.apvts.getRawParameterValue (ParamIds::defaultAttack)->load();
-    const float gDecayMs = processor.apvts.getRawParameterValue (ParamIds::defaultDecay)->load();
-    const float gSustainPct = processor.apvts.getRawParameterValue (ParamIds::defaultSustain)->load();
-    const float gReleaseMs = processor.apvts.getRawParameterValue (ParamIds::defaultRelease)->load();
-    const int gMuteGroup = (int) processor.apvts.getRawParameterValue (ParamIds::defaultMuteGroup)->load();
-    const bool gStretch = processor.apvts.getRawParameterValue (ParamIds::defaultStretchEnabled)->load() > 0.5f;
-    const bool gReverse = processor.apvts.getRawParameterValue (ParamIds::defaultReverse)->load() > 0.5f;
-    const int gLoop = (int) processor.apvts.getRawParameterValue (ParamIds::defaultLoop)->load();
-    const bool gOneShot = processor.apvts.getRawParameterValue (ParamIds::defaultOneShot)->load() > 0.5f;
-    const bool gTail = processor.apvts.getRawParameterValue (ParamIds::defaultReleaseTail)->load() > 0.5f;
-    const float gTonality = processor.apvts.getRawParameterValue (ParamIds::defaultTonality)->load();
-    const float gFormant = processor.apvts.getRawParameterValue (ParamIds::defaultFormant)->load();
-    const bool gFormantComp = processor.apvts.getRawParameterValue (ParamIds::defaultFormantComp)->load() > 0.5f;
-    const int gGrain = (int) processor.apvts.getRawParameterValue (ParamIds::defaultGrainMode)->load();
-    const float gGain = processor.apvts.getRawParameterValue (ParamIds::masterVolume)->load();
-    const int gVoices = (int) processor.apvts.getRawParameterValue (ParamIds::maxVoices)->load();
-    const bool gFilterEnabled = processor.apvts.getRawParameterValue (ParamIds::defaultFilterEnabled)->load() > 0.5f;
-    const int gFilterType = (int) processor.apvts.getRawParameterValue (ParamIds::defaultFilterType)->load();
-    const int gFilterSlope = (int) processor.apvts.getRawParameterValue (ParamIds::defaultFilterSlope)->load();
-    const float gFilterCutoff = processor.apvts.getRawParameterValue (ParamIds::defaultFilterCutoff)->load();
-    const float gFilterReso = processor.apvts.getRawParameterValue (ParamIds::defaultFilterReso)->load();
-    const float gFilterDrive = processor.apvts.getRawParameterValue (ParamIds::defaultFilterDrive)->load();
-    const float gFilterKey = processor.apvts.getRawParameterValue (ParamIds::defaultFilterKeyTrack)->load();
-    const float gFilterAtkSec = processor.apvts.getRawParameterValue (ParamIds::defaultFilterEnvAttack)->load() / 1000.0f;
-    const float gFilterDecSec = processor.apvts.getRawParameterValue (ParamIds::defaultFilterEnvDecay)->load() / 1000.0f;
-    const float gFilterSus = processor.apvts.getRawParameterValue (ParamIds::defaultFilterEnvSustain)->load() / 100.0f;
-    const float gFilterRelSec = processor.apvts.getRawParameterValue (ParamIds::defaultFilterEnvRelease)->load() / 1000.0f;
-    const float gFilterAmt = processor.apvts.getRawParameterValue (ParamIds::defaultFilterEnvAmount)->load();
+    rebuildPlaybackModule (input, splitRows (modules[0].bodyBounds));
+    rebuildFilterModule (input, splitRows (modules[1].bodyBounds));
+    rebuildAmpModule (input, splitRows (modules[2].bodyBounds));
+    rebuildOutputModule (input, splitRows (modules[3].bodyBounds));
+}
 
-    auto resolveFloat = [selectedSlice] (uint32_t bit, float sliceValue, float globalValue)
+void SignalChainBar::rebuildContextBar (const LayoutInput& input)
+{
+    const int globalTabWidth = 56;
+    const juce::String sliceTabText = input.hasValidSlice
+        ? "SLICE " + juce::String (input.selectedSliceIndex + 1)
+        : "SLICE";
+    const int sliceTabWidth = input.hasValidSlice ? 76 : 56;
+
+    juce::FlexBox contextRow;
+    contextRow.flexDirection = juce::FlexBox::Direction::row;
+    contextRow.flexWrap = juce::FlexBox::Wrap::noWrap;
+    contextRow.alignItems = juce::FlexBox::AlignItems::stretch;
+
+    contextRow.items.add (juce::FlexItem().withWidth ((float) globalTabWidth));
+    contextRow.items.add (juce::FlexItem().withWidth ((float) kContextTabGap));
+    contextRow.items.add (juce::FlexItem().withWidth ((float) sliceTabWidth));
+    contextRow.items.add (juce::FlexItem().withWidth ((float) kContextTextGap));
+
+    if (input.sliceScope && input.selectedSlice != nullptr)
     {
-        const bool locked = selectedSlice != nullptr && (selectedSlice->lockMask & bit) != 0;
-        return std::pair<float, bool> { locked ? sliceValue : globalValue, locked };
-    };
+        const int timeItemIndex = contextRow.items.size();
+        contextRow.items.add (juce::FlexItem().withWidth (42.0f));
+        const int dot1ItemIndex = contextRow.items.size();
+        contextRow.items.add (juce::FlexItem().withWidth (10.0f));
+        const int noteItemIndex = contextRow.items.size();
+        contextRow.items.add (juce::FlexItem().withWidth (24.0f));
+        const int dot2ItemIndex = contextRow.items.size();
+        contextRow.items.add (juce::FlexItem().withWidth (10.0f));
+        const int midiItemIndex = contextRow.items.size();
+        contextRow.items.add (juce::FlexItem().withWidth (50.0f));
+        contextRow.items.add (juce::FlexItem().withFlex (1.0f));
+        const int statusItemIndex = contextRow.items.size();
+        contextRow.items.add (juce::FlexItem().withWidth (90.0f));
 
-    auto resolveInt = [selectedSlice] (uint32_t bit, int sliceValue, int globalValue)
-    {
-        const bool locked = selectedSlice != nullptr && (selectedSlice->lockMask & bit) != 0;
-        return std::pair<int, bool> { locked ? sliceValue : globalValue, locked };
-    };
+        contextRow.performLayout (contextBounds.toFloat());
 
-    auto resolveBool = [selectedSlice] (uint32_t bit, bool sliceValue, bool globalValue)
-    {
-        const bool locked = selectedSlice != nullptr && (selectedSlice->lockMask & bit) != 0;
-        return std::pair<bool, bool> { locked ? sliceValue : globalValue, locked };
-    };
+        addTabCell (toIntBounds (contextRow.items[0].currentBounds), "GLOBAL", TabTarget::Global, ! input.sliceScope, true);
+        addTabCell (toIntBounds (contextRow.items[2].currentBounds), sliceTabText, TabTarget::Slice, input.sliceScope, input.hasValidSlice);
 
-    const auto algoNames = juce::StringArray { "Repitch", "Stretch", "Bungee" };
-    const auto grainNames = juce::StringArray { "Fast", "Normal", "Smooth" };
-    const auto loopNames = juce::StringArray { "Off", "Loop", "PP" };
-    const auto filterTypeNames = juce::StringArray { "LP", "HP", "BP", "NT" };
-    const auto filterSlopeNames = juce::StringArray { "12dB", "24dB" };
+        contextInfoBounds = toIntBounds (contextRow.items[timeItemIndex].currentBounds);
+        contextDot1Bounds = toIntBounds (contextRow.items[dot1ItemIndex].currentBounds);
+        contextDot2Bounds = toIntBounds (contextRow.items[dot2ItemIndex].currentBounds);
+        contextStatusBounds = toIntBounds (contextRow.items[statusItemIndex].currentBounds);
 
-    auto moduleRows = [] (const ModuleLayout& module)
-    {
-        juce::FlexBox rows;
-        rows.flexDirection = juce::FlexBox::Direction::column;
-        rows.flexWrap = juce::FlexBox::Wrap::noWrap;
-        rows.items.add (juce::FlexItem().withFlex (1.0f).withMinHeight (18.0f));
-        if (kRowGap > 0)
-            rows.items.add (juce::FlexItem().withHeight ((float) kRowGap));
-        rows.items.add (juce::FlexItem().withFlex (1.0f).withMinHeight (18.0f));
-        rows.performLayout (module.bodyBounds.toFloat());
-        return std::pair<juce::Rectangle<int>, juce::Rectangle<int>> {
-            toIntBounds (rows.items[0].currentBounds),
-            toIntBounds (rows.items[rows.items.size() - 1].currentBounds)
-        };
-    };
+        const int overrideCount = countAllEffectiveOverrides (*input.selectedSlice, input.globals);
+        const float lenSec = (float) (input.selectedSlice->endSample - input.selectedSlice->startSample) / input.sampleRate;
+        contextTitle = formatTrimmed (lenSec, 2) + "s";
+        contextStatus = overrideCount > 0 ? juce::String (overrideCount) + " overrides" : juce::String();
 
-    const auto playbackRows = moduleRows (modules[0]);
-    const auto filterRows = moduleRows (modules[1]);
-    const auto ampRows = moduleRows (modules[2]);
-    const auto outputRows = moduleRows (modules[3]);
+        Cell noteCell;
+        noteCell.module = Module::Playback;
+        noteCell.bounds = toIntBounds (contextRow.items[noteItemIndex].currentBounds);
+        noteCell.valueText = midiNoteName (input.selectedSlice->midiNote);
+        noteCell.isContextInline = true;
+        noteCell.fieldId = IntersectProcessor::FieldMidiNote;
+        noteCell.currentValue = (float) input.selectedSlice->midiNote;
+        noteCell.minVal = 0.0f;
+        noteCell.maxVal = 127.0f;
+        noteCell.step = 1.0f;
+        noteCell.dragPerPixel = 0.25f;
+        addParamCell (noteCell);
 
-    const auto playbackRow1 = makeRowCells (playbackRows.first, {
-        { 1.0f, kCellGap }, { 0.92f, kCellGap }, { 0.9f, 0 }
-    });
-    const auto filterRow1 = makeRowCells (filterRows.first, {
-        { 0.82f, kCellGap }, { 0.9f, kCellGap }, { 1.18f, kCellGap }, { 0.96f, kCellGap }, { 0.94f, kCellGap }, { 0.84f, 0 }
-    });
-    const auto filterRow2 = makeRowCells (filterRows.second, {
-        { 0.92f, kCellGap }, { 0.92f, kCellGap }, { 0.82f, kCellGap }, { 0.95f, kGroupGap }, { 1.06f, 0 }
-    });
-    const auto ampRow1 = makeRowCells (ampRows.first, {
-        { 1.0f, kCellGap }, { 1.0f, kCellGap }, { 0.92f, 0 }
-    });
-    const auto ampRow2 = makeRowCells (ampRows.second, {
-        { 1.02f, kCellGap }, { 0.82f, 0 }
-    });
-    const auto outputRow1 = makeRowCells (outputRows.first, {
-        { 0.78f, kCellGap }, { 0.94f, kCellGap }, { 0.84f, 0 }
-    });
-    const auto outputRow2 = makeRowCells (outputRows.second, {
-        { 1.0f, kCellGap }, { 0.96f, 0 }
-    });
-
-    {
-        Cell setBpmCell;
-        setBpmCell.kind = CellKind::SetBpm;
-        setBpmCell.module = Module::Playback;
-        auto nameFont = IntersectLookAndFeel::fitFontToWidth (
-            modules[0].name, 8.5f, 7.2f, modules[0].headerBounds.getWidth() - 6, true);
-        int nameW = (int) std::ceil (measureTextWidth (nameFont, modules[0].name));
-        setBpmCell.bounds = juce::Rectangle<int> (
-            modules[0].headerBounds.getX() + nameW + 5,
-            modules[0].headerBounds.getY() + 2,
-            38, modules[0].headerBounds.getHeight() - 4);
-        setBpmCell.valueText = "SET BPM";
-        setBpmCell.isEnabled = sliceScope ? hasValidSlice : ui.sampleLoaded;
-        addParamCell (setBpmCell);
+        Cell midiCell;
+        midiCell.module = Module::Playback;
+        midiCell.bounds = toIntBounds (contextRow.items[midiItemIndex].currentBounds);
+        midiCell.label = "MIDI";
+        midiCell.valueText = juce::String (input.selectedSlice->midiNote);
+        midiCell.isContextInline = true;
+        midiCell.fieldId = IntersectProcessor::FieldMidiNote;
+        midiCell.currentValue = (float) input.selectedSlice->midiNote;
+        midiCell.minVal = 0.0f;
+        midiCell.maxVal = 127.0f;
+        midiCell.step = 1.0f;
+        midiCell.dragPerPixel = 0.25f;
+        addParamCell (midiCell);
+        return;
     }
 
-    const auto [resolvedBpm, bpmLocked] = sliceScope ? resolveFloat (kLockBpm, selectedSlice->bpm, gBpm)
-                                                     : std::pair<float, bool> { gBpm, false };
-    const auto [resolvedPitch, pitchLocked] = sliceScope ? resolveFloat (kLockPitch, selectedSlice->pitchSemitones, gPitch)
-                                                         : std::pair<float, bool> { gPitch, false };
-    const auto [resolvedCents, centsLocked] = sliceScope ? resolveFloat (kLockCentsDetune, selectedSlice->centsDetune, gCents)
-                                                         : std::pair<float, bool> { gCents, false };
-    const auto [resolvedAlgo, algoLocked] = sliceScope ? resolveInt (kLockAlgorithm, selectedSlice->algorithm, gAlgo)
-                                                       : std::pair<int, bool> { gAlgo, false };
-    const auto [resolvedStretch, stretchLocked] = sliceScope ? resolveBool (kLockStretch, selectedSlice->stretchEnabled, gStretch)
-                                                             : std::pair<bool, bool> { gStretch, false };
-    const auto playbackRow2 = resolvedAlgo == 1
-        ? makeRowCells (playbackRows.second, {
+    const int infoItemIndex = contextRow.items.size();
+    contextRow.items.add (juce::FlexItem().withFlex (1.0f).withMinWidth (90.0f));
+    contextRow.performLayout (contextBounds.toFloat());
+
+    addTabCell (toIntBounds (contextRow.items[0].currentBounds), "GLOBAL", TabTarget::Global, ! input.sliceScope, true);
+    addTabCell (toIntBounds (contextRow.items[2].currentBounds), sliceTabText, TabTarget::Slice, input.sliceScope, input.hasValidSlice);
+
+    contextInfoBounds = toIntBounds (contextRow.items[infoItemIndex].currentBounds);
+    if (input.sampleLoaded)
+        contextSubtitle = formatTrimmed ((float) input.sampleNumFrames / input.sampleRate, 2) + "s";
+    else if (input.sampleMissing)
+        contextSubtitle = "MISSING SAMPLE, RELINK REQUIRED";
+    else if (input.hasValidSlice)
+        contextSubtitle = "SLICE SELECTED, EDITS STAY GLOBAL";
+    else
+        contextSubtitle = "NO SLICE SELECTED";
+}
+
+void SignalChainBar::rebuildPlaybackModule (const LayoutInput& input,
+                                            const std::pair<juce::Rectangle<int>, juce::Rectangle<int>>& rows)
+{
+    const auto* selectedSlice = input.selectedSlice;
+    const auto& globals = input.globals;
+    const auto algoNames = juce::StringArray { "Repitch", "Stretch", "Bungee" };
+    const auto grainNames = juce::StringArray { "Fast", "Normal", "Smooth" };
+    const auto row1 = makeRowCells (rows.first, {
+        { 1.0f, kCellGap }, { 0.92f, kCellGap }, { 0.9f, 0 }
+    });
+
+    Cell setBpmCell;
+    setBpmCell.kind = CellKind::SetBpm;
+    setBpmCell.module = Module::Playback;
+    auto nameFont = IntersectLookAndFeel::fitFontToWidth (
+        modules[0].name, 8.5f, 7.2f, modules[0].headerBounds.getWidth() - 6, true);
+    const int nameW = (int) std::ceil (measureTextWidth (nameFont, modules[0].name));
+    setBpmCell.bounds = juce::Rectangle<int> (
+        modules[0].headerBounds.getX() + nameW + 5,
+        modules[0].headerBounds.getY() + 2,
+        38, modules[0].headerBounds.getHeight() - 4);
+    setBpmCell.valueText = "SET BPM";
+    setBpmCell.isEnabled = input.sliceScope ? input.hasValidSlice : input.sampleLoaded;
+    addParamCell (setBpmCell);
+
+    const auto [resolvedBpm, bpmLocked] = input.sliceScope
+        ? resolveLockedValue (selectedSlice, kLockBpm, selectedSlice->bpm, globals.bpm)
+        : std::pair<float, bool> { globals.bpm, false };
+    const auto [resolvedPitch, pitchLocked] = input.sliceScope
+        ? resolveLockedValue (selectedSlice, kLockPitch, selectedSlice->pitchSemitones, globals.pitchSemitones)
+        : std::pair<float, bool> { globals.pitchSemitones, false };
+    const auto [resolvedCents, centsLocked] = input.sliceScope
+        ? resolveLockedValue (selectedSlice, kLockCentsDetune, selectedSlice->centsDetune, globals.centsDetune)
+        : std::pair<float, bool> { globals.centsDetune, false };
+    const auto [resolvedAlgo, algoLocked] = input.sliceScope
+        ? resolveLockedValue (selectedSlice, kLockAlgorithm, selectedSlice->algorithm, globals.algorithm)
+        : std::pair<int, bool> { globals.algorithm, false };
+    const auto [resolvedStretch, stretchLocked] = input.sliceScope
+        ? resolveLockedValue (selectedSlice, kLockStretch, selectedSlice->stretchEnabled, globals.stretchEnabled)
+        : std::pair<bool, bool> { globals.stretchEnabled, false };
+
+    const auto row2 = resolvedAlgo == 1
+        ? makeRowCells (rows.second, {
             { 1.45f, kGroupGap }, { 0.96f, kCellGap }, { 0.92f, kCellGap }, { 0.8f, kGroupGap }, { 1.04f, kCellGap }, { 0.74f, 0 }
         })
         : (resolvedAlgo == 2
-            ? makeRowCells (playbackRows.second, {
+            ? makeRowCells (rows.second, {
                 { 1.46f, kGroupGap }, { 1.06f, kGroupGap }, { 1.06f, kCellGap }, { 0.78f, 0 }
             })
-            : makeRowCells (playbackRows.second, {
+            : makeRowCells (rows.second, {
                 { 1.46f, kGroupGap }, { 1.18f, kCellGap }, { 0.82f, 0 }
             }));
+
     const bool repitchStretch = resolvedAlgo == 0 && resolvedStretch;
     const float dawBpm = processor.dawBpm.load (std::memory_order_relaxed);
     const float derivedSemis = (repitchStretch && dawBpm > 0.0f && resolvedBpm > 0.0f)
@@ -734,7 +675,7 @@ void SignalChainBar::rebuildLayout()
     cell.dragPerPixel = 0.25f;
     cell.textDecimals = 2;
     cell.isLocked = bpmLocked;
-    cell.bounds = playbackRow1[0];
+    cell.bounds = row1[0];
     cell.label = "BPM";
     cell.valueText = formatTrimmed (resolvedBpm, 2);
     cell.drawTrailingDivider = true;
@@ -753,7 +694,7 @@ void SignalChainBar::rebuildLayout()
     cell.textDecimals = 2;
     cell.isLocked = pitchLocked;
     cell.isReadOnly = repitchStretch;
-    cell.bounds = playbackRow1[1];
+    cell.bounds = row1[1];
     cell.label = "PITCH";
     cell.valueText = formatSigned (displayPitch, 2, "st");
     cell.drawTrailingDivider = true;
@@ -772,10 +713,9 @@ void SignalChainBar::rebuildLayout()
     cell.textDecimals = 1;
     cell.isLocked = centsLocked;
     cell.isReadOnly = repitchStretch;
-    cell.bounds = playbackRow1[2];
+    cell.bounds = row1[2];
     cell.label = "TUNE";
     cell.valueText = formatSigned (displayCents, 1, "ct");
-    cell.drawTrailingDivider = false;
     addParamCell (cell);
 
     cell = {};
@@ -788,10 +728,9 @@ void SignalChainBar::rebuildLayout()
     cell.maxVal = 2.0f;
     cell.step = 1.0f;
     cell.choiceCount = 3;
-    cell.textDecimals = 0;
     cell.isChoice = true;
     cell.isLocked = algoLocked;
-    cell.bounds = playbackRow2[0];
+    cell.bounds = row2[0];
     cell.label = "ALGO";
     cell.valueText = getChoiceName (resolvedAlgo, algoNames);
     cell.drawTrailingDivider = true;
@@ -799,12 +738,15 @@ void SignalChainBar::rebuildLayout()
 
     if (resolvedAlgo == 1)
     {
-        const auto [tonality, tonalityLocked] = sliceScope ? resolveFloat (kLockTonality, selectedSlice->tonalityHz, gTonality)
-                                                           : std::pair<float, bool> { gTonality, false };
-        const auto [formant, formantLocked] = sliceScope ? resolveFloat (kLockFormant, selectedSlice->formantSemitones, gFormant)
-                                                         : std::pair<float, bool> { gFormant, false };
-        const auto [formantComp, formantCompLocked] = sliceScope ? resolveBool (kLockFormantComp, selectedSlice->formantComp, gFormantComp)
-                                                                 : std::pair<bool, bool> { gFormantComp, false };
+        const auto [tonality, tonalityLocked] = input.sliceScope
+            ? resolveLockedValue (selectedSlice, kLockTonality, selectedSlice->tonalityHz, globals.tonalityHz)
+            : std::pair<float, bool> { globals.tonalityHz, false };
+        const auto [formant, formantLocked] = input.sliceScope
+            ? resolveLockedValue (selectedSlice, kLockFormant, selectedSlice->formantSemitones, globals.formantSemitones)
+            : std::pair<float, bool> { globals.formantSemitones, false };
+        const auto [formantComp, formantCompLocked] = input.sliceScope
+            ? resolveLockedValue (selectedSlice, kLockFormantComp, selectedSlice->formantComp, globals.formantComp)
+            : std::pair<bool, bool> { globals.formantComp, false };
 
         cell = {};
         cell.module = Module::Playback;
@@ -816,9 +758,8 @@ void SignalChainBar::rebuildLayout()
         cell.maxVal = 8000.0f;
         cell.step = 1.0f;
         cell.dragPerPixel = 20.0f;
-        cell.textDecimals = 0;
         cell.isLocked = tonalityLocked;
-        cell.bounds = playbackRow2[1];
+        cell.bounds = row2[1];
         cell.label = "TONAL";
         cell.valueText = formatHz (tonality);
         cell.drawTrailingDivider = true;
@@ -836,7 +777,7 @@ void SignalChainBar::rebuildLayout()
         cell.dragPerPixel = 0.1f;
         cell.textDecimals = 1;
         cell.isLocked = formantLocked;
-        cell.bounds = playbackRow2[2];
+        cell.bounds = row2[2];
         cell.label = "FMNT";
         cell.valueText = formatSigned (formant, 1, "st");
         cell.drawTrailingDivider = true;
@@ -851,10 +792,9 @@ void SignalChainBar::rebuildLayout()
         cell.minVal = 0.0f;
         cell.maxVal = 1.0f;
         cell.step = 1.0f;
-        cell.textDecimals = 0;
         cell.isBoolean = true;
         cell.isLocked = formantCompLocked;
-        cell.bounds = playbackRow2[3];
+        cell.bounds = row2[3];
         cell.label = "FMNT C";
         cell.valueText = formatBool (formantComp);
         cell.drawTrailingDivider = true;
@@ -862,8 +802,9 @@ void SignalChainBar::rebuildLayout()
     }
     else if (resolvedAlgo == 2)
     {
-        const auto [grainMode, grainLocked] = sliceScope ? resolveInt (kLockGrainMode, selectedSlice->grainMode, gGrain)
-                                                         : std::pair<int, bool> { gGrain, false };
+        const auto [grainMode, grainLocked] = input.sliceScope
+            ? resolveLockedValue (selectedSlice, kLockGrainMode, selectedSlice->grainMode, globals.grainMode)
+            : std::pair<int, bool> { globals.grainMode, false };
 
         cell = {};
         cell.module = Module::Playback;
@@ -875,10 +816,9 @@ void SignalChainBar::rebuildLayout()
         cell.maxVal = 2.0f;
         cell.step = 1.0f;
         cell.choiceCount = 3;
-        cell.textDecimals = 0;
         cell.isChoice = true;
         cell.isLocked = grainLocked;
-        cell.bounds = playbackRow2[1];
+        cell.bounds = row2[1];
         cell.label = "GRAIN";
         cell.valueText = getChoiceName (grainMode, grainNames);
         cell.drawTrailingDivider = true;
@@ -897,17 +837,17 @@ void SignalChainBar::rebuildLayout()
     cell.minVal = 0.0f;
     cell.maxVal = 1.0f;
     cell.step = 1.0f;
-    cell.textDecimals = 0;
     cell.isBoolean = true;
     cell.isLocked = stretchLocked;
-    cell.bounds = playbackRow2[(size_t) stretchCellIndex];
+    cell.bounds = row2[(size_t) stretchCellIndex];
     cell.label = "STRETCH";
     cell.valueText = formatBool (resolvedStretch);
     cell.drawTrailingDivider = true;
     addParamCell (cell);
 
-    const auto [oneShot, oneShotLocked] = sliceScope ? resolveBool (kLockOneShot, selectedSlice->oneShot, gOneShot)
-                                                     : std::pair<bool, bool> { gOneShot, false };
+    const auto [oneShot, oneShotLocked] = input.sliceScope
+        ? resolveLockedValue (selectedSlice, kLockOneShot, selectedSlice->oneShot, globals.oneShot)
+        : std::pair<bool, bool> { globals.oneShot, false };
     cell = {};
     cell.module = Module::Playback;
     cell.globalParamId = ParamIds::defaultOneShot;
@@ -917,28 +857,74 @@ void SignalChainBar::rebuildLayout()
     cell.minVal = 0.0f;
     cell.maxVal = 1.0f;
     cell.step = 1.0f;
-    cell.textDecimals = 0;
     cell.isBoolean = true;
     cell.isLocked = oneShotLocked;
-    cell.bounds = playbackRow2[(size_t) oneShotCellIndex];
+    cell.bounds = row2[(size_t) oneShotCellIndex];
     cell.label = "1SHOT";
     cell.valueText = formatBool (oneShot);
-    cell.drawTrailingDivider = false;
     addParamCell (cell);
+}
 
-    const auto [filterEnabled, filterEnabledLocked] = sliceScope ? resolveBool (kLockFilterEnabled, selectedSlice->filterEnabled, gFilterEnabled)
-                                                                 : std::pair<bool, bool> { gFilterEnabled, false };
-    cell = {};
+void SignalChainBar::rebuildFilterModule (const LayoutInput& input,
+                                          const std::pair<juce::Rectangle<int>, juce::Rectangle<int>>& rows)
+{
+    const auto* selectedSlice = input.selectedSlice;
+    const auto& globals = input.globals;
+    const auto filterTypeNames = juce::StringArray { "LP", "HP", "BP", "NT" };
+    const auto filterSlopeNames = juce::StringArray { "12dB", "24dB" };
+    const auto row1 = makeRowCells (rows.first, {
+        { 0.82f, kCellGap }, { 0.9f, kCellGap }, { 1.18f, kCellGap }, { 0.96f, kCellGap }, { 0.94f, kCellGap }, { 0.84f, 0 }
+    });
+    const auto row2 = makeRowCells (rows.second, {
+        { 0.92f, kCellGap }, { 0.92f, kCellGap }, { 0.82f, kCellGap }, { 0.95f, kGroupGap }, { 1.06f, 0 }
+    });
+
+    const auto [filterEnabled, filterEnabledLocked] = input.sliceScope
+        ? resolveLockedValue (selectedSlice, kLockFilterEnabled, selectedSlice->filterEnabled, globals.filterEnabled)
+        : std::pair<bool, bool> { globals.filterEnabled, false };
+    const auto [filterType, filterTypeLocked] = input.sliceScope
+        ? resolveLockedValue (selectedSlice, kLockFilterType, selectedSlice->filterType, globals.filterType)
+        : std::pair<int, bool> { globals.filterType, false };
+    const auto [filterSlope, filterSlopeLocked] = input.sliceScope
+        ? resolveLockedValue (selectedSlice, kLockFilterSlope, selectedSlice->filterSlope, globals.filterSlope)
+        : std::pair<int, bool> { globals.filterSlope, false };
+    const auto [filterCutoff, filterCutoffLocked] = input.sliceScope
+        ? resolveLockedValue (selectedSlice, kLockFilterCutoff, selectedSlice->filterCutoff, globals.filterCutoffHz)
+        : std::pair<float, bool> { globals.filterCutoffHz, false };
+    const auto [filterReso, filterResoLocked] = input.sliceScope
+        ? resolveLockedValue (selectedSlice, kLockFilterReso, selectedSlice->filterReso, globals.filterReso)
+        : std::pair<float, bool> { globals.filterReso, false };
+    const auto [filterDrive, filterDriveLocked] = input.sliceScope
+        ? resolveLockedValue (selectedSlice, kLockFilterDrive, selectedSlice->filterDrive, globals.filterDrive)
+        : std::pair<float, bool> { globals.filterDrive, false };
+    const auto [filterKey, filterKeyLocked] = input.sliceScope
+        ? resolveLockedValue (selectedSlice, kLockFilterKeyTrack, selectedSlice->filterKeyTrack, globals.filterKeyTrack)
+        : std::pair<float, bool> { globals.filterKeyTrack, false };
+    const auto [filterAtkSec, filterAtkLocked] = input.sliceScope
+        ? resolveLockedValue (selectedSlice, kLockFilterEnvAttack, selectedSlice->filterEnvAttackSec, globals.filterEnvAttackSec)
+        : std::pair<float, bool> { globals.filterEnvAttackSec, false };
+    const auto [filterDecSec, filterDecLocked] = input.sliceScope
+        ? resolveLockedValue (selectedSlice, kLockFilterEnvDecay, selectedSlice->filterEnvDecaySec, globals.filterEnvDecaySec)
+        : std::pair<float, bool> { globals.filterEnvDecaySec, false };
+    const auto [filterSus, filterSusLocked] = input.sliceScope
+        ? resolveLockedValue (selectedSlice, kLockFilterEnvSustain, selectedSlice->filterEnvSustain, globals.filterEnvSustain)
+        : std::pair<float, bool> { globals.filterEnvSustain, false };
+    const auto [filterRelSec, filterRelLocked] = input.sliceScope
+        ? resolveLockedValue (selectedSlice, kLockFilterEnvRelease, selectedSlice->filterEnvReleaseSec, globals.filterEnvReleaseSec)
+        : std::pair<float, bool> { globals.filterEnvReleaseSec, false };
+    const auto [filterAmt, filterAmtLocked] = input.sliceScope
+        ? resolveLockedValue (selectedSlice, kLockFilterEnvAmount, selectedSlice->filterEnvAmount, globals.filterEnvAmount)
+        : std::pair<float, bool> { globals.filterEnvAmount, false };
+
+    Cell cell;
     cell.module = Module::Filter;
-    {
-        auto nameFont = IntersectLookAndFeel::fitFontToWidth (
-            modules[1].name, 8.5f, 7.2f, modules[1].headerBounds.getWidth() - 6, true);
-        int nameW = (int) std::ceil (measureTextWidth (nameFont, modules[1].name));
-        cell.bounds = juce::Rectangle<int> (
-            modules[1].headerBounds.getX() + nameW + 5,
-            modules[1].headerBounds.getY() + 2,
-            28, modules[1].headerBounds.getHeight() - 4);
-    }
+    auto nameFont = IntersectLookAndFeel::fitFontToWidth (
+        modules[1].name, 8.5f, 7.2f, modules[1].headerBounds.getWidth() - 6, true);
+    const int nameW = (int) std::ceil (measureTextWidth (nameFont, modules[1].name));
+    cell.bounds = juce::Rectangle<int> (
+        modules[1].headerBounds.getX() + nameW + 5,
+        modules[1].headerBounds.getY() + 2,
+        28, modules[1].headerBounds.getHeight() - 4);
     cell.globalParamId = ParamIds::defaultFilterEnabled;
     cell.fieldId = IntersectProcessor::FieldFilterEnabled;
     cell.lockBit = kLockFilterEnabled;
@@ -946,36 +932,11 @@ void SignalChainBar::rebuildLayout()
     cell.minVal = 0.0f;
     cell.maxVal = 1.0f;
     cell.step = 1.0f;
-    cell.textDecimals = 0;
     cell.isBoolean = true;
     cell.isLocked = filterEnabledLocked;
     cell.isHeaderControl = true;
-    cell.label = "FILTER";
     cell.valueText = filterEnabled ? "ON" : "OFF";
     addParamCell (cell);
-
-    const auto [filterType, filterTypeLocked] = sliceScope ? resolveInt (kLockFilterType, selectedSlice->filterType, gFilterType)
-                                                           : std::pair<int, bool> { gFilterType, false };
-    const auto [filterSlope, filterSlopeLocked] = sliceScope ? resolveInt (kLockFilterSlope, selectedSlice->filterSlope, gFilterSlope)
-                                                             : std::pair<int, bool> { gFilterSlope, false };
-    const auto [filterCutoff, filterCutoffLocked] = sliceScope ? resolveFloat (kLockFilterCutoff, selectedSlice->filterCutoff, gFilterCutoff)
-                                                               : std::pair<float, bool> { gFilterCutoff, false };
-    const auto [filterReso, filterResoLocked] = sliceScope ? resolveFloat (kLockFilterReso, selectedSlice->filterReso, gFilterReso)
-                                                           : std::pair<float, bool> { gFilterReso, false };
-    const auto [filterDrive, filterDriveLocked] = sliceScope ? resolveFloat (kLockFilterDrive, selectedSlice->filterDrive, gFilterDrive)
-                                                             : std::pair<float, bool> { gFilterDrive, false };
-    const auto [filterKey, filterKeyLocked] = sliceScope ? resolveFloat (kLockFilterKeyTrack, selectedSlice->filterKeyTrack, gFilterKey)
-                                                         : std::pair<float, bool> { gFilterKey, false };
-    const auto [filterAtkSec, filterAtkLocked] = sliceScope ? resolveFloat (kLockFilterEnvAttack, selectedSlice->filterEnvAttackSec, gFilterAtkSec)
-                                                            : std::pair<float, bool> { gFilterAtkSec, false };
-    const auto [filterDecSec, filterDecLocked] = sliceScope ? resolveFloat (kLockFilterEnvDecay, selectedSlice->filterEnvDecaySec, gFilterDecSec)
-                                                            : std::pair<float, bool> { gFilterDecSec, false };
-    const auto [filterSus, filterSusLocked] = sliceScope ? resolveFloat (kLockFilterEnvSustain, selectedSlice->filterEnvSustain, gFilterSus)
-                                                         : std::pair<float, bool> { gFilterSus, false };
-    const auto [filterRelSec, filterRelLocked] = sliceScope ? resolveFloat (kLockFilterEnvRelease, selectedSlice->filterEnvReleaseSec, gFilterRelSec)
-                                                            : std::pair<float, bool> { gFilterRelSec, false };
-    const auto [filterAmt, filterAmtLocked] = sliceScope ? resolveFloat (kLockFilterEnvAmount, selectedSlice->filterEnvAmount, gFilterAmt)
-                                                         : std::pair<float, bool> { gFilterAmt, false };
 
     auto addFilterCell = [this, filterEnabled] (const juce::Rectangle<int>& bounds,
                                                 const juce::String& label,
@@ -1022,51 +983,78 @@ void SignalChainBar::rebuildLayout()
         addParamCell (c);
     };
 
-    addFilterCell (filterRow1[0], "TYPE", getChoiceName (filterType, filterTypeNames),
+    addFilterCell (row1[0], "TYPE", getChoiceName (filterType, filterTypeNames),
                    ParamIds::defaultFilterType, IntersectProcessor::FieldFilterType, kLockFilterType,
                    (float) filterType, 0.0f, 3.0f, 1.0f, 0.0f, 0, true, 4, filterTypeLocked, DragMapping::Linear, false, 1.0f, true);
-    addFilterCell (filterRow1[1], "SLOPE", getChoiceName (filterSlope, filterSlopeNames),
+    addFilterCell (row1[1], "SLOPE", getChoiceName (filterSlope, filterSlopeNames),
                    ParamIds::defaultFilterSlope, IntersectProcessor::FieldFilterSlope, kLockFilterSlope,
                    (float) filterSlope, 0.0f, 1.0f, 1.0f, 0.0f, 0, true, 2, filterSlopeLocked, DragMapping::Linear, false, 1.0f, true);
-    addFilterCell (filterRow1[2], "CUT", formatHz (filterCutoff),
+    addFilterCell (row1[2], "CUT", formatHz (filterCutoff),
                    ParamIds::defaultFilterCutoff, IntersectProcessor::FieldFilterCutoff, kLockFilterCutoff,
-                   filterCutoff, 20.0f, 20000.0f, 1.0f, 0.005f, 0, false, 0, filterCutoffLocked, DragMapping::FilterCutoff, false, 1.0f, true);
-    addFilterCell (filterRow1[3], "RESO", formatPercent (filterReso, 1),
+                   filterCutoff, kMinFilterCutoffHz, kMaxFilterCutoffHz, 1.0f, 0.005f, 0, false, 0, filterCutoffLocked, DragMapping::FilterCutoff, false, 1.0f, true);
+    addFilterCell (row1[3], "RESO", formatPercent (filterReso, 1),
                    ParamIds::defaultFilterReso, IntersectProcessor::FieldFilterReso, kLockFilterReso,
                    filterReso, 0.0f, 100.0f, 0.1f, 0.5f, 1, false, 0, filterResoLocked, DragMapping::Linear, false, 1.0f, true);
-    addFilterCell (filterRow1[4], "DRIVE", formatPercent (filterDrive, 1),
+    addFilterCell (row1[4], "DRIVE", formatPercent (filterDrive, 1),
                    ParamIds::defaultFilterDrive, IntersectProcessor::FieldFilterDrive, kLockFilterDrive,
                    filterDrive, 0.0f, 100.0f, 0.1f, 0.5f, 1, false, 0, filterDriveLocked, DragMapping::Linear, false, 1.0f, true);
-    addFilterCell (filterRow1[5], "KEY", formatPercent (filterKey, 1),
+    addFilterCell (row1[5], "KEY", formatPercent (filterKey, 1),
                    ParamIds::defaultFilterKeyTrack, IntersectProcessor::FieldFilterKeyTrack, kLockFilterKeyTrack,
                    filterKey, 0.0f, 100.0f, 0.1f, 0.5f, 1, false, 0, filterKeyLocked);
 
-    addFilterCell (filterRow2[0], "ATK", formatMs (filterAtkSec * 1000.0f),
+    const float filterAtkValue = input.sliceScope ? filterAtkSec : globals.filterEnvAttackSec * 1000.0f;
+    const float filterDecValue = input.sliceScope ? filterDecSec : globals.filterEnvDecaySec * 1000.0f;
+    const float filterSusValue = input.sliceScope ? filterSus : globals.filterEnvSustain * 100.0f;
+    const float filterRelValue = input.sliceScope ? filterRelSec : globals.filterEnvReleaseSec * 1000.0f;
+
+    addFilterCell (row2[0], "ATK", formatMs (filterAtkValue),
                    ParamIds::defaultFilterEnvAttack, IntersectProcessor::FieldFilterEnvAttack, kLockFilterEnvAttack,
-                   filterAtkSec, 0.0f, 10.0f, 0.0001f, 5.0f, 1, false, 0, filterAtkLocked, DragMapping::Linear, false, 1000.0f, true);
-    addFilterCell (filterRow2[1], "DEC", formatMs (filterDecSec * 1000.0f),
+                   filterAtkValue, 0.0f, input.sliceScope ? 10.0f : 10000.0f, input.sliceScope ? 0.0001f : 0.1f,
+                   5.0f, 1, false, 0, filterAtkLocked, DragMapping::Linear, false, input.sliceScope ? 1000.0f : 1.0f, true);
+    addFilterCell (row2[1], "DEC", formatMs (filterDecValue),
                    ParamIds::defaultFilterEnvDecay, IntersectProcessor::FieldFilterEnvDecay, kLockFilterEnvDecay,
-                   filterDecSec, 0.0f, 10.0f, 0.0001f, 5.0f, 1, false, 0, filterDecLocked, DragMapping::Linear, false, 1000.0f, true);
-    addFilterCell (filterRow2[2], "SUS", formatPercent (filterSus * 100.0f, 1),
+                   filterDecValue, 0.0f, input.sliceScope ? 10.0f : 10000.0f, input.sliceScope ? 0.0001f : 0.1f,
+                   5.0f, 1, false, 0, filterDecLocked, DragMapping::Linear, false, input.sliceScope ? 1000.0f : 1.0f, true);
+    addFilterCell (row2[2], "SUS", formatPercent (filterSusValue, 1),
                    ParamIds::defaultFilterEnvSustain, IntersectProcessor::FieldFilterEnvSustain, kLockFilterEnvSustain,
-                   filterSus, 0.0f, 1.0f, 0.001f, 0.5f, 1, false, 0, filterSusLocked, DragMapping::Linear, false, 100.0f, true);
-    addFilterCell (filterRow2[3], "REL", formatMs (filterRelSec * 1000.0f),
+                   filterSusValue, 0.0f, input.sliceScope ? 1.0f : 100.0f, input.sliceScope ? 0.001f : 0.1f,
+                   0.5f, 1, false, 0, filterSusLocked, DragMapping::Linear, false, input.sliceScope ? 100.0f : 1.0f, true);
+    addFilterCell (row2[3], "REL", formatMs (filterRelValue),
                    ParamIds::defaultFilterEnvRelease, IntersectProcessor::FieldFilterEnvRelease, kLockFilterEnvRelease,
-                   filterRelSec, 0.0f, 10.0f, 0.0001f, 5.0f, 1, false, 0, filterRelLocked, DragMapping::Linear, false, 1000.0f, true);
-    addFilterCell (filterRow2[4], "AMT", formatSigned (filterAmt, 1, "st"),
+                   filterRelValue, 0.0f, input.sliceScope ? 10.0f : 10000.0f, input.sliceScope ? 0.0001f : 0.1f,
+                   5.0f, 1, false, 0, filterRelLocked, DragMapping::Linear, false, input.sliceScope ? 1000.0f : 1.0f, true);
+    addFilterCell (row2[4], "AMT", formatSigned (filterAmt, 1, "st"),
                    ParamIds::defaultFilterEnvAmount, IntersectProcessor::FieldFilterEnvAmount, kLockFilterEnvAmount,
                    filterAmt, -96.0f, 96.0f, 0.1f, 0.2f, 1, false, 0, filterAmtLocked);
+}
 
-    const auto [attackSec, attackLocked] = sliceScope ? resolveFloat (kLockAttack, selectedSlice->attackSec, gAttackMs / 1000.0f)
-                                                      : std::pair<float, bool> { gAttackMs, false };
-    const auto [decaySec, decayLocked] = sliceScope ? resolveFloat (kLockDecay, selectedSlice->decaySec, gDecayMs / 1000.0f)
-                                                    : std::pair<float, bool> { gDecayMs, false };
-    const auto [sustain, sustainLocked] = sliceScope ? resolveFloat (kLockSustain, selectedSlice->sustainLevel, gSustainPct / 100.0f)
-                                                     : std::pair<float, bool> { gSustainPct, false };
-    const auto [releaseSec, releaseLocked] = sliceScope ? resolveFloat (kLockRelease, selectedSlice->releaseSec, gReleaseMs / 1000.0f)
-                                                        : std::pair<float, bool> { gReleaseMs, false };
-    const auto [tail, tailLocked] = sliceScope ? resolveBool (kLockReleaseTail, selectedSlice->releaseTail, gTail)
-                                               : std::pair<bool, bool> { gTail, false };
+void SignalChainBar::rebuildAmpModule (const LayoutInput& input,
+                                       const std::pair<juce::Rectangle<int>, juce::Rectangle<int>>& rows)
+{
+    const auto* selectedSlice = input.selectedSlice;
+    const auto& globals = input.globals;
+    const auto row1 = makeRowCells (rows.first, {
+        { 1.0f, kCellGap }, { 1.0f, kCellGap }, { 0.92f, 0 }
+    });
+    const auto row2 = makeRowCells (rows.second, {
+        { 1.02f, kCellGap }, { 0.82f, 0 }
+    });
+
+    const auto [attackSec, attackLocked] = input.sliceScope
+        ? resolveLockedValue (selectedSlice, kLockAttack, selectedSlice->attackSec, globals.attackSec)
+        : std::pair<float, bool> { globals.attackSec, false };
+    const auto [decaySec, decayLocked] = input.sliceScope
+        ? resolveLockedValue (selectedSlice, kLockDecay, selectedSlice->decaySec, globals.decaySec)
+        : std::pair<float, bool> { globals.decaySec, false };
+    const auto [sustain, sustainLocked] = input.sliceScope
+        ? resolveLockedValue (selectedSlice, kLockSustain, selectedSlice->sustainLevel, globals.sustain)
+        : std::pair<float, bool> { globals.sustain, false };
+    const auto [releaseSec, releaseLocked] = input.sliceScope
+        ? resolveLockedValue (selectedSlice, kLockRelease, selectedSlice->releaseSec, globals.releaseSec)
+        : std::pair<float, bool> { globals.releaseSec, false };
+    const auto [tail, tailLocked] = input.sliceScope
+        ? resolveLockedValue (selectedSlice, kLockReleaseTail, selectedSlice->releaseTail, globals.releaseTail)
+        : std::pair<bool, bool> { globals.releaseTail, false };
 
     auto addAmpCell = [this] (const juce::Rectangle<int>& bounds,
                               const juce::String& label,
@@ -1106,36 +1094,60 @@ void SignalChainBar::rebuildLayout()
         addParamCell (c);
     };
 
-    addAmpCell (ampRow1[0], "ATK", sliceScope ? formatMs (attackSec * 1000.0f) : formatMs (attackSec),
+    const float attackValue = input.sliceScope ? attackSec : globals.attackSec * 1000.0f;
+    const float decayValue = input.sliceScope ? decaySec : globals.decaySec * 1000.0f;
+    const float sustainValue = input.sliceScope ? sustain : globals.sustain * 100.0f;
+    const float releaseValue = input.sliceScope ? releaseSec : globals.releaseSec * 1000.0f;
+
+    addAmpCell (row1[0], "ATK", formatMs (attackValue),
                 ParamIds::defaultAttack, IntersectProcessor::FieldAttack, kLockAttack,
-                attackSec, 0.0f, sliceScope ? 1.0f : 1000.0f, sliceScope ? 0.0001f : 0.1f,
-                2.0f, 1, attackLocked, false, sliceScope ? 1000.0f : 1.0f, true);
-    addAmpCell (ampRow1[1], "DEC", sliceScope ? formatMs (decaySec * 1000.0f) : formatMs (decaySec),
+                attackValue, 0.0f, input.sliceScope ? 1.0f : 1000.0f, input.sliceScope ? 0.0001f : 0.1f,
+                2.0f, 1, attackLocked, false, input.sliceScope ? 1000.0f : 1.0f, true);
+    addAmpCell (row1[1], "DEC", formatMs (decayValue),
                 ParamIds::defaultDecay, IntersectProcessor::FieldDecay, kLockDecay,
-                decaySec, 0.0f, sliceScope ? 5.0f : 5000.0f, sliceScope ? 0.0001f : 0.1f,
-                5.0f, 1, decayLocked, false, sliceScope ? 1000.0f : 1.0f, true);
-    addAmpCell (ampRow1[2], "SUS", sliceScope ? formatPercent (sustain * 100.0f, 1) : formatPercent (sustain, 1),
+                decayValue, 0.0f, input.sliceScope ? 5.0f : 5000.0f, input.sliceScope ? 0.0001f : 0.1f,
+                5.0f, 1, decayLocked, false, input.sliceScope ? 1000.0f : 1.0f, true);
+    addAmpCell (row1[2], "SUS", formatPercent (sustainValue, 1),
                 ParamIds::defaultSustain, IntersectProcessor::FieldSustain, kLockSustain,
-                sustain, 0.0f, sliceScope ? 1.0f : 100.0f, sliceScope ? 0.001f : 0.1f,
-                0.5f, 1, sustainLocked, false, sliceScope ? 100.0f : 1.0f);
-    addAmpCell (ampRow2[0], "REL", sliceScope ? formatMs (releaseSec * 1000.0f) : formatMs (releaseSec),
+                sustainValue, 0.0f, input.sliceScope ? 1.0f : 100.0f, input.sliceScope ? 0.001f : 0.1f,
+                0.5f, 1, sustainLocked, false, input.sliceScope ? 100.0f : 1.0f);
+    addAmpCell (row2[0], "REL", formatMs (releaseValue),
                 ParamIds::defaultRelease, IntersectProcessor::FieldRelease, kLockRelease,
-                releaseSec, 0.0f, sliceScope ? 5.0f : 5000.0f, sliceScope ? 0.0001f : 0.1f,
-                5.0f, 1, releaseLocked, false, sliceScope ? 1000.0f : 1.0f, true);
-    addAmpCell (ampRow2[1], "TAIL", formatBool (tail),
+                releaseValue, 0.0f, input.sliceScope ? 5.0f : 5000.0f, input.sliceScope ? 0.0001f : 0.1f,
+                5.0f, 1, releaseLocked, false, input.sliceScope ? 1000.0f : 1.0f, true);
+    addAmpCell (row2[1], "TAIL", formatBool (tail),
                 ParamIds::defaultReleaseTail, IntersectProcessor::FieldReleaseTail, kLockReleaseTail,
                 tail ? 1.0f : 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0, tailLocked, true);
+}
 
-    const auto [reverse, reverseLocked] = sliceScope ? resolveBool (kLockReverse, selectedSlice->reverse, gReverse)
-                                                     : std::pair<bool, bool> { gReverse, false };
-    const auto [loopMode, loopLocked] = sliceScope ? resolveInt (kLockLoop, selectedSlice->loopMode, gLoop)
-                                                   : std::pair<int, bool> { gLoop, false };
-    const auto [muteGroup, muteLocked] = sliceScope ? resolveInt (kLockMuteGroup, selectedSlice->muteGroup, gMuteGroup)
-                                                    : std::pair<int, bool> { gMuteGroup, false };
-    const auto [gain, gainLocked] = sliceScope ? resolveFloat (kLockVolume, selectedSlice->volume, gGain)
-                                               : std::pair<float, bool> { gGain, false };
-    const auto [outputBus, outputLocked] = sliceScope ? resolveInt (kLockOutputBus, selectedSlice->outputBus, 0)
-                                                      : std::pair<int, bool> { 0, false };
+void SignalChainBar::rebuildOutputModule (const LayoutInput& input,
+                                          const std::pair<juce::Rectangle<int>, juce::Rectangle<int>>& rows)
+{
+    const auto* selectedSlice = input.selectedSlice;
+    const auto& globals = input.globals;
+    const auto loopNames = juce::StringArray { "Off", "Loop", "PP" };
+    const auto row1 = makeRowCells (rows.first, {
+        { 0.78f, kCellGap }, { 0.94f, kCellGap }, { 0.84f, 0 }
+    });
+    const auto row2 = makeRowCells (rows.second, {
+        { 1.0f, kCellGap }, { 0.96f, 0 }
+    });
+
+    const auto [reverse, reverseLocked] = input.sliceScope
+        ? resolveLockedValue (selectedSlice, kLockReverse, selectedSlice->reverse, globals.reverse)
+        : std::pair<bool, bool> { globals.reverse, false };
+    const auto [loopMode, loopLocked] = input.sliceScope
+        ? resolveLockedValue (selectedSlice, kLockLoop, selectedSlice->loopMode, globals.loopMode)
+        : std::pair<int, bool> { globals.loopMode, false };
+    const auto [muteGroup, muteLocked] = input.sliceScope
+        ? resolveLockedValue (selectedSlice, kLockMuteGroup, selectedSlice->muteGroup, globals.muteGroup)
+        : std::pair<int, bool> { globals.muteGroup, false };
+    const auto [gain, gainLocked] = input.sliceScope
+        ? resolveLockedValue (selectedSlice, kLockVolume, selectedSlice->volume, globals.volumeDb)
+        : std::pair<float, bool> { globals.volumeDb, false };
+    const auto [outputBus, outputLocked] = input.sliceScope
+        ? resolveLockedValue (selectedSlice, kLockOutputBus, selectedSlice->outputBus, 0)
+        : std::pair<int, bool> { 0, false };
 
     auto addOutputCell = [this] (const juce::Rectangle<int>& bounds,
                                  const juce::String& label,
@@ -1179,38 +1191,46 @@ void SignalChainBar::rebuildLayout()
         addParamCell (c);
     };
 
-    addOutputCell (outputRow1[0], "REV", formatBool (reverse),
+    addOutputCell (row1[0], "REV", formatBool (reverse),
                    ParamIds::defaultReverse, IntersectProcessor::FieldReverse, kLockReverse,
                    reverse ? 1.0f : 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0, reverseLocked, true, false, 0, 0.0f, true);
-    addOutputCell (outputRow1[1], "LOOP", getChoiceName (loopMode, loopNames),
+    addOutputCell (row1[1], "LOOP", getChoiceName (loopMode, loopNames),
                    ParamIds::defaultLoop, IntersectProcessor::FieldLoop, kLockLoop,
                    (float) loopMode, 0.0f, 2.0f, 1.0f, 0.0f, 0, loopLocked, false, true, 3, 0.0f, true);
-    addOutputCell (outputRow1[2], "MUTE", juce::String (muteGroup),
+    addOutputCell (row1[2], "MUTE", juce::String (muteGroup),
                    ParamIds::defaultMuteGroup, IntersectProcessor::FieldMuteGroup, kLockMuteGroup,
                    (float) muteGroup, 0.0f, 32.0f, 1.0f, 0.25f, 0, muteLocked);
 
-    addOutputCell (outputRow2[0], "GAIN", formatGain (gain),
+    addOutputCell (row2[0], "GAIN", formatGain (gain),
                    ParamIds::masterVolume, IntersectProcessor::FieldVolume, kLockVolume,
                    gain, -100.0f, 24.0f, 0.1f, 0.3f, 1, gainLocked, false, false, 0, 0.0f, true);
 
-    if (sliceScope)
+    if (input.sliceScope)
     {
-        addOutputCell (outputRow2[1], "OUT", juce::String (outputBus + 1),
+        addOutputCell (row2[1], "OUT", juce::String (outputBus + 1),
                        {}, IntersectProcessor::FieldOutputBus, kLockOutputBus,
                        (float) outputBus, 0.0f, 15.0f, 1.0f, 0.25f, 0, outputLocked, false, false, 0, 1.0f);
-    }
-    else
-    {
-        addOutputCell (outputRow2[1], "VOICES", juce::String (gVoices),
-                       ParamIds::maxVoices, -1, 0u,
-                       (float) gVoices, 1.0f, 31.0f, 1.0f, 0.25f, 0, false);
+        return;
     }
 
+    addOutputCell (row2[1], "VOICES", juce::String (globals.maxVoices),
+                   ParamIds::maxVoices, -1, 0u,
+                   (float) globals.maxVoices, 1.0f, 31.0f, 1.0f, 0.25f, 0, false);
 }
 
 void SignalChainBar::paint (juce::Graphics& g)
 {
-    rebuildLayout();
+    // Rebuild layout when state affecting cells has changed:
+    // resize, snapshot version change, or explicit dirty flag from interactions.
+    const auto snapshotVer = processor.getUiSliceSnapshotVersion();
+    const auto bounds = getLocalBounds();
+    if (layoutDirty || snapshotVer != lastSnapshotVersion || bounds != lastBounds)
+    {
+        rebuildLayout();
+        layoutDirty = false;
+        lastSnapshotVersion = snapshotVer;
+        lastBounds = bounds;
+    }
 
     g.fillAll (getTheme().signalChainBg);
 
@@ -1226,7 +1246,7 @@ void SignalChainBar::paint (juce::Graphics& g)
     {
         g.setFont (IntersectLookAndFeel::fitFontToWidth (contextTitle, 10.0f, 8.5f,
                                                          juce::jmin (140, infoBounds.getWidth()), false));
-        g.setColour (juce::Colour (0xFF586070));
+        g.setColour (getTheme().contextText);
         const int titleWidth = juce::jmin (128, infoBounds.getWidth());
         g.drawFittedText (contextTitle, infoX, infoBounds.getY(), titleWidth, infoBounds.getHeight(),
                           juce::Justification::centredLeft, 1);
@@ -1236,14 +1256,14 @@ void SignalChainBar::paint (juce::Graphics& g)
     if (contextDot1Bounds.getWidth() > 0)
     {
         g.setFont (IntersectLookAndFeel::makeFont (13.0f, true));
-        g.setColour (juce::Colour (0xFF586070));
+        g.setColour (getTheme().contextText);
         g.drawText (juce::String::charToString (0x00B7), contextDot1Bounds, juce::Justification::centred);
     }
 
     if (contextDot2Bounds.getWidth() > 0)
     {
         g.setFont (IntersectLookAndFeel::makeFont (13.0f, true));
-        g.setColour (juce::Colour (0xFF586070));
+        g.setColour (getTheme().contextText);
         g.drawText (juce::String::charToString (0x00B7), contextDot2Bounds, juce::Justification::centred);
     }
 
@@ -1251,7 +1271,7 @@ void SignalChainBar::paint (juce::Graphics& g)
     {
         g.setFont (IntersectLookAndFeel::fitFontToWidth (contextSubtitle, 9.0f, 7.5f,
                                                          infoBounds.getRight() - infoX, false));
-        g.setColour (juce::Colour (0xFF404858));
+        g.setColour (getTheme().contextDimText);
         g.drawFittedText (contextSubtitle, infoX, infoBounds.getY(),
                           infoBounds.getRight() - infoX, infoBounds.getHeight(),
                           juce::Justification::centredLeft, 1);
@@ -1308,7 +1328,7 @@ void SignalChainBar::paint (juce::Graphics& g)
 void SignalChainBar::drawTabCell (juce::Graphics& g, const Cell& cell) const
 {
     auto accent = (cell.tabTarget == TabTarget::Global) ? getTheme().tabGlobalActive : getTheme().tabSliceActive;
-    auto inactiveBase = juce::Colour (0xFF384050);
+    auto inactiveBase = getTheme().tabInactive;
     auto text = cell.isActive ? accent : inactiveBase.withAlpha (cell.isEnabled ? 1.0f : 0.35f);
 
     g.setFont (IntersectLookAndFeel::fitFontToWidth (cell.valueText, 9.5f, 8.0f, cell.bounds.getWidth() - 8, true));
@@ -1400,7 +1420,7 @@ void SignalChainBar::drawParamCell (juce::Graphics& g, const Cell& cell) const
         g.setColour ((cell.isLocked ? getTheme().overrideLabel : getTheme().paramLabel).withAlpha (alpha));
         g.drawFittedText (cell.label,
                           contentBounds.getX(),
-                          contentBounds.getY() + kLabelYOffset,
+                          contentBounds.getY(),
                           contentBounds.getWidth(),
                           kLabelHeight,
                           juce::Justification::centredLeft,
@@ -1453,7 +1473,9 @@ void SignalChainBar::applyCellValue (const Cell& cell, float storedValue, bool o
         cmd.type = IntersectProcessor::CmdSetSliceParam;
         cmd.intParam1 = cell.fieldId;
         cmd.floatParam1 = storedValue;
+        cmd.sliceIdx = processor.sliceManager.selectedSlice.load();
         processor.pushCommand (cmd);
+        layoutDirty = true;
         return;
     }
 
@@ -1467,6 +1489,7 @@ void SignalChainBar::applyCellValue (const Cell& cell, float storedValue, bool o
         param->setValueNotifyingHost (param->convertTo0to1 (storedValue));
         if (oneShotGlobal)
             param->endChangeGesture();
+        layoutDirty = true;
     }
 }
 
@@ -1478,7 +1501,9 @@ void SignalChainBar::clearSliceOverride (uint32_t lockBit)
     IntersectProcessor::Command cmd;
     cmd.type = IntersectProcessor::CmdToggleLock;
     cmd.intParam1 = (int) lockBit;
+    cmd.sliceIdx = processor.sliceManager.selectedSlice.load();
     processor.pushCommand (cmd);
+    layoutDirty = true;
 }
 
 void SignalChainBar::beginGlobalGesture (const Cell& cell)
@@ -1537,7 +1562,9 @@ void SignalChainBar::showSetBpmPopup()
                 IntersectProcessor::Command cmd;
                 cmd.type = IntersectProcessor::CmdStretch;
                 cmd.floatParam1 = barCount;
+                cmd.sliceIdx = processor.sliceManager.selectedSlice.load();
                 processor.pushCommand (cmd);
+                layoutDirty = true;
             }
             else if (processor.sampleData.isLoaded())
             {

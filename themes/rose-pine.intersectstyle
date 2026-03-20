@@ -53,6 +53,11 @@ param_value_off: 21202e       # highlight low
 context_bar_bg: 15131e        # darker base
 signal_chain_bg: 171520        # dark base
 module_border: 26233a         # overlay
+context_text: 908caa         # context primary text
+context_dim_text: 6e6a86     # context secondary text
+tab_inactive: 6e6a86         # inactive tab text
+lazy_chop_overlay: eb6f92    # lazy chop preview overlay
+preview_cursor: eb6f92       # preview cursor
 
 # Slice palette (Rosé Pine signature colors)
 slice1: 31748f              # pine

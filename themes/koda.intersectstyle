@@ -38,6 +38,11 @@ param_value_off: 1a1a1a       # near black
 context_bar_bg: 0a0a0a        # darker bg
 signal_chain_bg: 0c0c0c       # dark bg
 module_border: 272727         # grid
+context_text: 909090         # context primary text
+context_dim_text: 707070     # context secondary text
+tab_inactive: 50585d         # inactive tab text
+lazy_chop_overlay: ff7676    # lazy chop preview overlay
+preview_cursor: ff7676       # preview cursor
 
 slice1: 86cd82
 slice2: ff7676

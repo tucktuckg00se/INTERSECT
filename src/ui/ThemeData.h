@@ -40,6 +40,11 @@ struct ThemeData
     juce::Colour contextBarBg;
     juce::Colour signalChainBg;
     juce::Colour moduleBorder;
+    juce::Colour contextText;
+    juce::Colour contextDimText;
+    juce::Colour tabInactive;
+    juce::Colour lazyChopOverlay;
+    juce::Colour previewCursor;
 
     juce::Colour slicePalette[16];
 
@@ -82,6 +87,11 @@ struct ThemeData
         t.contextBarBg    = juce::Colour (0xFF0A0B10);
         t.signalChainBg   = juce::Colour (0xFF0A0C10);
         t.moduleBorder    = juce::Colour (0xFF161A20);
+        t.contextText     = juce::Colour (0xFF586070);
+        t.contextDimText  = juce::Colour (0xFF404858);
+        t.tabInactive     = juce::Colour (0xFF384050);
+        t.lazyChopOverlay = juce::Colour (0xFFCC4444);
+        t.previewCursor   = juce::Colour (0xFFCC4444);
         t.slicePalette[0]  = juce::Colour (0xFF4888B8);
         t.slicePalette[1]  = juce::Colour (0xFFB85878);
         t.slicePalette[2]  = juce::Colour (0xFF48A060);
@@ -140,6 +150,11 @@ struct ThemeData
         t.contextBarBg    = juce::Colour (0xFFE0E0EC);
         t.signalChainBg   = juce::Colour (0xFF0A0C10);
         t.moduleBorder    = juce::Colour (0xFF161A20);
+        t.contextText     = juce::Colour (0xFF5E6874);
+        t.contextDimText  = juce::Colour (0xFF7A8692);
+        t.tabInactive     = juce::Colour (0xFF7A8692);
+        t.lazyChopOverlay = juce::Colour (0xFFCC4444);
+        t.previewCursor   = juce::Colour (0xFFCC4444);
         t.slicePalette[0]  = juce::Colour (0xFF5AABB8); // Cold Teal
         t.slicePalette[1]  = juce::Colour (0xFFB85A5A); // Muted Red
         t.slicePalette[2]  = juce::Colour (0xFF5AA66E); // Dark Green
@@ -222,6 +237,11 @@ struct ThemeData
             else if (key == "context_bar_bg")       t.contextBarBg = parseHex (val);
             else if (key == "signal_chain_bg")      t.signalChainBg = parseHex (val);
             else if (key == "module_border")        t.moduleBorder = parseHex (val);
+            else if (key == "context_text")         t.contextText = parseHex (val);
+            else if (key == "context_dim_text")     t.contextDimText = parseHex (val);
+            else if (key == "tab_inactive")         t.tabInactive = parseHex (val);
+            else if (key == "lazy_chop_overlay")    t.lazyChopOverlay = parseHex (val);
+            else if (key == "preview_cursor")       t.previewCursor = parseHex (val);
             else if (key.startsWith ("slice"))
             {
                 int idx = key.substring (5).getIntValue() - 1;
@@ -276,6 +296,11 @@ struct ThemeData
         s << "context_bar_bg: " << colourToHex (contextBarBg) << "\n";
         s << "signal_chain_bg: " << colourToHex (signalChainBg) << "\n";
         s << "module_border: " << colourToHex (moduleBorder) << "\n";
+        s << "context_text: " << colourToHex (contextText) << "\n";
+        s << "context_dim_text: " << colourToHex (contextDimText) << "\n";
+        s << "tab_inactive: " << colourToHex (tabInactive) << "\n";
+        s << "lazy_chop_overlay: " << colourToHex (lazyChopOverlay) << "\n";
+        s << "preview_cursor: " << colourToHex (previewCursor) << "\n";
         for (int i = 0; i < 16; ++i)
             s << "slice" << (i + 1) << ": " << colourToHex (slicePalette[i]) << "\n";
         return s;

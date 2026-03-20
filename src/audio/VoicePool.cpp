@@ -1,4 +1,5 @@
 #include "VoicePool.h"
+#include "../Constants.h"
 
 // Include Signalsmith Stretch
 #include "signalsmith-stretch.h"
@@ -44,7 +45,7 @@ static inline float computeFilterCutoff (const Voice& v, float sampleRate)
     const float keyTrackedCutoff = v.filterCutoff * v.filterKeyTrackRatio;
     const float envLevel = v.filterEnvelope.getLevel();
     const float cutoff = keyTrackedCutoff * std::pow (2.0f, v.filterEnvAmount * envLevel / 12.0f);
-    return juce::jlimit (20.0f, sampleRate * 0.49f, cutoff);
+    return juce::jlimit (kMinFilterCutoffHz, sampleRate * 0.49f, cutoff);
 }
 
 static inline void processVoiceFilter (Voice& v, float sampleRate, float& inOutL, float& inOutR)
@@ -132,6 +133,103 @@ void VoicePool::setMaxActiveVoices (int n)
         }
     }
     maxActive = n;
+}
+
+void VoicePool::initPreviewVoiceCommon (Voice& v,
+                                        int playheadSample,
+                                        int startSample,
+                                        int endSample,
+                                        bool looping,
+                                        float velocity)
+{
+    v.active        = true;
+    v.sliceIdx      = -1;
+    v.position      = (double) playheadSample;
+    v.speed         = 1.0;
+    v.direction     = 1;
+    v.midiNote      = -1;
+    v.velocity      = velocity;
+    v.startSample   = startSample;
+    v.endSample     = endSample;
+    v.bufferEnd     = endSample;
+    v.pingPong      = false;
+    v.muteGroup     = 0;
+    v.looping       = looping;
+    v.volume        = 1.0f;
+    v.releaseTail   = false;
+    v.oneShot       = false;
+    v.filterEnabled = false;
+    v.filterCutoff  = 8200.0f;
+    v.filterReso    = 0.0f;
+    v.filterDrive   = 0.0f;
+    v.filterEnvAmount = 0.0f;
+    v.filterKeyTrackRatio = 1.0f;
+    v.filterL1.reset();
+    v.filterR1.reset();
+    v.filterL2.reset();
+    v.filterR2.reset();
+    v.stretchActive = false;
+    v.stretchOutReadPos = 0;
+    v.stretchOutAvail   = 0;
+    v.bungeeActive  = false;
+    v.bungeeOutReadPos = 0;
+    v.bungeeOutAvail   = 0;
+    v.bungeePPFade  = 0;
+}
+
+void VoicePool::initPreviewVoiceStretch (Voice& v, int sourceStartSample, const PreviewStretchParams& p)
+{
+    if (p.stretchEnabled && p.dawBpm > 0.0f && p.bpm > 0.0f)
+    {
+        const float speedRatio = p.dawBpm / p.bpm;
+        if (p.algorithm == 0)
+        {
+            v.speed = speedRatio;
+            return;
+        }
+
+        if (p.algorithm == 2 && p.sample != nullptr)
+        {
+            v.bungeeActive = true;
+            v.bungeeSpeed = (double) speedRatio;
+            v.bungeeSrcPos = sourceStartSample;
+            initBungee (v, p.pitch, p.sampleRate, juce::jlimit (-1, 1, p.grainMode - 1));
+            return;
+        }
+
+        if (p.sample != nullptr)
+        {
+            v.stretchActive = true;
+            v.stretchTimeRatio = speedRatio;
+            v.stretchPitchSemis = p.pitch;
+            v.stretchSrcPos = sourceStartSample;
+            initStretcher (v, p.pitch, p.sampleRate,
+                           p.tonality, p.formant, p.formantComp, *p.sample);
+            return;
+        }
+    }
+
+    if (p.algorithm == 1 && p.sample != nullptr)
+    {
+        v.stretchActive = true;
+        v.stretchTimeRatio = 1.0f;
+        v.stretchPitchSemis = p.pitch;
+        v.stretchSrcPos = sourceStartSample;
+        initStretcher (v, p.pitch, p.sampleRate,
+                       p.tonality, p.formant, p.formantComp, *p.sample);
+        return;
+    }
+
+    if (p.algorithm == 2 && p.sample != nullptr)
+    {
+        v.bungeeActive = true;
+        v.bungeeSpeed = 1.0;
+        v.bungeeSrcPos = sourceStartSample;
+        initBungee (v, p.pitch, p.sampleRate, juce::jlimit (-1, 1, p.grainMode - 1));
+        return;
+    }
+
+    v.speed = std::pow (2.0f, p.pitch / 12.0f);
 }
 
 void VoicePool::initStretcher (Voice& v, float pitchSemis, double sr,
@@ -930,84 +1028,8 @@ void VoicePool::startShiftPreview (int startSample, int bufferSize,
     // Shares the lazyChop preview slot; only called when lazyChop is inactive
     const int i = kPreviewVoiceIndex;
     Voice& v = voices[i];
-    v.active        = true;
-    v.sliceIdx      = -1;
-    v.position      = (double) startSample;
-    v.speed         = 1.0;
-    v.direction     = 1;
-    v.midiNote      = -1;
-    v.velocity      = 0.8f;
-    v.startSample   = startSample;
-    v.endSample     = bufferSize;
-    v.bufferEnd     = bufferSize;
-    v.pingPong      = false;
-    v.muteGroup     = 0;
-    v.looping       = false;
-    v.volume        = 1.0f;
-    v.releaseTail   = false;
-    v.oneShot       = false;
-    v.filterEnabled = false;
-    v.filterCutoff  = 8200.0f;
-    v.filterReso    = 0.0f;
-    v.filterDrive   = 0.0f;
-    v.filterEnvAmount = 0.0f;
-    v.filterKeyTrackRatio = 1.0f;
-    v.filterL1.reset();
-    v.filterR1.reset();
-    v.filterL2.reset();
-    v.filterR2.reset();
-    v.stretchActive = false;
-    v.stretchOutReadPos = 0;
-    v.stretchOutAvail   = 0;
-    v.bungeeActive  = false;
-    v.bungeeOutReadPos = 0;
-    v.bungeeOutAvail   = 0;
-    v.bungeePPFade  = 0;
-
-    if (p.stretchEnabled && p.dawBpm > 0.0f && p.bpm > 0.0f)
-    {
-        const float speedRatio = p.dawBpm / p.bpm;
-        if (p.algorithm == 0)
-        {
-            v.speed = speedRatio;
-        }
-        else if (p.algorithm == 2 && p.sample != nullptr)
-        {
-            v.bungeeActive = true;
-            v.bungeeSpeed = (double) speedRatio;
-            v.bungeeSrcPos = startSample;
-            initBungee (v, p.pitch, p.sampleRate, juce::jlimit (-1, 1, p.grainMode - 1));
-        }
-        else if (p.sample != nullptr)
-        {
-            v.stretchActive = true;
-            v.stretchTimeRatio = speedRatio;
-            v.stretchPitchSemis = p.pitch;
-            v.stretchSrcPos = startSample;
-            initStretcher (v, p.pitch, p.sampleRate,
-                           p.tonality, p.formant, p.formantComp, *p.sample);
-        }
-    }
-    else if (p.algorithm == 1 && p.sample != nullptr)
-    {
-        v.stretchActive = true;
-        v.stretchTimeRatio = 1.0f;
-        v.stretchPitchSemis = p.pitch;
-        v.stretchSrcPos = startSample;
-        initStretcher (v, p.pitch, p.sampleRate,
-                       p.tonality, p.formant, p.formantComp, *p.sample);
-    }
-    else if (p.algorithm == 2 && p.sample != nullptr)
-    {
-        v.bungeeActive = true;
-        v.bungeeSpeed = 1.0;
-        v.bungeeSrcPos = startSample;
-        initBungee (v, p.pitch, p.sampleRate, juce::jlimit (-1, 1, p.grainMode - 1));
-    }
-    else
-    {
-        v.speed = std::pow (2.0f, p.pitch / 12.0f);
-    }
+    initPreviewVoiceCommon (v, startSample, startSample, bufferSize, false, 0.8f);
+    initPreviewVoiceStretch (v, startSample, p);
 
     v.envelope.noteOn (0.002f, 0.0f, 1.0f, 0.05f, p.sampleRate);
     voicePositions[i].store ((float) startSample, std::memory_order_relaxed);
@@ -1018,14 +1040,4 @@ void VoicePool::stopShiftPreview()
     int i = kPreviewVoiceIndex;
     if (voices[i].active)
         voices[i].envelope.forceRelease (kKillReleaseSec, sampleRate);
-}
-
-void VoicePool::processSampleMultiOut (const SampleData& sample, double sr,
-                                        float* outPtrs[], int /*numOuts*/)
-{
-    // This method is not used directly — multi-out routing is handled in processBlock
-    // by calling processVoiceSample per voice and routing to the correct bus.
-    (void) sample;
-    (void) sr;
-    (void) outPtrs;
 }
