@@ -1,4 +1,4 @@
-# INTERSECT Open Color's inspired theme
+# INTERSECT Open Color Theme
 # Source: https://github.com/yeun/open-color
 #
 # Themes folder:
@@ -12,7 +12,7 @@ name: oc
 
 # Main surfaces
 background: 212529          # window background
-waveformBg: 191C1F          # waveform area background
+waveformBg: 191c1f          # waveform area background
 darkBar: 212529             # slice control bar / action panel background
 header: 212529              # header bar background
 
@@ -32,20 +32,48 @@ lockInactive: 495057        # unlocked/inherited parameter indicator
 button: 343a40              # button background
 buttonHover: 495057         # button hover background
 
+# Signal chain bar
+module_name_playback: 74c0fc  # playback module header colour
+module_name_filter: ffe066    # filter module header colour
+module_name_amp: 8ce99a       # amp module header colour
+module_name_output: b197fc    # output module header colour
+tab_global_active: 74c0fc     # global tab active colour
+tab_slice_active: b197fc      # slice tab active colour
+override_bar: ff922b          # override indicator bar
+override_bar_hover: ffa94d    # override indicator bar hover
+override_label: fd7e14        # overridden parameter label
+override_value: f8f9fa        # overridden parameter value
+override_count: fd7e14        # override count text
+filter_toggle_on: 82c91e      # filter enabled toggle colour
+set_bpm_text: ced4da          # SET BPM button text
+set_bpm_border: 5c940d        # SET BPM button border
+param_label: 868e96           # parameter label text
+param_value: ced4da           # parameter value text
+param_value_on: 82c91e        # boolean parameter ON colour
+param_value_off: 343a40       # boolean parameter OFF colour
+context_bar_bg: 1f2428        # context bar background
+signal_chain_bg: 191c1f       # signal chain background
+module_border: 343a40         # module separator border
+context_text: ced4da          # context primary text
+context_dim_text: 868e96      # context secondary text
+tab_inactive: 868e96          # inactive tab text
+lazy_chop_overlay: ff6b6b     # lazy chop preview overlay
+preview_cursor: ff6b6b        # preview cursor
+
 # Slice palette (colours assigned to new slices)
-slice1: ffa8a8              # 
-slice2: e599f7              # 
-slice3: 91a7ff              # 
-slice4: 66d9e8              # 
-slice5: 8ce99a              # 
-slice6: ffe066              # 
-slice7: ff6b6b              # 
-slice8: cc5de8              # 
-slice9: faa2c1              # 
-slice10: b197fc             # 
-slice11: 74c0fc             # 
-slice12: 63e6be             # 
-slice13: c0eb75             # 
-slice14: ffc078             # 
-slice15: f06595             # 
-slice16: 845ef7             # 
+slice1: ffa8a8               #
+slice2: e599f7               #
+slice3: 91a7ff               #
+slice4: 66d9e8               #
+slice5: 8ce99a               #
+slice6: ffe066               #
+slice7: ff6b6b               #
+slice8: cc5de8               #
+slice9: faa2c1               #
+slice10: b197fc              #
+slice11: 74c0fc              #
+slice12: 63e6be              #
+slice13: c0eb75              #
+slice14: ffc078              #
+slice15: f06595              #
+slice16: 845ef7              #

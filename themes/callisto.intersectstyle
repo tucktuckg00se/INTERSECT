@@ -1,4 +1,4 @@
-# INTERSECT Callisto theme
+# INTERSECT Callisto Theme
 #
 # Themes folder:
 #   Windows:  %APPDATA%\Roaming\INTERSECT\themes\
@@ -31,20 +31,48 @@ lockInactive: 5e6d7c        # unlocked/inherited parameter indicator
 button: 262833              # button background
 buttonHover: 5e6d7c         # button hover background
 
+# Signal chain bar
+module_name_playback: 00d0b8  # playback module header colour
+module_name_filter: 8f9fae    # filter module header colour
+module_name_amp: d1e0ef       # amp module header colour
+module_name_output: 74c0fc    # output module header colour
+tab_global_active: 00d0b8     # global tab active colour
+tab_slice_active: 74c0fc      # slice tab active colour
+override_bar: 00a08d          # override indicator bar
+override_bar_hover: 00e1c6    # override indicator bar hover
+override_label: 5e9f95        # overridden parameter label
+override_value: d1e0ef        # overridden parameter value
+override_count: 00a08d        # override count text
+filter_toggle_on: 00d0b8      # filter enabled toggle colour
+set_bpm_text: d1e0ef          # SET BPM button text
+set_bpm_border: 00a08d        # SET BPM button border
+param_label: 8f9fae           # parameter label text
+param_value: d1e0ef           # parameter value text
+param_value_on: 00d0b8        # boolean parameter ON colour
+param_value_off: 33414d       # boolean parameter OFF colour
+context_bar_bg: 1d222a        # context bar background
+signal_chain_bg: 161b21       # signal chain background
+module_border: 34414d         # module separator border
+context_text: d1e0ef          # context primary text
+context_dim_text: 8f9fae      # context secondary text
+tab_inactive: 8f9fae          # inactive tab text
+lazy_chop_overlay: 00e1c6     # lazy chop preview overlay
+preview_cursor: 00e1c6        # preview cursor
+
 # Slice palette (colours assigned to new slices)
-slice1: 8f9fae              # 
-slice2: 5e6d7c              # 
-slice3: 8f9fae              # 
-slice4: 5e6d7c              # 
-slice5: 8f9fae              # 
-slice6: 5e6d7c              # 
-slice7: 8f9fae              # 
-slice8: 5e6d7c              # 
-slice9: 8f9fae              # 
-slice10: 5e6d7c             # 
-slice11: 8f9fae             # 
-slice12: 5e6d7c             # 
-slice13: 8f9fae             # 
-slice14: 5e6d7c             # 
-slice15: 8f9fae             # 
-slice16: 5e6d7c             # 
+slice1: 8f9fae               #
+slice2: 5e6d7c               #
+slice3: 8f9fae               #
+slice4: 5e6d7c               #
+slice5: 8f9fae               #
+slice6: 5e6d7c               #
+slice7: 8f9fae               #
+slice8: 5e6d7c               #
+slice9: 8f9fae               #
+slice10: 5e6d7c              #
+slice11: 8f9fae              #
+slice12: 5e6d7c              #
+slice13: 8f9fae              #
+slice14: 5e6d7c              #
+slice15: 8f9fae              #
+slice16: 5e6d7c              #

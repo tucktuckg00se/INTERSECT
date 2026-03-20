@@ -56,26 +56,26 @@ param_value_off: c8ccd0       # boolean parameter OFF colour
 context_bar_bg: e0e0ec        # context bar background
 signal_chain_bg: e4e4f0       # signal chain background
 module_border: c8c8d4         # module separator border
-context_text: 5e6874         # context primary text
-context_dim_text: 7a8692     # context secondary text
-tab_inactive: 7a8692         # inactive tab text
-lazy_chop_overlay: cc4444    # lazy chop preview overlay
-preview_cursor: cc4444       # preview cursor
+context_text: 5e6874          # context primary text
+context_dim_text: 7a8692      # context secondary text
+tab_inactive: 7a8692          # inactive tab text
+lazy_chop_overlay: cc4444     # lazy chop preview overlay
+preview_cursor: cc4444        # preview cursor
 
 # Slice palette (colours assigned to new slices)
-slice1: 5aabb8              # Cold Teal
-slice2: b85a5a              # Muted Red
-slice3: 5aa66e              # Dark Green
-slice4: b89650              # Rust
-slice5: 8066b8              # Dusk Violet
-slice6: a6a65a              # Olive
-slice7: 50a6b8              # Steel Cyan
-slice8: b8668e              # Dark Rose
-slice9: 6e9e5a              # Moss
-slice10: b87a66             # Clay
-slice11: 6670b8             # Slate Blue
-slice12: 96966e             # Concrete
-slice13: 8e5a98             # Plum
-slice14: 5a9e88             # Patina
-slice15: a07098             # Mauve
-slice16: 7a9e80             # Lichen
+slice1: 5aabb8               # Cold Teal
+slice2: b85a5a               # Muted Red
+slice3: 5aa66e               # Dark Green
+slice4: b89650               # Rust
+slice5: 8066b8               # Dusk Violet
+slice6: a6a65a               # Olive
+slice7: 50a6b8               # Steel Cyan
+slice8: b8668e               # Dark Rose
+slice9: 6e9e5a               # Moss
+slice10: b87a66              # Clay
+slice11: 6670b8              # Slate Blue
+slice12: 96966e              # Concrete
+slice13: 8e5a98              # Plum
+slice14: 5a9e88              # Patina
+slice15: a07098              # Mauve
+slice16: 7a9e80              # Lichen

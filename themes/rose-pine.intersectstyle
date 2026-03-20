@@ -1,78 +1,78 @@
-# INTERSECT Rosé Pine Theme
+# INTERSECT Rose Pine Theme
 #
-# Copy this file to your INTERSECT themes folder:
+# Themes folder:
 #   Windows:  %APPDATA%\Roaming\INTERSECT\themes\
 #   macOS:    ~/Library/Application Support/INTERSECT/themes/
 #   Linux:    ~/.config/INTERSECT/themes/
+#
+# Colours are 6-digit hex (RRGGBB). Restart the plugin to apply changes.
 
 name: rose-pine
 
 # Main surfaces
-background: 191724          # base
-waveformBg: 1f1d2e          # surface
-darkBar: 191724             # overlay
-header: 191724              # base
+background: 191724          # window background
+waveformBg: 1f1d2e          # waveform area background
+darkBar: 191724             # slice control bar / action panel background
+header: 191724              # header bar background
 
 # Text & lines
-foreground: e0def4          # text
-gridLine: 403d52            # highlight med
-separator: 6e6a86           # muted
+foreground: e0def4          # primary text colour
+gridLine: 403d52            # waveform grid lines
+separator: 6e6a86           # horizontal separator lines
 
 # Waveform & slices
-waveform: 9ccfd8            # foam
-sliceRegion: 21202e         # highlight low
-sliceRegionSelected: 403d52 # highlight med
-selectionOverlay: c4a7e7    # iris
+waveform: 9ccfd8            # waveform draw colour
+selectionOverlay: c4a7e7    # selected slice translucent overlay
 
 # Controls
-accent: ebbcba              # rose
-lockActive: eb6f92          # love
-lockInactive: 6e6a86        # muted
-button: 1f1d2e              # surface
-buttonHover: 26233a         # overlay
+accent: ebbcba              # accent colour (labels, highlights)
+lockActive: eb6f92          # locked/overridden parameter indicator
+lockInactive: 6e6a86        # unlocked/inherited parameter indicator
+button: 1f1d2e              # button background
+buttonHover: 26233a         # button hover background
 
 # Signal chain bar
-module_name_playback: 31748f  # pine
-module_name_filter: f6c177    # gold
-module_name_amp: 9ccfd8       # foam
-module_name_output: c4a7e7    # iris
-tab_global_active: 56949f     # pine alt
-tab_slice_active: c4a7e7      # iris
-override_bar: eb6f92          # love
-override_bar_hover: f09aaf    # love lighter
-override_label: b4637a        # love muted
-override_value: e0def4        # text
-override_count: b4637a        # love muted
-filter_toggle_on: c49a50      # gold dimmed
-set_bpm_text: ebbcba          # rose
-set_bpm_border: 26233a        # overlay
-param_label: 6e6a86           # muted
-param_value: 908caa           # subtle
-param_value_on: ebbcba        # rose
-param_value_off: 21202e       # highlight low
-context_bar_bg: 15131e        # darker base
-signal_chain_bg: 171520        # dark base
-module_border: 26233a         # overlay
-context_text: 908caa         # context primary text
-context_dim_text: 6e6a86     # context secondary text
-tab_inactive: 6e6a86         # inactive tab text
-lazy_chop_overlay: eb6f92    # lazy chop preview overlay
-preview_cursor: eb6f92       # preview cursor
+module_name_playback: 31748f  # playback module header colour
+module_name_filter: f6c177    # filter module header colour
+module_name_amp: 9ccfd8       # amp module header colour
+module_name_output: c4a7e7    # output module header colour
+tab_global_active: 56949f     # global tab active colour
+tab_slice_active: c4a7e7      # slice tab active colour
+override_bar: eb6f92          # override indicator bar
+override_bar_hover: f09aaf    # override indicator bar hover
+override_label: b4637a        # overridden parameter label
+override_value: e0def4        # overridden parameter value
+override_count: b4637a        # override count text
+filter_toggle_on: f6c177      # filter enabled toggle colour
+set_bpm_text: ebbcba          # SET BPM button text
+set_bpm_border: 6e6a86        # SET BPM button border
+param_label: 6e6a86           # parameter label text
+param_value: 908caa           # parameter value text
+param_value_on: ebbcba        # boolean parameter ON colour
+param_value_off: 21202e       # boolean parameter OFF colour
+context_bar_bg: 15131e        # context bar background
+signal_chain_bg: 171520       # signal chain background
+module_border: 26233a         # module separator border
+context_text: 908caa          # context primary text
+context_dim_text: 6e6a86      # context secondary text
+tab_inactive: 6e6a86          # inactive tab text
+lazy_chop_overlay: eb6f92     # lazy chop preview overlay
+preview_cursor: eb6f92        # preview cursor
 
-# Slice palette (Rosé Pine signature colors)
-slice1: 31748f              # pine
-slice2: eb6f92              # love
-slice3: f6c177              # gold
-slice4: ebbcba              # rose
-slice5: 9ccfd8              # foam
-slice6: c4a7e7              # iris
-slice7: 56949f              # pine (alt)
-slice8: d7827e              # rose (alt)
-slice9: ea9d34              # gold (alt)
-slice10: b4637a             # love (alt)
-slice11: 286983             # deep pine
-slice12: 907aa9             # iris (alt)
-slice13: 56949f             # foam (alt)
-slice14: 6e6a86             # muted
-slice15: 908caa             # subtle
-slice16: e0def4             # text
+# Slice palette (colours assigned to new slices)
+slice1: 31748f               # Pine
+slice2: eb6f92               # Love
+slice3: f6c177               # Gold
+slice4: ebbcba               # Rose
+slice5: 9ccfd8               # Foam
+slice6: c4a7e7               # Iris
+slice7: 56949f               # Pine Alt
+slice8: d7827e               # Rose Alt
+slice9: ea9d34               # Gold Alt
+slice10: b4637a              # Love Alt
+slice11: 286983              # Deep Pine
+slice12: 907aa9              # Iris Alt
+slice13: 56949f              # Foam Alt
+slice14: 6e6a86              # Muted
+slice15: 908caa              # Subtle
+slice16: e0def4              # Text

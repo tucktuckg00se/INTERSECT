@@ -115,9 +115,9 @@ void HeaderBar::paint (juce::Graphics& g)
 {
     for (auto* btn : { &undoBtn, &redoBtn, &panicBtn, &loadBtn, &themeBtn })
     {
-        auto text = btn->isMouseOverOrDragging() ? juce::Colour (0xFF7090A8)
-                                                 : juce::Colour (0xFF384050);
-        btn->setColour (juce::TextButton::buttonColourId, getTheme().button.withAlpha (0.92f));
+        auto text = getTheme().foreground.withAlpha (btn->isMouseOverOrDragging() ? 1.0f : 0.88f);
+        btn->setColour (juce::TextButton::buttonColourId,
+                        (btn->isMouseOverOrDragging() ? getTheme().buttonHover : getTheme().button).withAlpha (0.94f));
         btn->setColour (juce::TextButton::textColourOnId, text);
         btn->setColour (juce::TextButton::textColourOffId, text);
     }
