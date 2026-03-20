@@ -1005,6 +1005,7 @@ void SignalChainBar::rebuildFilterModule (const LayoutInput& input,
     const float filterAtkValue = input.sliceScope ? filterAtkSec : globals.filterEnvAttackSec * 1000.0f;
     const float filterDecValue = input.sliceScope ? filterDecSec : globals.filterEnvDecaySec * 1000.0f;
     const float filterSusValue = input.sliceScope ? filterSus : globals.filterEnvSustain * 100.0f;
+    const float filterSusDisplayValue = input.sliceScope ? filterSus * 100.0f : globals.filterEnvSustain * 100.0f;
     const float filterRelValue = input.sliceScope ? filterRelSec : globals.filterEnvReleaseSec * 1000.0f;
 
     addFilterCell (row2[0], "ATK", formatMs (filterAtkValue),
@@ -1015,7 +1016,7 @@ void SignalChainBar::rebuildFilterModule (const LayoutInput& input,
                    ParamIds::defaultFilterEnvDecay, IntersectProcessor::FieldFilterEnvDecay, kLockFilterEnvDecay,
                    filterDecValue, 0.0f, input.sliceScope ? 10.0f : 10000.0f, input.sliceScope ? 0.0001f : 0.1f,
                    5.0f, 1, false, 0, filterDecLocked, DragMapping::Linear, false, input.sliceScope ? 1000.0f : 1.0f, true);
-    addFilterCell (row2[2], "SUS", formatPercent (filterSusValue, 1),
+    addFilterCell (row2[2], "SUS", formatPercent (filterSusDisplayValue, 1),
                    ParamIds::defaultFilterEnvSustain, IntersectProcessor::FieldFilterEnvSustain, kLockFilterEnvSustain,
                    filterSusValue, 0.0f, input.sliceScope ? 1.0f : 100.0f, input.sliceScope ? 0.001f : 0.1f,
                    0.5f, 1, false, 0, filterSusLocked, DragMapping::Linear, false, input.sliceScope ? 100.0f : 1.0f, true);
@@ -1097,6 +1098,7 @@ void SignalChainBar::rebuildAmpModule (const LayoutInput& input,
     const float attackValue = input.sliceScope ? attackSec : globals.attackSec * 1000.0f;
     const float decayValue = input.sliceScope ? decaySec : globals.decaySec * 1000.0f;
     const float sustainValue = input.sliceScope ? sustain : globals.sustain * 100.0f;
+    const float sustainDisplayValue = input.sliceScope ? sustain * 100.0f : globals.sustain * 100.0f;
     const float releaseValue = input.sliceScope ? releaseSec : globals.releaseSec * 1000.0f;
 
     addAmpCell (row1[0], "ATK", formatMs (attackValue),
@@ -1107,7 +1109,7 @@ void SignalChainBar::rebuildAmpModule (const LayoutInput& input,
                 ParamIds::defaultDecay, IntersectProcessor::FieldDecay, kLockDecay,
                 decayValue, 0.0f, input.sliceScope ? 5.0f : 5000.0f, input.sliceScope ? 0.0001f : 0.1f,
                 5.0f, 1, decayLocked, false, input.sliceScope ? 1000.0f : 1.0f, true);
-    addAmpCell (row1[2], "SUS", formatPercent (sustainValue, 1),
+    addAmpCell (row1[2], "SUS", formatPercent (sustainDisplayValue, 1),
                 ParamIds::defaultSustain, IntersectProcessor::FieldSustain, kLockSustain,
                 sustainValue, 0.0f, input.sliceScope ? 1.0f : 100.0f, input.sliceScope ? 0.001f : 0.1f,
                 0.5f, 1, sustainLocked, false, input.sliceScope ? 100.0f : 1.0f);
