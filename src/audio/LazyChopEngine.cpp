@@ -1,4 +1,5 @@
 #include "LazyChopEngine.h"
+#include "../Constants.h"
 #include "AudioAnalysis.h"
 #include <cmath>
 
@@ -29,87 +30,11 @@ void LazyChopEngine::start (int sampleLen, SliceManager& sliceMgr,
 void LazyChopEngine::startPreview (VoicePool& voicePool, int fromPos)
 {
     auto& v = voicePool.getVoice (getPreviewVoiceIndex());
-    v.active        = true;
-    v.sliceIdx      = -1;
-    v.position      = (double) fromPos;
-    v.direction     = 1;
-    v.velocity      = 1.0f;
-    v.midiNote      = -1;
-    v.startSample   = 0;
-    v.endSample     = sampleLength;
-    v.bufferEnd     = sampleLength;
-    v.pingPong      = false;
-    v.muteGroup     = 0;
-    v.stretchActive = false;
-    v.bungeeActive  = false;
-    v.looping       = true;
-    v.releaseTail   = false;
-    v.oneShot       = false;
-    v.bungeePPFade  = 0;
-    v.volume        = 1.0f;
-    v.speed         = 1.0;
+    VoicePool::initPreviewVoiceCommon (v, fromPos, 0, sampleLength, true, 1.0f);
 
     // Apply stretch from cached sample-level params
     const auto& p = cachedParams;
-    int algo = p.algorithm;
-
-    if (p.stretchEnabled && p.dawBpm > 0.0f && p.bpm > 0.0f)
-    {
-        float speedRatio = p.dawBpm / p.bpm;
-
-        if (algo == 0)
-        {
-            // Repitch: speed change (pitch is consequence)
-            v.speed = speedRatio;
-        }
-        else if (algo == 2 && p.sample != nullptr)
-        {
-            // Bungee
-            v.bungeeActive = true;
-            v.speed = 1.0;
-            v.bungeeSpeed = (double) speedRatio;
-            v.bungeeSrcPos = fromPos;
-            int hopAdj = juce::jlimit (-1, 1, p.grainMode - 1);
-            VoicePool::initBungee (v, p.pitch, p.sampleRate, hopAdj);
-        }
-        else if (p.sample != nullptr)
-        {
-            // Signalsmith Stretch
-            v.stretchActive = true;
-            v.speed = 1.0;
-            v.stretchTimeRatio = speedRatio;
-            v.stretchPitchSemis = p.pitch;
-            v.stretchSrcPos = fromPos;
-            VoicePool::initStretcher (v, p.pitch, p.sampleRate,
-                                      p.tonality, p.formant, p.formantComp, *p.sample);
-        }
-    }
-    else if (algo == 1 && p.sample != nullptr)
-    {
-        // Stretch algo, no stretch enabled — pitch only via Signalsmith
-        v.stretchActive = true;
-        v.speed = 1.0;
-        v.stretchTimeRatio = 1.0f;
-        v.stretchPitchSemis = p.pitch;
-        v.stretchSrcPos = fromPos;
-        VoicePool::initStretcher (v, p.pitch, p.sampleRate,
-                                  p.tonality, p.formant, p.formantComp, *p.sample);
-    }
-    else if (algo == 2 && p.sample != nullptr)
-    {
-        // Bungee algo, no stretch — pitch only
-        v.bungeeActive = true;
-        v.speed = 1.0;
-        v.bungeeSpeed = 1.0;
-        v.bungeeSrcPos = fromPos;
-        int hopAdj = juce::jlimit (-1, 1, p.grainMode - 1);
-        VoicePool::initBungee (v, p.pitch, p.sampleRate, hopAdj);
-    }
-    else
-    {
-        // Repitch: apply pitch ratio to speed
-        v.speed = std::pow (2.0f, p.pitch / 12.0f);
-    }
+    VoicePool::initPreviewVoiceStretch (v, fromPos, p);
 
     // Sustain at half volume
     v.envelope.noteOn (0.0f, 0.0f, 0.5f, 0.02f, cachedParams.sampleRate);
@@ -177,7 +102,7 @@ int LazyChopEngine::onNote (int note, VoicePool& voicePool, SliceManager& sliceM
     // Handle wrap-around: if playhead wrapped past chopPos, close slice to end of sample
     if (playhead < chopPos)
     {
-        if (sampleLength - chopPos >= 64)
+        if (sampleLength - chopPos >= kMinSliceLengthSamples)
         {
             int idx = sliceMgr.createSlice (chopPos, sampleLength);
             if (idx >= 0)
@@ -192,8 +117,8 @@ int LazyChopEngine::onNote (int note, VoicePool& voicePool, SliceManager& sliceM
         chopPos = 0;
     }
 
-    // Create slice from chopPos to playhead (min 64 samples)
-    if (playhead - chopPos >= 64)
+    // Create slice from chopPos to playhead (min slice length)
+    if (playhead - chopPos >= kMinSliceLengthSamples)
     {
         int newIdx = sliceMgr.createSlice (chopPos, playhead);
         if (newIdx >= 0)

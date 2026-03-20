@@ -32,6 +32,19 @@ struct VoiceStartParams
     int   globalLoopMode   = 0;
     bool  globalOneShot    = false;
     float globalCentsDetune = 0.0f;
+    bool  globalFilterEnabled = false;
+    int   globalFilterType    = 0;
+    int   globalFilterSlope   = 0;
+    float globalFilterCutoff  = 8200.0f;
+    float globalFilterReso    = 0.0f;
+    float globalFilterDrive   = 0.0f;
+    float globalFilterKeyTrack = 0.0f;
+    float globalFilterEnvAttackSec  = 0.0f;
+    float globalFilterEnvDecaySec   = 0.0f;
+    float globalFilterEnvSustain    = 1.0f;
+    float globalFilterEnvReleaseSec = 0.0f;
+    float globalFilterEnvAmount     = 0.0f;
+    int   rootNote = 36;
 };
 
 struct PreviewStretchParams
@@ -73,9 +86,6 @@ public:
     void processSample (const SampleData& sample, double sampleRate,
                         float& outL, float& outR);
 
-    static void processSampleMultiOut (const SampleData& sample, double sampleRate,
-                                      float* outPtrs[], int numOuts);
-
     void setSampleRate (double sr) { sampleRate = sr; }
     double getSampleRate() const { return sampleRate; }
 
@@ -89,6 +99,13 @@ public:
     void stopShiftPreview();
 
     // Public helpers so LazyChopEngine can initialise stretch on preview voice
+    static void initPreviewVoiceCommon (Voice& v,
+                                        int playheadSample,
+                                        int startSample,
+                                        int endSample,
+                                        bool looping,
+                                        float velocity);
+    static void initPreviewVoiceStretch (Voice& v, int sourceStartSample, const PreviewStretchParams& params);
     static void initStretcher (Voice& v, float pitchSemis, double sr,
                                float tonalityHz, float formantSemis, bool formantComp,
                                const SampleData& sample);

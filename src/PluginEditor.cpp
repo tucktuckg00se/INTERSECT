@@ -1,14 +1,14 @@
 #include "PluginEditor.h"
 #include <algorithm>
 
-static constexpr int kBaseW      = 900;
-static constexpr int kBaseH      = 550;
-static constexpr int kHeaderH    = 66;
-static constexpr int kSliceLaneH = 30;
-static constexpr int kScrollbarH = 28;
-static constexpr int kSliceCtrlH = 72;
-static constexpr int kActionH    = 34;
-static constexpr int kMargin     = 8;
+static constexpr int kBaseW        = 800;
+static constexpr int kBaseH        = 400;
+static constexpr float kHeaderH    = 28.0f;
+static constexpr float kSliceLaneH = 20.0f;
+static constexpr float kScrollbarH = 10.0f;
+static constexpr float kActionH    = 22.0f;
+static constexpr float kSignalChainH = 94.0f;
+static constexpr float kWaveformMinH = 180.0f;
 
 static juce::File getSettingsDir()
 {
@@ -30,20 +30,19 @@ IntersectEditor::IntersectEditor (IntersectProcessor& p)
     : AudioProcessorEditor (p),
       processor (p),
       headerBar (p),
+      signalChainBar (p),
       sliceLane (p),
       waveformView (p),
       scrollZoomBar (p),
-      sliceControlBar (p),
       actionPanel (p, waveformView)
 {
-    juce::LookAndFeel::setDefaultLookAndFeel (&lnf);
     setLookAndFeel (&lnf);
 
     addAndMakeVisible (headerBar);
+    addAndMakeVisible (signalChainBar);
     addAndMakeVisible (sliceLane);
     addAndMakeVisible (waveformView);
     addAndMakeVisible (scrollZoomBar);
-    addAndMakeVisible (sliceControlBar);
     addAndMakeVisible (actionPanel);
 
     sliceLane.setWaveformView (&waveformView);
@@ -71,7 +70,6 @@ IntersectEditor::IntersectEditor (IntersectProcessor& p)
 
 IntersectEditor::~IntersectEditor()
 {
-    juce::LookAndFeel::setDefaultLookAndFeel (nullptr);
     setLookAndFeel (nullptr);
 }
 
@@ -82,28 +80,35 @@ void IntersectEditor::paint (juce::Graphics& g)
 
 void IntersectEditor::resized()
 {
-    auto area = juce::Rectangle<int> (0, 0, kBaseW, kBaseH);
+    juce::FlexBox shell;
+    shell.flexDirection = juce::FlexBox::Direction::column;
+    shell.flexWrap = juce::FlexBox::Wrap::noWrap;
 
-    // 1. Header (50px) — top
-    headerBar.setBounds (area.removeFromTop (kHeaderH));
+    shell.items.add (juce::FlexItem (headerBar)
+                         .withMinHeight (kHeaderH)
+                         .withMaxHeight (kHeaderH)
+                         .withHeight (kHeaderH));
+    shell.items.add (juce::FlexItem (sliceLane)
+                         .withMinHeight (kSliceLaneH)
+                         .withMaxHeight (kSliceLaneH)
+                         .withHeight (kSliceLaneH));
+    shell.items.add (juce::FlexItem (waveformView)
+                         .withFlex (1.0f)
+                         .withMinHeight (kWaveformMinH));
+    shell.items.add (juce::FlexItem (scrollZoomBar)
+                         .withMinHeight (kScrollbarH)
+                         .withMaxHeight (kScrollbarH)
+                         .withHeight (kScrollbarH));
+    shell.items.add (juce::FlexItem (actionPanel)
+                         .withMinHeight (kActionH)
+                         .withMaxHeight (kActionH)
+                         .withHeight (kActionH));
+    shell.items.add (juce::FlexItem (signalChainBar)
+                         .withMinHeight (kSignalChainH)
+                         .withMaxHeight (kSignalChainH)
+                         .withHeight (kSignalChainH));
 
-    // 2. SliceLane (24px)
-    sliceLane.setBounds (area.removeFromTop (kSliceLaneH).reduced (kMargin, 0));
-
-    // 3. SliceControlBar (56px) — bottom
-    sliceControlBar.setBounds (area.removeFromBottom (kSliceCtrlH));
-
-    // 4. ActionPanel (28px) — above slice control
-    actionPanel.setBounds (area.removeFromBottom (kActionH).reduced (kMargin, 0));
-
-    // 4px gap between scroll bar and action panel
-    area.removeFromBottom (4);
-
-    // 5. RulerBar / ScrollZoomBar (22px) — above action panel
-    scrollZoomBar.setBounds (area.removeFromBottom (kScrollbarH).reduced (kMargin, 0));
-
-    // 6. WaveformView (flexible) — remaining space
-    waveformView.setBounds (area.reduced (kMargin, 0));
+    shell.performLayout (getLocalBounds().toFloat());
 }
 
 bool IntersectEditor::keyPressed (const juce::KeyPress& key)
@@ -227,6 +232,10 @@ bool IntersectEditor::keyPressed (const juce::KeyPress& key)
 
 void IntersectEditor::timerCallback()
 {
+    // Cache APVTS state for RT-safe undo snapshots and apply deferred restores.
+    processor.cacheApvtsState();
+    processor.applyDeferredApvtsRestore();
+
     bool uiChanged = false;
     bool viewportChanged = false;
     const bool previewActive = waveformView.hasActiveSlicePreview();
@@ -306,11 +315,11 @@ void IntersectEditor::timerCallback()
     if (rulerNeedsRepaint)
         scrollZoomBar.repaint();
 
-    // HeaderBar and SliceControlBar display APVTS param values that can change
+    // HeaderBar and SignalChainBar display APVTS param values that can change
     // independently of the audio-thread snapshot (e.g. dragging a header param
     // while a slice is selected), so repaint them every tick.
     headerBar.repaint();
-    sliceControlBar.repaint();
+    signalChainBar.repaint();
 
     if (uiChanged)
         actionPanel.repaint();
@@ -322,12 +331,14 @@ void IntersectEditor::ensureDefaultThemes()
     dir.createDirectory();
 
     auto darkFile = dir.getChildFile ("dark.intersectstyle");
-    if (! darkFile.existsAsFile())
-        darkFile.replaceWithText (ThemeData::darkTheme().toThemeFile());
+    auto darkText = ThemeData::darkTheme().toThemeFile();
+    if (! darkFile.existsAsFile() || darkFile.loadFileAsString() != darkText)
+        darkFile.replaceWithText (darkText);
 
     auto lightFile = dir.getChildFile ("light.intersectstyle");
-    if (! lightFile.existsAsFile())
-        lightFile.replaceWithText (ThemeData::lightTheme().toThemeFile());
+    auto lightText = ThemeData::lightTheme().toThemeFile();
+    if (! lightFile.existsAsFile() || lightFile.loadFileAsString() != lightText)
+        lightFile.replaceWithText (lightText);
 }
 
 juce::StringArray IntersectEditor::getAvailableThemes()

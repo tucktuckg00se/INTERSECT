@@ -1,4 +1,5 @@
 #include "VoicePool.h"
+#include "../Constants.h"
 
 // Include Signalsmith Stretch
 #include "signalsmith-stretch.h"
@@ -18,6 +19,57 @@ static inline float dbToLinear (float dB)
 {
     if (dB <= -100.0f) return 0.0f;
     return std::pow (10.0f, dB / 20.0f);
+}
+
+static inline float saturateSample (float x, float drivePercent)
+{
+    if (drivePercent <= 0.0f)
+        return x;
+
+    const float norm = juce::jlimit (0.0f, 1.0f, drivePercent / 100.0f);
+    const float gain = 1.0f + norm * 12.0f;
+    const float tanhGain = std::tanh (gain);
+    if (std::abs (tanhGain) < 1.0e-6f)
+        return x;
+    return std::tanh (x * gain) / tanhGain;
+}
+
+static inline float resonancePercentToQ (float resonancePercent)
+{
+    const float norm = juce::jlimit (0.0f, 1.0f, resonancePercent / 100.0f);
+    return 0.7071f + norm * 11.2929f;
+}
+
+static inline float computeFilterCutoff (const Voice& v, float sampleRate)
+{
+    const float keyTrackedCutoff = v.filterCutoff * v.filterKeyTrackRatio;
+    const float envLevel = v.filterEnvelope.getLevel();
+    const float cutoff = keyTrackedCutoff * std::pow (2.0f, v.filterEnvAmount * envLevel / 12.0f);
+    return juce::jlimit (kMinFilterCutoffHz, sampleRate * 0.49f, cutoff);
+}
+
+static inline void processVoiceFilter (Voice& v, float sampleRate, float& inOutL, float& inOutR)
+{
+    if (! v.filterEnabled)
+        return;
+
+    const float q = resonancePercentToQ (v.filterReso);
+    const float cutoff = computeFilterCutoff (v, sampleRate);
+    inOutL = saturateSample (inOutL, v.filterDrive);
+    inOutR = saturateSample (inOutR, v.filterDrive);
+    const auto coeffs = SvfFilter::computeCoeffs (cutoff, q, sampleRate);
+
+    float yL = v.filterL1.process (inOutL, coeffs, v.filterType);
+    float yR = v.filterR1.process (inOutR, coeffs, v.filterType);
+
+    if (v.filterSlope > 0)
+    {
+        yL = v.filterL2.process (yL, coeffs, v.filterType);
+        yR = v.filterR2.process (yR, coeffs, v.filterType);
+    }
+
+    inOutL = yL;
+    inOutR = yR;
 }
 
 VoicePool::VoicePool()
@@ -81,6 +133,103 @@ void VoicePool::setMaxActiveVoices (int n)
         }
     }
     maxActive = n;
+}
+
+void VoicePool::initPreviewVoiceCommon (Voice& v,
+                                        int playheadSample,
+                                        int startSample,
+                                        int endSample,
+                                        bool looping,
+                                        float velocity)
+{
+    v.active        = true;
+    v.sliceIdx      = -1;
+    v.position      = (double) playheadSample;
+    v.speed         = 1.0;
+    v.direction     = 1;
+    v.midiNote      = -1;
+    v.velocity      = velocity;
+    v.startSample   = startSample;
+    v.endSample     = endSample;
+    v.bufferEnd     = endSample;
+    v.pingPong      = false;
+    v.muteGroup     = 0;
+    v.looping       = looping;
+    v.volume        = 1.0f;
+    v.releaseTail   = false;
+    v.oneShot       = false;
+    v.filterEnabled = false;
+    v.filterCutoff  = 8200.0f;
+    v.filterReso    = 0.0f;
+    v.filterDrive   = 0.0f;
+    v.filterEnvAmount = 0.0f;
+    v.filterKeyTrackRatio = 1.0f;
+    v.filterL1.reset();
+    v.filterR1.reset();
+    v.filterL2.reset();
+    v.filterR2.reset();
+    v.stretchActive = false;
+    v.stretchOutReadPos = 0;
+    v.stretchOutAvail   = 0;
+    v.bungeeActive  = false;
+    v.bungeeOutReadPos = 0;
+    v.bungeeOutAvail   = 0;
+    v.bungeePPFade  = 0;
+}
+
+void VoicePool::initPreviewVoiceStretch (Voice& v, int sourceStartSample, const PreviewStretchParams& p)
+{
+    if (p.stretchEnabled && p.dawBpm > 0.0f && p.bpm > 0.0f)
+    {
+        const float speedRatio = p.dawBpm / p.bpm;
+        if (p.algorithm == 0)
+        {
+            v.speed = speedRatio;
+            return;
+        }
+
+        if (p.algorithm == 2 && p.sample != nullptr)
+        {
+            v.bungeeActive = true;
+            v.bungeeSpeed = (double) speedRatio;
+            v.bungeeSrcPos = sourceStartSample;
+            initBungee (v, p.pitch, p.sampleRate, juce::jlimit (-1, 1, p.grainMode - 1));
+            return;
+        }
+
+        if (p.sample != nullptr)
+        {
+            v.stretchActive = true;
+            v.stretchTimeRatio = speedRatio;
+            v.stretchPitchSemis = p.pitch;
+            v.stretchSrcPos = sourceStartSample;
+            initStretcher (v, p.pitch, p.sampleRate,
+                           p.tonality, p.formant, p.formantComp, *p.sample);
+            return;
+        }
+    }
+
+    if (p.algorithm == 1 && p.sample != nullptr)
+    {
+        v.stretchActive = true;
+        v.stretchTimeRatio = 1.0f;
+        v.stretchPitchSemis = p.pitch;
+        v.stretchSrcPos = sourceStartSample;
+        initStretcher (v, p.pitch, p.sampleRate,
+                       p.tonality, p.formant, p.formantComp, *p.sample);
+        return;
+    }
+
+    if (p.algorithm == 2 && p.sample != nullptr)
+    {
+        v.bungeeActive = true;
+        v.bungeeSpeed = 1.0;
+        v.bungeeSrcPos = sourceStartSample;
+        initBungee (v, p.pitch, p.sampleRate, juce::jlimit (-1, 1, p.grainMode - 1));
+        return;
+    }
+
+    v.speed = std::pow (2.0f, p.pitch / 12.0f);
 }
 
 void VoicePool::initStretcher (Voice& v, float pitchSemis, double sr,
@@ -212,7 +361,40 @@ void VoicePool::startVoice (int voiceIdx, const VoiceStartParams& p,
     v.oneShot = sm.resolveParam (sliceIdx, kLockOneShot,
                                   s.oneShot ? 1.0f : 0.0f,
                                   p.globalOneShot ? 1.0f : 0.0f) > 0.5f;
+    v.filterEnabled = sm.resolveParam (sliceIdx, kLockFilterEnabled,
+                                       s.filterEnabled ? 1.0f : 0.0f,
+                                       p.globalFilterEnabled ? 1.0f : 0.0f) > 0.5f;
+    v.filterType = (int) sm.resolveParam (sliceIdx, kLockFilterType,
+                                          (float) s.filterType, (float) p.globalFilterType);
+    v.filterSlope = (int) sm.resolveParam (sliceIdx, kLockFilterSlope,
+                                           (float) s.filterSlope, (float) p.globalFilterSlope);
+    v.filterCutoff = sm.resolveParam (sliceIdx, kLockFilterCutoff,
+                                      s.filterCutoff, p.globalFilterCutoff);
+    v.filterReso = sm.resolveParam (sliceIdx, kLockFilterReso,
+                                    s.filterReso, p.globalFilterReso);
+    v.filterDrive = sm.resolveParam (sliceIdx, kLockFilterDrive,
+                                     s.filterDrive, p.globalFilterDrive);
+    const float keyTrackPercent = sm.resolveParam (sliceIdx, kLockFilterKeyTrack,
+                                                   s.filterKeyTrack, p.globalFilterKeyTrack);
+    const float keyTrackNorm = juce::jlimit (0.0f, 1.0f, keyTrackPercent / 100.0f);
+    const float noteRatio = std::pow (2.0f, ((float) p.note - (float) p.rootNote) / 12.0f);
+    v.filterKeyTrackRatio = 1.0f + (noteRatio - 1.0f) * keyTrackNorm;
+    const float filterEnvAttack = sm.resolveParam (sliceIdx, kLockFilterEnvAttack,
+                                                   s.filterEnvAttackSec, p.globalFilterEnvAttackSec);
+    const float filterEnvDecay = sm.resolveParam (sliceIdx, kLockFilterEnvDecay,
+                                                  s.filterEnvDecaySec, p.globalFilterEnvDecaySec);
+    const float filterEnvSustain = sm.resolveParam (sliceIdx, kLockFilterEnvSustain,
+                                                    s.filterEnvSustain, p.globalFilterEnvSustain);
+    const float filterEnvRelease = sm.resolveParam (sliceIdx, kLockFilterEnvRelease,
+                                                    s.filterEnvReleaseSec, p.globalFilterEnvReleaseSec);
+    v.filterEnvAmount = sm.resolveParam (sliceIdx, kLockFilterEnvAmount,
+                                         s.filterEnvAmount, p.globalFilterEnvAmount);
     v.bufferEnd = sample.getNumFrames();
+    v.filterL1.reset();
+    v.filterR1.reset();
+    v.filterL2.reset();
+    v.filterR2.reset();
+    v.filterEnvelope.noteOn (filterEnvAttack, filterEnvDecay, filterEnvSustain, filterEnvRelease, sampleRate);
 
     // Reset stretch state and ping-pong fade (guard against stale data from stolen voices)
     v.stretchActive  = false;
@@ -292,6 +474,7 @@ void VoicePool::releaseNote (int note)
             if (voices[i].oneShot)
                 continue;   // ignore note-off; voice plays through to endSample
             voices[i].envelope.noteOff();
+            voices[i].filterEnvelope.noteOff();
         }
     }
 }
@@ -300,21 +483,30 @@ void VoicePool::releaseNoteForced (int note)
 {
     for (int i = 0; i < maxActive; ++i)
         if (voices[i].active && voices[i].midiNote == note)
+        {
             voices[i].envelope.forceRelease (kKillReleaseSec, sampleRate);
+            voices[i].filterEnvelope.forceRelease (kKillReleaseSec, sampleRate);
+        }
 }
 
 void VoicePool::releaseAll()
 {
     for (int i = 0; i < maxActive; ++i)
         if (voices[i].active)
+        {
             voices[i].envelope.forceRelease (kShortReleaseSec, sampleRate);
+            voices[i].filterEnvelope.forceRelease (kShortReleaseSec, sampleRate);
+        }
 }
 
 void VoicePool::killAll()
 {
     for (int i = 0; i < maxActive; ++i)
         if (voices[i].active)
+        {
             voices[i].envelope.forceRelease (kKillReleaseSec, sampleRate);
+            voices[i].filterEnvelope.forceRelease (kKillReleaseSec, sampleRate);
+        }
 }
 
 void VoicePool::muteGroup (int group, int exceptVoice)
@@ -325,7 +517,10 @@ void VoicePool::muteGroup (int group, int exceptVoice)
     for (int i = 0; i < maxActive; ++i)
     {
         if (i != exceptVoice && voices[i].active && voices[i].muteGroup == group)
+        {
             voices[i].envelope.forceRelease (kKillReleaseSec, sampleRate);
+            voices[i].filterEnvelope.forceRelease (kKillReleaseSec, sampleRate);
+        }
     }
 }
 
@@ -568,6 +763,8 @@ void VoicePool::processVoiceSample (int i, const SampleData& sample, double /*sr
     {
         // Signalsmith Stretch processing
         float env = v.envelope.processSample();
+        if (v.filterEnabled)
+            v.filterEnvelope.processSample();
 
         if (v.envelope.isDone())
         {
@@ -596,13 +793,19 @@ void VoicePool::processVoiceSample (int i, const SampleData& sample, double /*sr
                 else if (v.releaseTail && v.stretchSrcPos < v.bufferEnd && v.stretchSrcPos >= 0)
                 {
                     if (v.envelope.getState() != AdsrEnvelope::Release)
+                    {
                         v.envelope.noteOff();
+                        v.filterEnvelope.noteOff();
+                    }
                     fillStretchBlock (v, sample);
                 }
                 else
                 {
                     if (v.envelope.getState() != AdsrEnvelope::Release)
+                    {
                         v.envelope.noteOff();
+                        v.filterEnvelope.noteOff();
+                    }
                 }
             }
             else
@@ -613,8 +816,11 @@ void VoicePool::processVoiceSample (int i, const SampleData& sample, double /*sr
 
         if (v.stretchOutReadPos < v.stretchOutAvail)
         {
-            voiceL = v.stretchOutBufL[(size_t) v.stretchOutReadPos] * env * v.velocity * v.volume;
-            voiceR = v.stretchOutBufR[(size_t) v.stretchOutReadPos] * env * v.velocity * v.volume;
+            voiceL = v.stretchOutBufL[(size_t) v.stretchOutReadPos];
+            voiceR = v.stretchOutBufR[(size_t) v.stretchOutReadPos];
+            processVoiceFilter (v, (float) sampleRate, voiceL, voiceR);
+            voiceL *= env * v.velocity * v.volume;
+            voiceR *= env * v.velocity * v.volume;
             v.stretchOutReadPos++;
         }
 
@@ -624,6 +830,8 @@ void VoicePool::processVoiceSample (int i, const SampleData& sample, double /*sr
     {
         // Bungee Stretch processing
         float env = v.envelope.processSample();
+        if (v.filterEnabled)
+            v.filterEnvelope.processSample();
 
         if (v.envelope.isDone())
         {
@@ -653,13 +861,19 @@ void VoicePool::processVoiceSample (int i, const SampleData& sample, double /*sr
                 else if (v.releaseTail && v.bungeeSrcPos < v.bufferEnd && v.bungeeSrcPos >= 0)
                 {
                     if (v.envelope.getState() != AdsrEnvelope::Release)
+                    {
                         v.envelope.noteOff();
+                        v.filterEnvelope.noteOff();
+                    }
                     fillBungeeBlock (v, sample);
                 }
                 else
                 {
                     if (v.envelope.getState() != AdsrEnvelope::Release)
+                    {
                         v.envelope.noteOff();
+                        v.filterEnvelope.noteOff();
+                    }
                 }
             }
             else
@@ -670,8 +884,8 @@ void VoicePool::processVoiceSample (int i, const SampleData& sample, double /*sr
 
         if (v.bungeeOutReadPos < v.bungeeOutAvail)
         {
-            voiceL = v.bungeeOutBufL[(size_t) v.bungeeOutReadPos] * env * v.velocity * v.volume;
-            voiceR = v.bungeeOutBufR[(size_t) v.bungeeOutReadPos] * env * v.velocity * v.volume;
+            voiceL = v.bungeeOutBufL[(size_t) v.bungeeOutReadPos];
+            voiceR = v.bungeeOutBufR[(size_t) v.bungeeOutReadPos];
 
             // Crossfade during ping-pong direction change
             if (v.bungeePPFade > 0)
@@ -682,12 +896,15 @@ void VoicePool::processVoiceSample (int i, const SampleData& sample, double /*sr
 
                 if (fadeIdx < (int) v.bungeePPFadeL.size())
                 {
-                    voiceL = voiceL * fadeIn + v.bungeePPFadeL[(size_t) fadeIdx] * env * v.velocity * v.volume * fadeOut;
-                    voiceR = voiceR * fadeIn + v.bungeePPFadeR[(size_t) fadeIdx] * env * v.velocity * v.volume * fadeOut;
+                    voiceL = voiceL * fadeIn + v.bungeePPFadeL[(size_t) fadeIdx] * fadeOut;
+                    voiceR = voiceR * fadeIn + v.bungeePPFadeR[(size_t) fadeIdx] * fadeOut;
                 }
                 v.bungeePPFade--;
             }
 
+            processVoiceFilter (v, (float) sampleRate, voiceL, voiceR);
+            voiceL *= env * v.velocity * v.volume;
+            voiceR *= env * v.velocity * v.volume;
             v.bungeeOutReadPos++;
         }
 
@@ -697,6 +914,8 @@ void VoicePool::processVoiceSample (int i, const SampleData& sample, double /*sr
     {
         // Process envelope
         float env = v.envelope.processSample();
+        if (v.filterEnabled)
+            v.filterEnvelope.processSample();
 
         if (v.envelope.isDone())
         {
@@ -706,8 +925,11 @@ void VoicePool::processVoiceSample (int i, const SampleData& sample, double /*sr
         }
 
         // Linear interpolation
-        voiceL = sample.getInterpolatedSample (v.position, 0) * env * v.velocity * v.volume;
-        voiceR = sample.getInterpolatedSample (v.position, 1) * env * v.velocity * v.volume;
+        voiceL = sample.getInterpolatedSample (v.position, 0);
+        voiceR = sample.getInterpolatedSample (v.position, 1);
+        processVoiceFilter (v, (float) sampleRate, voiceL, voiceR);
+        voiceL *= env * v.velocity * v.volume;
+        voiceR *= env * v.velocity * v.volume;
 
         // Advance position
         double newPos = v.position + v.speed * v.direction;
@@ -740,17 +962,26 @@ void VoicePool::processVoiceSample (int i, const SampleData& sample, double /*sr
                 else if (v.releaseTail && newPos >= v.endSample && newPos < v.bufferEnd)
                 {
                     if (v.envelope.getState() != AdsrEnvelope::Release)
+                    {
                         v.envelope.noteOff();
+                        v.filterEnvelope.noteOff();
+                    }
                 }
                 else if (v.releaseTail && v.direction < 0 && newPos < v.startSample && newPos >= 0)
                 {
                     if (v.envelope.getState() != AdsrEnvelope::Release)
+                    {
                         v.envelope.noteOff();
+                        v.filterEnvelope.noteOff();
+                    }
                 }
                 else
                 {
                     if (v.envelope.getState() != AdsrEnvelope::Release)
+                    {
                         v.envelope.noteOff();
+                        v.filterEnvelope.noteOff();
+                    }
 
                     newPos = juce::jlimit ((double) v.startSample, (double) v.endSample - 1, newPos);
                 }
@@ -797,74 +1028,8 @@ void VoicePool::startShiftPreview (int startSample, int bufferSize,
     // Shares the lazyChop preview slot; only called when lazyChop is inactive
     const int i = kPreviewVoiceIndex;
     Voice& v = voices[i];
-    v.active        = true;
-    v.sliceIdx      = -1;
-    v.position      = (double) startSample;
-    v.speed         = 1.0;
-    v.direction     = 1;
-    v.midiNote      = -1;
-    v.velocity      = 0.8f;
-    v.startSample   = startSample;
-    v.endSample     = bufferSize;
-    v.bufferEnd     = bufferSize;
-    v.pingPong      = false;
-    v.muteGroup     = 0;
-    v.looping       = false;
-    v.volume        = 1.0f;
-    v.releaseTail   = false;
-    v.oneShot       = false;
-    v.stretchActive = false;
-    v.stretchOutReadPos = 0;
-    v.stretchOutAvail   = 0;
-    v.bungeeActive  = false;
-    v.bungeeOutReadPos = 0;
-    v.bungeeOutAvail   = 0;
-    v.bungeePPFade  = 0;
-
-    if (p.stretchEnabled && p.dawBpm > 0.0f && p.bpm > 0.0f)
-    {
-        const float speedRatio = p.dawBpm / p.bpm;
-        if (p.algorithm == 0)
-        {
-            v.speed = speedRatio;
-        }
-        else if (p.algorithm == 2 && p.sample != nullptr)
-        {
-            v.bungeeActive = true;
-            v.bungeeSpeed = (double) speedRatio;
-            v.bungeeSrcPos = startSample;
-            initBungee (v, p.pitch, p.sampleRate, juce::jlimit (-1, 1, p.grainMode - 1));
-        }
-        else if (p.sample != nullptr)
-        {
-            v.stretchActive = true;
-            v.stretchTimeRatio = speedRatio;
-            v.stretchPitchSemis = p.pitch;
-            v.stretchSrcPos = startSample;
-            initStretcher (v, p.pitch, p.sampleRate,
-                           p.tonality, p.formant, p.formantComp, *p.sample);
-        }
-    }
-    else if (p.algorithm == 1 && p.sample != nullptr)
-    {
-        v.stretchActive = true;
-        v.stretchTimeRatio = 1.0f;
-        v.stretchPitchSemis = p.pitch;
-        v.stretchSrcPos = startSample;
-        initStretcher (v, p.pitch, p.sampleRate,
-                       p.tonality, p.formant, p.formantComp, *p.sample);
-    }
-    else if (p.algorithm == 2 && p.sample != nullptr)
-    {
-        v.bungeeActive = true;
-        v.bungeeSpeed = 1.0;
-        v.bungeeSrcPos = startSample;
-        initBungee (v, p.pitch, p.sampleRate, juce::jlimit (-1, 1, p.grainMode - 1));
-    }
-    else
-    {
-        v.speed = std::pow (2.0f, p.pitch / 12.0f);
-    }
+    initPreviewVoiceCommon (v, startSample, startSample, bufferSize, false, 0.8f);
+    initPreviewVoiceStretch (v, startSample, p);
 
     v.envelope.noteOn (0.002f, 0.0f, 1.0f, 0.05f, p.sampleRate);
     voicePositions[i].store ((float) startSample, std::memory_order_relaxed);
@@ -875,14 +1040,4 @@ void VoicePool::stopShiftPreview()
     int i = kPreviewVoiceIndex;
     if (voices[i].active)
         voices[i].envelope.forceRelease (kKillReleaseSec, sampleRate);
-}
-
-void VoicePool::processSampleMultiOut (const SampleData& sample, double sr,
-                                        float* outPtrs[], int /*numOuts*/)
-{
-    // This method is not used directly — multi-out routing is handled in processBlock
-    // by calling processVoiceSample per voice and routing to the correct bus.
-    (void) sample;
-    (void) sr;
-    (void) outPtrs;
 }

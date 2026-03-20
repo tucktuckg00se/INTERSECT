@@ -1,0 +1,62 @@
+# jnz/studio98
+
+name: studio98
+background: f6f6f6
+waveformBg: ffffff
+darkBar: f5f5f5
+header: f5f5f5
+foreground: 000000
+gridLine: b3b3b3
+separator: b3b3b3
+waveform: 0f0f0f
+selectionOverlay: 357ec7
+accent: 007acc
+lockActive: 007acc
+lockInactive: b3b3b3
+button: c2c3ca
+buttonHover: efeef3
+
+# Signal chain bar
+module_name_playback: 357ec7  # blue
+module_name_filter: c08020    # amber
+module_name_amp: 008000       # green
+module_name_output: 800080    # purple
+tab_global_active: 357ec7     # blue
+tab_slice_active: 800080      # purple
+override_bar: cc0000          # red
+override_bar_hover: ee2020    # red lighter
+override_label: aa0000        # red dark
+override_value: 202020        # dark text
+override_count: aa0000        # red dark
+filter_toggle_on: c08020      # amber
+set_bpm_text: 007acc          # blue accent
+set_bpm_border: b3b3b3        # gray border
+param_label: 808080           # mid gray
+param_value: 404040           # dark gray
+param_value_on: 007acc        # blue accent
+param_value_off: d0d0d0       # light gray
+context_bar_bg: ececec        # light gray bg
+signal_chain_bg: f0f0f0       # near white bg
+module_border: c0c0c0         # gray border
+context_text: 606060         # context primary text
+context_dim_text: 808080     # context secondary text
+tab_inactive: 808080         # inactive tab text
+lazy_chop_overlay: cc0000    # lazy chop preview overlay
+preview_cursor: cc0000       # preview cursor
+
+slice1: 800000
+slice2: 008000
+slice3: 000080
+slice4: f3b63c
+slice5: 357ec7
+slice6: ff00ff
+slice7: 00ffff
+slice8: fff953
+slice9: 545454
+slice10: 0000ff
+slice11: 64ffff
+slice12: b3b3b3
+slice13: 800000
+slice14: 008000
+slice15: 000080
+slice16: 545454

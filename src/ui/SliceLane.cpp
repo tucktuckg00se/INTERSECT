@@ -9,7 +9,7 @@ SliceLane::SliceLane (IntersectProcessor& p) : processor (p) {}
 
 void SliceLane::paint (juce::Graphics& g)
 {
-    g.fillAll (getTheme().darkBar.brighter (0.04f));
+    g.fillAll (getTheme().waveformBg);
 
     auto sampleSnap = processor.sampleData.getSnapshot();
     int numFrames = sampleSnap ? sampleSnap->buffer.getNumSamples() : 0;
@@ -71,13 +71,19 @@ void SliceLane::paint (juce::Graphics& g)
                 continue;
 
             int sw = si.x2 - si.x1;
-            g.setColour (si.selected ? si.col.withAlpha (0.55f) : si.col.withAlpha (0.25f));
-            g.fillRect (si.x1, 1, sw, h - 2);
+            g.setColour ((si.selected ? si.col.darker (0.78f) : si.col.darker (0.82f)).withAlpha (0.92f));
+            g.fillRect (si.x1, 0, sw, h);
 
             if (si.selected)
             {
-                g.setColour (si.col.withAlpha (0.9f));
-                g.drawRect (si.x1, 1, sw, h - 2, 1);
+                g.setColour (si.col.withAlpha (0.95f));
+                g.fillRect (si.x1, 0, sw, 2);
+                g.fillRect (si.x1, h - 2, sw, 2);
+            }
+            else
+            {
+                g.setColour (si.col.withAlpha (0.45f));
+                g.fillRect (si.x1, 0, sw, 1);
             }
         }
     }
@@ -97,32 +103,24 @@ void SliceLane::paint (juce::Graphics& g)
         ++labelOrderCount;
     }
 
-    // Pass 2: Draw labels in left-to-right order
     std::array<int, SliceManager::kMaxSlices> labelEnds {};
     int labelEndCount = 0;
-
     for (int oi = 0; oi < labelOrderCount; ++oi)
     {
         const auto& si = visibleSlices[(size_t) labelOrder[(size_t) oi]];
         int sw = si.x2 - si.x1;
-
-        // Slice number label — left-aligned, with overlap avoidance
         if (sw > 14)
         {
             juce::String label = juce::String (si.idx + 1);
             g.setFont (IntersectLookAndFeel::makeFont (12.0f, true));
             int labelW = g.getCurrentFont().getStringWidth (label) + 6;
             int labelX = si.x1 + 3;
-
-            // Push right until it clears all previously drawn labels
             for (int li = 0; li < labelEndCount; ++li)
             {
                 int end = labelEnds[(size_t) li];
                 if (labelX < end)
                     labelX = end + 1;
             }
-
-            // Only draw if the label fits within the visible area
             if (labelX + labelW < w)
             {
                 g.setColour (si.selected ? getTheme().foreground.withAlpha (0.9f) : si.col.withAlpha (0.7f));
@@ -133,8 +131,7 @@ void SliceLane::paint (juce::Graphics& g)
         }
     }
 
-    // Bottom separator line
-    g.setColour (getTheme().separator);
+    g.setColour (getTheme().moduleBorder.withAlpha (0.8f));
     g.drawHorizontalLine (h - 1, 0.0f, (float) w);
 }
 

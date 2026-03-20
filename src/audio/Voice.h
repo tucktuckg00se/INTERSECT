@@ -1,5 +1,6 @@
 #pragma once
 #include "AdsrEnvelope.h"
+#include "SvfFilter.h"
 #include <memory>
 #include <vector>
 
@@ -33,6 +34,16 @@ struct Voice
     bool         oneShot      = false;
     int          bufferEnd    = 0;       // actual end of sample buffer (for release tail)
     int          outputBus    = 0;       // output bus index (0-15)
+    bool         filterEnabled = false;
+    int          filterType    = 0;
+    int          filterSlope   = 0;
+    float        filterCutoff  = 8200.0f;
+    float        filterReso    = 0.0f;
+    float        filterDrive   = 0.0f;
+    float        filterEnvAmount = 0.0f;
+    float        filterKeyTrackRatio = 1.0f;
+    AdsrEnvelope filterEnvelope;
+    SvfFilter    filterL1, filterR1, filterL2, filterR2;
 
     // Signalsmith stretch fields
     bool         stretchActive = false;

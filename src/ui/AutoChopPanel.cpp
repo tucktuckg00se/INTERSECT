@@ -48,6 +48,7 @@ AutoChopPanel::AutoChopPanel (IntersectProcessor& p, WaveformView& wv)
             IntersectProcessor::Command cmd;
             cmd.type = IntersectProcessor::CmdSplitSlice;
             cmd.intParam1 = count;
+            cmd.sliceIdx = processor.sliceManager.selectedSlice.load();
             processor.pushCommand (cmd);
         }
         waveformView.transientPreviewPositions.clear();

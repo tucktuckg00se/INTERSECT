@@ -1,7 +1,9 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "Constants.h"
 #include "audio/GrainEngine.h"
 #include "audio/AudioAnalysis.h"
+#include <bit>
 #include <cmath>
 #include <functional>
 #include <memory>
@@ -54,14 +56,59 @@ static constexpr uint32_t kValidLockMask =
     kLockBpm | kLockPitch | kLockAlgorithm | kLockAttack | kLockDecay | kLockSustain
     | kLockRelease | kLockMuteGroup | kLockStretch | kLockTonality | kLockFormant
     | kLockFormantComp | kLockGrainMode | kLockVolume | kLockReleaseTail | kLockReverse
-    | kLockOutputBus | kLockLoop | kLockOneShot | kLockCentsDetune;
+    | kLockOutputBus | kLockLoop | kLockOneShot | kLockCentsDetune | kLockFilterEnabled
+    | kLockFilterType | kLockFilterSlope | kLockFilterCutoff | kLockFilterReso
+    | kLockFilterDrive | kLockFilterKeyTrack | kLockFilterEnvAttack | kLockFilterEnvDecay
+    | kLockFilterEnvSustain | kLockFilterEnvRelease | kLockFilterEnvAmount;
+
+// Copies a global parameter value into a slice field based on the lock bit.
+// Used when locking a parameter to snapshot the current effective value.
+static void copyGlobalToSlice (Slice& s, const GlobalParamSnapshot& g, uint32_t bit)
+{
+    switch (bit)
+    {
+        case kLockBpm:              s.bpm = g.bpm;                          break;
+        case kLockPitch:            s.pitchSemitones = g.pitchSemitones;    break;
+        case kLockAlgorithm:        s.algorithm = g.algorithm;              break;
+        case kLockAttack:           s.attackSec = g.attackSec;              break;
+        case kLockDecay:            s.decaySec = g.decaySec;                break;
+        case kLockSustain:          s.sustainLevel = g.sustain;             break;
+        case kLockRelease:          s.releaseSec = g.releaseSec;            break;
+        case kLockMuteGroup:        s.muteGroup = g.muteGroup;              break;
+        case kLockLoop:             s.loopMode = g.loopMode;                break;
+        case kLockStretch:          s.stretchEnabled = g.stretchEnabled;    break;
+        case kLockReleaseTail:      s.releaseTail = g.releaseTail;          break;
+        case kLockReverse:          s.reverse = g.reverse;                  break;
+        case kLockOneShot:          s.oneShot = g.oneShot;                  break;
+        case kLockCentsDetune:      s.centsDetune = g.centsDetune;          break;
+        case kLockTonality:         s.tonalityHz = g.tonalityHz;            break;
+        case kLockFormant:          s.formantSemitones = g.formantSemitones; break;
+        case kLockFormantComp:      s.formantComp = g.formantComp;          break;
+        case kLockGrainMode:        s.grainMode = g.grainMode;              break;
+        case kLockVolume:           s.volume = g.volumeDb;                  break;
+        case kLockFilterEnabled:    s.filterEnabled = g.filterEnabled;      break;
+        case kLockFilterType:       s.filterType = g.filterType;            break;
+        case kLockFilterSlope:      s.filterSlope = g.filterSlope;          break;
+        case kLockFilterCutoff:     s.filterCutoff = g.filterCutoffHz;      break;
+        case kLockFilterReso:       s.filterReso = g.filterReso;            break;
+        case kLockFilterDrive:      s.filterDrive = g.filterDrive;          break;
+        case kLockFilterKeyTrack:   s.filterKeyTrack = g.filterKeyTrack;    break;
+        case kLockFilterEnvAttack:  s.filterEnvAttackSec = g.filterEnvAttackSec;    break;
+        case kLockFilterEnvDecay:   s.filterEnvDecaySec = g.filterEnvDecaySec;      break;
+        case kLockFilterEnvSustain: s.filterEnvSustain = g.filterEnvSustain;        break;
+        case kLockFilterEnvRelease: s.filterEnvReleaseSec = g.filterEnvReleaseSec;  break;
+        case kLockFilterEnvAmount:  s.filterEnvAmount = g.filterEnvAmount;          break;
+        // kLockOutputBus: no global default — slice default (0) is correct.
+        default: break;
+    }
+}
 
 static Slice sanitiseRestoredSlice (Slice s)
 {
     s.startSample = juce::jmax (0, s.startSample);
     s.endSample = juce::jmax (s.startSample + 1, s.endSample);
-    if (s.endSample - s.startSample < 64)
-        s.endSample = s.startSample + 64;
+    if (s.endSample - s.startSample < kMinSliceLengthSamples)
+        s.endSample = s.startSample + kMinSliceLengthSamples;
 
     s.midiNote = juce::jlimit (0, 127, s.midiNote);
     s.bpm = juce::jlimit (20.0f, 999.0f, s.bpm);
@@ -79,6 +126,17 @@ static Slice sanitiseRestoredSlice (Slice s)
     s.volume = juce::jlimit (-100.0f, 24.0f, s.volume);
     s.outputBus = juce::jlimit (0, 15, s.outputBus);
     s.centsDetune = juce::jlimit (-100.0f, 100.0f, s.centsDetune);
+    s.filterType = juce::jlimit (0, 3, s.filterType);
+    s.filterSlope = juce::jlimit (0, 1, s.filterSlope);
+    s.filterCutoff = juce::jlimit (kMinFilterCutoffHz, kMaxFilterCutoffHz, s.filterCutoff);
+    s.filterReso = juce::jlimit (0.0f, 100.0f, s.filterReso);
+    s.filterDrive = juce::jlimit (0.0f, 100.0f, s.filterDrive);
+    s.filterKeyTrack = juce::jlimit (0.0f, 100.0f, s.filterKeyTrack);
+    s.filterEnvAttackSec = juce::jlimit (0.0f, 10.0f, s.filterEnvAttackSec);
+    s.filterEnvDecaySec = juce::jlimit (0.0f, 10.0f, s.filterEnvDecaySec);
+    s.filterEnvSustain = juce::jlimit (0.0f, 1.0f, s.filterEnvSustain);
+    s.filterEnvReleaseSec = juce::jlimit (0.0f, 10.0f, s.filterEnvReleaseSec);
+    s.filterEnvAmount = juce::jlimit (-96.0f, 96.0f, s.filterEnvAmount);
     s.lockMask &= kValidLockMask;
     return s;
 }
@@ -118,11 +176,87 @@ constexpr int kNrpnCcDecr = 97;   // Data Decrement (CC 97 = value down)
 constexpr int kMidiEditNrpnZoom       = 8193;
 constexpr int kMidiEditNrpnSliceStart = 8194;
 constexpr int kMidiEditNrpnSliceEnd   = 8195;
-constexpr int kMidiEditMinSliceLength = 64;
+constexpr int kMidiEditMinSliceLength = kMinSliceLengthSamples;
 constexpr int kMidiEditStepsPerView   = 192;
 constexpr float kMidiEditZoomClampMax = 16384.0f;
 constexpr double kMidiEditZoomStepsPerOctave = 6.0;
 constexpr double kMidiEditGestureIdleSeconds = 0.3;
+
+uint64_t packPendingSliceParamPayload (int field, float value)
+{
+    return (uint64_t) (uint32_t) field << 32
+        | (uint64_t) std::bit_cast<uint32_t> (value);
+}
+
+void unpackPendingSliceParamPayload (uint64_t payload, int& field, float& value)
+{
+    field = (int) (payload >> 32);
+    value = std::bit_cast<float> ((uint32_t) (payload & 0xFFFFFFFFu));
+}
+
+PreviewStretchParams makePreviewStretchParams (const GlobalParamSnapshot& globals,
+                                               float dawBpm,
+                                               double sampleRate,
+                                               const SampleData* sample)
+{
+    PreviewStretchParams params;
+    params.stretchEnabled = globals.stretchEnabled;
+    params.algorithm = globals.algorithm;
+    params.bpm = globals.bpm;
+    params.pitch = globals.pitchSemitones;
+    params.dawBpm = dawBpm;
+    params.tonality = globals.tonalityHz;
+    params.formant = globals.formantSemitones;
+    params.formantComp = globals.formantComp;
+    params.grainMode = globals.grainMode;
+    params.sampleRate = sampleRate;
+    params.sample = sample;
+    return params;
+}
+
+VoiceStartParams makeVoiceStartParams (const GlobalParamSnapshot& globals,
+                                       int note,
+                                       float velocity,
+                                       float dawBpm)
+{
+    VoiceStartParams params;
+    params.note = note;
+    params.velocity = velocity;
+    params.globalBpm = globals.bpm;
+    params.globalPitch = globals.pitchSemitones;
+    params.globalAlgorithm = globals.algorithm;
+    params.globalAttackSec = globals.attackSec;
+    params.globalDecaySec = globals.decaySec;
+    params.globalSustain = globals.sustain;
+    params.globalReleaseSec = globals.releaseSec;
+    params.globalMuteGroup = globals.muteGroup;
+    params.globalStretch = globals.stretchEnabled;
+    params.dawBpm = dawBpm;
+    params.globalTonality = globals.tonalityHz;
+    params.globalFormant = globals.formantSemitones;
+    params.globalFormantComp = globals.formantComp;
+    params.globalGrainMode = globals.grainMode;
+    params.globalVolume = globals.volumeDb;
+    params.globalReleaseTail = globals.releaseTail;
+    params.globalReverse = globals.reverse;
+    params.globalLoopMode = globals.loopMode;
+    params.globalOneShot = globals.oneShot;
+    params.globalCentsDetune = globals.centsDetune;
+    params.globalFilterEnabled = globals.filterEnabled;
+    params.globalFilterType = globals.filterType;
+    params.globalFilterSlope = globals.filterSlope;
+    params.globalFilterCutoff = globals.filterCutoffHz;
+    params.globalFilterReso = globals.filterReso;
+    params.globalFilterDrive = globals.filterDrive;
+    params.globalFilterKeyTrack = globals.filterKeyTrack;
+    params.globalFilterEnvAttackSec = globals.filterEnvAttackSec;
+    params.globalFilterEnvDecaySec = globals.filterEnvDecaySec;
+    params.globalFilterEnvSustain = globals.filterEnvSustain;
+    params.globalFilterEnvReleaseSec = globals.filterEnvReleaseSec;
+    params.globalFilterEnvAmount = globals.filterEnvAmount;
+    params.rootNote = globals.rootNote;
+    return params;
+}
 } // namespace
 
 IntersectProcessor::IntersectProcessor()
@@ -165,6 +299,19 @@ IntersectProcessor::IntersectProcessor()
     oneShotParam     = apvts.getRawParameterValue (ParamIds::defaultOneShot);
     maxVoicesParam   = apvts.getRawParameterValue (ParamIds::maxVoices);
     centsDetuneParam = apvts.getRawParameterValue (ParamIds::defaultCentsDetune);
+    filterEnabledParam = apvts.getRawParameterValue (ParamIds::defaultFilterEnabled);
+    filterTypeParam = apvts.getRawParameterValue (ParamIds::defaultFilterType);
+    filterSlopeParam = apvts.getRawParameterValue (ParamIds::defaultFilterSlope);
+    filterCutoffParam = apvts.getRawParameterValue (ParamIds::defaultFilterCutoff);
+    filterResoParam = apvts.getRawParameterValue (ParamIds::defaultFilterReso);
+    filterDriveParam = apvts.getRawParameterValue (ParamIds::defaultFilterDrive);
+    filterKeyTrackParam = apvts.getRawParameterValue (ParamIds::defaultFilterKeyTrack);
+    filterEnvAttackParam = apvts.getRawParameterValue (ParamIds::defaultFilterEnvAttack);
+    filterEnvDecayParam = apvts.getRawParameterValue (ParamIds::defaultFilterEnvDecay);
+    filterEnvSustainParam = apvts.getRawParameterValue (ParamIds::defaultFilterEnvSustain);
+    filterEnvReleaseParam = apvts.getRawParameterValue (ParamIds::defaultFilterEnvRelease);
+    filterEnvAmountParam = apvts.getRawParameterValue (ParamIds::defaultFilterEnvAmount);
+    cachedApvtsState = apvts.copyState();
     publishUiSliceSnapshot();
 }
 
@@ -175,6 +322,13 @@ IntersectProcessor::~IntersectProcessor()
     delete pending;
     auto* failed = completedLoadFailure.exchange (nullptr, std::memory_order_acq_rel);
     delete failed;
+    auto* pendingRestore = pendingApvtsRestore.exchange (nullptr, std::memory_order_acq_rel);
+    delete pendingRestore;
+}
+
+GlobalParamSnapshot IntersectProcessor::loadGlobalParamSnapshot() const
+{
+    return GlobalParamSnapshot::loadFrom (apvts, sliceManager.rootNote.load());
 }
 
 bool IntersectProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -300,8 +454,8 @@ void IntersectProcessor::clampSlicesToSampleBounds()
         auto& s = sliceManager.getSlice (i);
         s.startSample = juce::jlimit (0, maxLen - 1, s.startSample);
         s.endSample = juce::jlimit (s.startSample + 1, maxLen, s.endSample);
-        if (s.endSample - s.startSample < 64)
-            s.endSample = juce::jmin (maxLen, s.startSample + 64);
+        if (s.endSample - s.startSample < kMinSliceLengthSamples)
+            s.endSample = juce::jmin (maxLen, s.startSample + kMinSliceLengthSamples);
     }
 }
 
@@ -408,8 +562,9 @@ bool IntersectProcessor::enqueueCoalescedCommand (const Command& cmd)
 
     if (cmd.type == CmdSetSliceParam)
     {
-        pendingSetSliceParamField.store (cmd.intParam1, std::memory_order_relaxed);
-        pendingSetSliceParamValue.store (cmd.floatParam1, std::memory_order_relaxed);
+        pendingSetSliceParamPayload.store (packPendingSliceParamPayload (cmd.intParam1, cmd.floatParam1),
+                                           std::memory_order_relaxed);
+        pendingSetSliceParamIdx.store (cmd.sliceIdx, std::memory_order_relaxed);
         pendingSetSliceParam.store (true, std::memory_order_release);
         return true;
     }
@@ -417,9 +572,11 @@ bool IntersectProcessor::enqueueCoalescedCommand (const Command& cmd)
     if (cmd.type == CmdSetSliceBounds)
     {
         const int end = cmd.numPositions > 0 ? cmd.positions[0] : (int) cmd.floatParam1;
+        pendingSetSliceBoundsSequence.fetch_add (1u, std::memory_order_acq_rel);
         pendingSetSliceBoundsIdx.store (cmd.intParam1, std::memory_order_relaxed);
         pendingSetSliceBoundsStart.store (cmd.intParam2, std::memory_order_relaxed);
         pendingSetSliceBoundsEnd.store (end, std::memory_order_relaxed);
+        pendingSetSliceBoundsSequence.fetch_add (1u, std::memory_order_release);
         pendingSetSliceBounds.store (true, std::memory_order_release);
         return true;
     }
@@ -433,20 +590,38 @@ void IntersectProcessor::drainCoalescedCommands (bool& handledAny)
     {
         Command cmd;
         cmd.type = CmdSetSliceBounds;
-        cmd.intParam1 = pendingSetSliceBoundsIdx.load (std::memory_order_relaxed);
-        cmd.intParam2 = pendingSetSliceBoundsStart.load (std::memory_order_relaxed);
-        cmd.positions[0] = pendingSetSliceBoundsEnd.load (std::memory_order_relaxed);
-        cmd.numPositions = 1;
-        handleCommand (cmd);
-        handledAny = true;
+        for (;;)
+        {
+            const uint32_t startSeq = pendingSetSliceBoundsSequence.load (std::memory_order_acquire);
+            if ((startSeq & 1u) != 0u)
+                continue;
+
+            const int idx = pendingSetSliceBoundsIdx.load (std::memory_order_relaxed);
+            const int start = pendingSetSliceBoundsStart.load (std::memory_order_relaxed);
+            const int end = pendingSetSliceBoundsEnd.load (std::memory_order_relaxed);
+            const uint32_t endSeq = pendingSetSliceBoundsSequence.load (std::memory_order_acquire);
+
+            if (startSeq == endSeq)
+            {
+                cmd.intParam1 = idx;
+                cmd.intParam2 = start;
+                cmd.positions[0] = end;
+                cmd.numPositions = 1;
+                handleCommand (cmd);
+                handledAny = true;
+                break;
+            }
+        }
     }
 
     if (pendingSetSliceParam.exchange (false, std::memory_order_acq_rel))
     {
         Command cmd;
         cmd.type = CmdSetSliceParam;
-        cmd.intParam1 = pendingSetSliceParamField.load (std::memory_order_relaxed);
-        cmd.floatParam1 = pendingSetSliceParamValue.load (std::memory_order_relaxed);
+        unpackPendingSliceParamPayload (pendingSetSliceParamPayload.load (std::memory_order_relaxed),
+                                        cmd.intParam1,
+                                        cmd.floatParam1);
+        cmd.sliceIdx = pendingSetSliceParamIdx.load (std::memory_order_relaxed);
         handleCommand (cmd);
         handledAny = true;
     }
@@ -508,7 +683,14 @@ UndoManager::Snapshot IntersectProcessor::makeSnapshot()
     snap.numSlices = sliceManager.getNumSlices();
     snap.selectedSlice = sliceManager.selectedSlice;
     snap.rootNote = sliceManager.rootNote.load();
-    snap.apvtsState = apvts.copyState();
+
+    // Use cached APVTS state instead of calling copyState() on the audio thread.
+    // The cache is updated by the message thread via cacheApvtsState().
+    {
+        const juce::ScopedLock sl (cachedApvtsLock);
+        snap.apvtsState = cachedApvtsState;
+    }
+
     snap.midiSelectsSlice = midiSelectsSlice.load();
     snap.snapToZeroCrossing = snapToZeroCrossing.load();
     return snap;
@@ -521,16 +703,41 @@ void IntersectProcessor::captureSnapshot()
 
 void IntersectProcessor::restoreSnapshot (const UndoManager::Snapshot& snap)
 {
+    // Apply slice state immediately (safe — no allocation).
     for (int i = 0; i < SliceManager::kMaxSlices; ++i)
         sliceManager.getSlice (i) = snap.slices[(size_t) i];
     sliceManager.setNumSlices (snap.numSlices);
     sliceManager.selectedSlice = snap.selectedSlice;
     sliceManager.rootNote.store (snap.rootNote);
-    apvts.replaceState (snap.apvtsState);
     midiSelectsSlice.store (snap.midiSelectsSlice);
     snapToZeroCrossing.store (snap.snapToZeroCrossing);
     sliceManager.rebuildMidiMap();
     uiSnapshotDirty.store (true, std::memory_order_release);
+
+    // Defer APVTS restore to the message thread (replaceState allocates).
+    auto* pending = new juce::ValueTree (snap.apvtsState);
+    auto* old = pendingApvtsRestore.exchange (pending, std::memory_order_acq_rel);
+    delete old;
+}
+
+void IntersectProcessor::cacheApvtsState()
+{
+    auto state = apvts.copyState();
+    const juce::ScopedLock sl (cachedApvtsLock);
+    cachedApvtsState = state;
+}
+
+bool IntersectProcessor::applyDeferredApvtsRestore()
+{
+    auto* pending = pendingApvtsRestore.exchange (nullptr, std::memory_order_acq_rel);
+    if (pending == nullptr)
+        return false;
+
+    apvts.replaceState (*pending);
+    delete pending;
+    // Re-cache after restore so future snapshots use the restored state.
+    cacheApvtsState();
+    return true;
 }
 
 void IntersectProcessor::handleCommand (const Command& cmd)
@@ -589,18 +796,8 @@ void IntersectProcessor::handleCommand (const Command& cmd)
         case CmdLazyChopStart:
             if (sampleData.isLoaded())
             {
-                PreviewStretchParams psp;
-                psp.stretchEnabled = stretchParam->load() > 0.5f;
-                psp.algorithm      = (int) algoParam->load();
-                psp.bpm            = bpmParam->load();
-                psp.pitch          = pitchParam->load();
-                psp.dawBpm         = dawBpm.load();
-                psp.tonality       = tonalityParam->load();
-                psp.formant        = formantParam->load();
-                psp.formantComp    = formantCompParam->load() > 0.5f;
-                psp.grainMode      = (int) grainModeParam->load();
-                psp.sampleRate     = currentSampleRate;
-                psp.sample         = &sampleData;
+                const auto globals = loadGlobalParamSnapshot();
+                const auto psp = makePreviewStretchParams (globals, dawBpm.load(), currentSampleRate, &sampleData);
                 lazyChop.start (sampleData.getNumFrames(), sliceManager, psp,
                                 snapToZeroCrossing.load(), &sampleData.getBuffer());
             }
@@ -612,7 +809,7 @@ void IntersectProcessor::handleCommand (const Command& cmd)
 
         case CmdStretch:
         {
-            int sel = sliceManager.selectedSlice;
+            int sel = cmd.sliceIdx >= 0 ? cmd.sliceIdx : sliceManager.selectedSlice.load();
             if (sel >= 0 && sel < sliceManager.getNumSlices())
             {
                 auto& s = sliceManager.getSlice (sel);
@@ -628,38 +825,16 @@ void IntersectProcessor::handleCommand (const Command& cmd)
 
         case CmdToggleLock:
         {
-            int sel = sliceManager.selectedSlice;
+            int sel = cmd.sliceIdx >= 0 ? cmd.sliceIdx : sliceManager.selectedSlice.load();
             if (sel >= 0 && sel < sliceManager.getNumSlices())
             {
+                const auto globals = loadGlobalParamSnapshot();
                 auto& s = sliceManager.getSlice (sel);
                 uint32_t bit = (uint32_t) cmd.intParam1;
                 bool turningOn = !(s.lockMask & bit);
 
                 if (turningOn)
-                {
-                    // Snapshot the current effective (global) value into the slice field
-                    // so the locked value matches what was displayed before locking.
-                    if      (bit == kLockBpm)         s.bpm               = bpmParam->load();
-                    else if (bit == kLockPitch)        s.pitchSemitones    = pitchParam->load();
-                    else if (bit == kLockAlgorithm)    s.algorithm         = (int) algoParam->load();
-                    else if (bit == kLockAttack)       s.attackSec         = attackParam->load() / 1000.0f;
-                    else if (bit == kLockDecay)        s.decaySec          = decayParam->load() / 1000.0f;
-                    else if (bit == kLockSustain)      s.sustainLevel      = sustainParam->load() / 100.0f;
-                    else if (bit == kLockRelease)      s.releaseSec        = releaseParam->load() / 1000.0f;
-                    else if (bit == kLockMuteGroup)    s.muteGroup         = (int) muteGroupParam->load();
-                    else if (bit == kLockLoop)         s.loopMode          = (int) loopParam->load();
-                    else if (bit == kLockStretch)      s.stretchEnabled    = stretchParam->load()     > 0.5f;
-                    else if (bit == kLockReleaseTail)  s.releaseTail       = releaseTailParam->load() > 0.5f;
-                    else if (bit == kLockReverse)      s.reverse           = reverseParam->load()     > 0.5f;
-                    else if (bit == kLockOneShot)      s.oneShot           = oneShotParam->load()     > 0.5f;
-                    else if (bit == kLockCentsDetune)  s.centsDetune       = centsDetuneParam->load();
-                    else if (bit == kLockTonality)     s.tonalityHz        = tonalityParam->load();
-                    else if (bit == kLockFormant)      s.formantSemitones  = formantParam->load();
-                    else if (bit == kLockFormantComp)  s.formantComp       = formantCompParam->load() > 0.5f;
-                    else if (bit == kLockGrainMode)    s.grainMode         = (int) grainModeParam->load();
-                    else if (bit == kLockVolume)       s.volume            = masterVolParam->load();
-                    // kLockOutputBus: no global default param — slice default (0) is correct
-                }
+                    copyGlobalToSlice (s, globals, bit);
 
                 s.lockMask ^= bit;
             }
@@ -668,35 +843,141 @@ void IntersectProcessor::handleCommand (const Command& cmd)
 
         case CmdSetSliceParam:
         {
-            int sel = sliceManager.selectedSlice;
+            int sel = cmd.sliceIdx >= 0 ? cmd.sliceIdx : sliceManager.selectedSlice.load();
             if (sel >= 0 && sel < sliceManager.getNumSlices())
             {
+                const auto globals = loadGlobalParamSnapshot();
                 auto& s = sliceManager.getSlice (sel);
                 int field = cmd.intParam1;
                 float val = cmd.floatParam1;
+                constexpr float kCompareTolerance = 1.0e-4f;
+
+                auto setFloatField = [&s, kCompareTolerance] (float& target, float newValue, float globalValue, uint32_t lockBit)
+                {
+                    target = newValue;
+                    if (std::abs (target - globalValue) <= kCompareTolerance)
+                        s.lockMask &= ~lockBit;
+                    else
+                        s.lockMask |= lockBit;
+                };
+
+                auto setIntField = [&s] (int& target, int newValue, int globalValue, uint32_t lockBit)
+                {
+                    target = newValue;
+                    if (target == globalValue)
+                        s.lockMask &= ~lockBit;
+                    else
+                        s.lockMask |= lockBit;
+                };
+
+                auto setBoolField = [&s] (bool& target, bool newValue, bool globalValue, uint32_t lockBit)
+                {
+                    target = newValue;
+                    if (target == globalValue)
+                        s.lockMask &= ~lockBit;
+                    else
+                        s.lockMask |= lockBit;
+                };
 
                 switch (field)
                 {
-                    case FieldBpm:       s.bpm = val;            s.lockMask |= kLockBpm;       break;
-                    case FieldPitch:     s.pitchSemitones = val; s.lockMask |= kLockPitch;     break;
-                    case FieldAlgorithm: s.algorithm = (int) val; s.lockMask |= kLockAlgorithm; break;
-                    case FieldAttack:    s.attackSec = val;      s.lockMask |= kLockAttack;    break;
-                    case FieldDecay:     s.decaySec = val;       s.lockMask |= kLockDecay;     break;
-                    case FieldSustain:   s.sustainLevel = val;   s.lockMask |= kLockSustain;   break;
-                    case FieldRelease:   s.releaseSec = val;     s.lockMask |= kLockRelease;   break;
-                    case FieldMuteGroup: s.muteGroup = (int) val; s.lockMask |= kLockMuteGroup; break;
-                    case FieldStretchEnabled: s.stretchEnabled = val > 0.5f; s.lockMask |= kLockStretch; break;
-                    case FieldTonality:  s.tonalityHz = val;        s.lockMask |= kLockTonality;    break;
-                    case FieldFormant:   s.formantSemitones = val;   s.lockMask |= kLockFormant;     break;
-                    case FieldFormantComp: s.formantComp = val > 0.5f; s.lockMask |= kLockFormantComp; break;
-                    case FieldGrainMode:  s.grainMode = (int) val;   s.lockMask |= kLockGrainMode;  break;
-                    case FieldVolume:     s.volume = val;            s.lockMask |= kLockVolume;    break;
-                    case FieldReleaseTail: s.releaseTail = val > 0.5f; s.lockMask |= kLockReleaseTail; break;
-                    case FieldReverse:    s.reverse = val > 0.5f;    s.lockMask |= kLockReverse;    break;
-                    case FieldOutputBus:  s.outputBus = juce::jlimit (0, 15, (int) val); s.lockMask |= kLockOutputBus; break;
-                    case FieldLoop:       s.loopMode = (int) val;    s.lockMask |= kLockLoop;      break;
-                    case FieldOneShot:    s.oneShot = val > 0.5f;    s.lockMask |= kLockOneShot;   break;
-                    case FieldCentsDetune: s.centsDetune = val;         s.lockMask |= kLockCentsDetune; break;
+                    case FieldBpm:
+                        setFloatField (s.bpm, val, globals.bpm, kLockBpm);
+                        break;
+                    case FieldPitch:
+                        setFloatField (s.pitchSemitones, val, globals.pitchSemitones, kLockPitch);
+                        break;
+                    case FieldAlgorithm:
+                        setIntField (s.algorithm, (int) val, globals.algorithm, kLockAlgorithm);
+                        break;
+                    case FieldAttack:
+                        setFloatField (s.attackSec, val, globals.attackSec, kLockAttack);
+                        break;
+                    case FieldDecay:
+                        setFloatField (s.decaySec, val, globals.decaySec, kLockDecay);
+                        break;
+                    case FieldSustain:
+                        setFloatField (s.sustainLevel, val, globals.sustain, kLockSustain);
+                        break;
+                    case FieldRelease:
+                        setFloatField (s.releaseSec, val, globals.releaseSec, kLockRelease);
+                        break;
+                    case FieldMuteGroup:
+                        setIntField (s.muteGroup, (int) val, globals.muteGroup, kLockMuteGroup);
+                        break;
+                    case FieldStretchEnabled:
+                        setBoolField (s.stretchEnabled, val > 0.5f, globals.stretchEnabled, kLockStretch);
+                        break;
+                    case FieldTonality:
+                        setFloatField (s.tonalityHz, val, globals.tonalityHz, kLockTonality);
+                        break;
+                    case FieldFormant:
+                        setFloatField (s.formantSemitones, val, globals.formantSemitones, kLockFormant);
+                        break;
+                    case FieldFormantComp:
+                        setBoolField (s.formantComp, val > 0.5f, globals.formantComp, kLockFormantComp);
+                        break;
+                    case FieldGrainMode:
+                        setIntField (s.grainMode, (int) val, globals.grainMode, kLockGrainMode);
+                        break;
+                    case FieldVolume:
+                        setFloatField (s.volume, val, globals.volumeDb, kLockVolume);
+                        break;
+                    case FieldReleaseTail:
+                        setBoolField (s.releaseTail, val > 0.5f, globals.releaseTail, kLockReleaseTail);
+                        break;
+                    case FieldReverse:
+                        setBoolField (s.reverse, val > 0.5f, globals.reverse, kLockReverse);
+                        break;
+                    case FieldOutputBus:
+                        s.outputBus = juce::jlimit (0, 15, (int) val);
+                        s.lockMask |= kLockOutputBus;
+                        break;
+                    case FieldLoop:
+                        setIntField (s.loopMode, (int) val, globals.loopMode, kLockLoop);
+                        break;
+                    case FieldOneShot:
+                        setBoolField (s.oneShot, val > 0.5f, globals.oneShot, kLockOneShot);
+                        break;
+                    case FieldCentsDetune:
+                        setFloatField (s.centsDetune, val, globals.centsDetune, kLockCentsDetune);
+                        break;
+                    case FieldFilterEnabled:
+                        setBoolField (s.filterEnabled, val > 0.5f, globals.filterEnabled, kLockFilterEnabled);
+                        break;
+                    case FieldFilterType:
+                        setIntField (s.filterType, juce::jlimit (0, 3, (int) val), globals.filterType, kLockFilterType);
+                        break;
+                    case FieldFilterSlope:
+                        setIntField (s.filterSlope, juce::jlimit (0, 1, (int) val), globals.filterSlope, kLockFilterSlope);
+                        break;
+                    case FieldFilterCutoff:
+                        setFloatField (s.filterCutoff, val, globals.filterCutoffHz, kLockFilterCutoff);
+                        break;
+                    case FieldFilterReso:
+                        setFloatField (s.filterReso, val, globals.filterReso, kLockFilterReso);
+                        break;
+                    case FieldFilterDrive:
+                        setFloatField (s.filterDrive, val, globals.filterDrive, kLockFilterDrive);
+                        break;
+                    case FieldFilterKeyTrack:
+                        setFloatField (s.filterKeyTrack, val, globals.filterKeyTrack, kLockFilterKeyTrack);
+                        break;
+                    case FieldFilterEnvAttack:
+                        setFloatField (s.filterEnvAttackSec, val, globals.filterEnvAttackSec, kLockFilterEnvAttack);
+                        break;
+                    case FieldFilterEnvDecay:
+                        setFloatField (s.filterEnvDecaySec, val, globals.filterEnvDecaySec, kLockFilterEnvDecay);
+                        break;
+                    case FieldFilterEnvSustain:
+                        setFloatField (s.filterEnvSustain, val, globals.filterEnvSustain, kLockFilterEnvSustain);
+                        break;
+                    case FieldFilterEnvRelease:
+                        setFloatField (s.filterEnvReleaseSec, val, globals.filterEnvReleaseSec, kLockFilterEnvRelease);
+                        break;
+                    case FieldFilterEnvAmount:
+                        setFloatField (s.filterEnvAmount, val, globals.filterEnvAmount, kLockFilterEnvAmount);
+                        break;
                     case FieldMidiNote:
                         s.midiNote = juce::jlimit (0, 127, (int) val);
                         sliceManager.rebuildMidiMap();
@@ -721,8 +1002,8 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                 int end = juce::jmax (cmd.intParam2, requestedEnd);
                 start = juce::jlimit (0, juce::jmax (0, maxLen - 1), start);
                 end = juce::jlimit (start + 1, juce::jmax (start + 1, maxLen), end);
-                if (end - start < 64)
-                    end = juce::jmin (maxLen, start + 64);
+                if (end - start < kMinSliceLengthSamples)
+                    end = juce::jmin (maxLen, start + kMinSliceLengthSamples);
                 s.startSample = start;
                 s.endSample = end;
                 sliceManager.rebuildMidiMap();
@@ -732,7 +1013,7 @@ void IntersectProcessor::handleCommand (const Command& cmd)
 
         case CmdDuplicateSlice:
         {
-            int sel = sliceManager.selectedSlice;
+            int sel = cmd.sliceIdx >= 0 ? cmd.sliceIdx : sliceManager.selectedSlice.load();
             if (sel >= 0 && sel < sliceManager.getNumSlices())
             {
                 const auto& src = sliceManager.getSlice (sel);
@@ -757,7 +1038,7 @@ void IntersectProcessor::handleCommand (const Command& cmd)
 
         case CmdSplitSlice:
         {
-            int sel = sliceManager.selectedSlice;
+            int sel = cmd.sliceIdx >= 0 ? cmd.sliceIdx : sliceManager.selectedSlice.load();
             if (sel >= 0 && sel < sliceManager.getNumSlices())
             {
                 Slice srcCopy = sliceManager.getSlice (sel);
@@ -784,7 +1065,7 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                         if (i < count - 1)
                             e = AudioAnalysis::findNearestZeroCrossing (sampleData.getBuffer(), e);
                     }
-                    if (e - s < 64) e = s + 64;
+                    if (e - s < kMinSliceLengthSamples) e = s + kMinSliceLengthSamples;
                     int idx = sliceManager.createSlice (s, e);
                     if (idx >= 0)
                     {
@@ -833,7 +1114,7 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                 {
                     int s = bounds[i];
                     int e = bounds[i + 1];
-                    if (e - s < 64) continue;
+                    if (e - s < kMinSliceLengthSamples) continue;
                     int idx = sliceManager.createSlice (s, e);
                     if (idx >= 0)
                     {
@@ -1209,29 +1490,8 @@ void IntersectProcessor::processMidi (juce::MidiBuffer& midi)
                 heldNotes[note] = true;
 
                 // Build params once; all param loads happen here, not inside the slice loop.
-                VoiceStartParams p;
-                p.note             = note;
-                p.velocity         = velocity;
-                p.globalBpm        = bpmParam->load();
-                p.globalPitch      = pitchParam->load();
-                p.globalAlgorithm  = (int) algoParam->load();
-                p.globalAttackSec  = attackParam->load()  / 1000.0f;
-                p.globalDecaySec   = decayParam->load()   / 1000.0f;
-                p.globalSustain    = sustainParam->load() / 100.0f;
-                p.globalReleaseSec = releaseParam->load() / 1000.0f;
-                p.globalMuteGroup  = (int) muteGroupParam->load();
-                p.globalStretch    = stretchParam->load()      > 0.5f;
-                p.dawBpm           = dawBpm.load();
-                p.globalTonality   = tonalityParam->load();
-                p.globalFormant    = formantParam->load();
-                p.globalFormantComp = formantCompParam->load() > 0.5f;
-                p.globalGrainMode  = (int) grainModeParam->load();
-                p.globalVolume     = masterVolParam->load();
-                p.globalReleaseTail = releaseTailParam->load() > 0.5f;
-                p.globalReverse    = reverseParam->load()      > 0.5f;
-                p.globalLoopMode   = (int) loopParam->load();
-                p.globalOneShot    = oneShotParam->load()      > 0.5f;
-                p.globalCentsDetune = centsDetuneParam->load();
+                const auto globals = loadGlobalParamSnapshot();
+                auto p = makeVoiceStartParams (globals, note, velocity, dawBpm.load());
 
                 const auto& sliceIndices = sliceManager.midiNoteToSlices (note);
                 for (int sliceIdx : sliceIndices)
@@ -1331,18 +1591,8 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             voicePool.stopShiftPreview();
         else if (req >= 0 && ! lazyChop.isActive() && sampleData.isLoaded())
         {
-            PreviewStretchParams psp;
-            psp.stretchEnabled = stretchParam->load() > 0.5f;
-            psp.algorithm      = (int) algoParam->load();
-            psp.bpm            = bpmParam->load();
-            psp.pitch          = pitchParam->load();
-            psp.dawBpm         = dawBpm.load();
-            psp.tonality       = tonalityParam->load();
-            psp.formant        = formantParam->load();
-            psp.formantComp    = formantCompParam->load() > 0.5f;
-            psp.grainMode      = (int) grainModeParam->load();
-            psp.sampleRate     = currentSampleRate;
-            psp.sample         = &sampleData;
+            const auto globals = loadGlobalParamSnapshot();
+            const auto psp = makePreviewStretchParams (globals, dawBpm.load(), currentSampleRate, &sampleData);
             voicePool.startShiftPreview (req, sampleData.getNumFrames(), psp);
         }
     }
@@ -1512,7 +1762,7 @@ void IntersectProcessor::getStateInformation (juce::MemoryBlock& destData)
     juce::MemoryOutputStream stream (destData, false);
 
     // Version
-    stream.writeInt (19);
+    stream.writeInt (21);
 
     // APVTS state
     auto state = apvts.copyState();
@@ -1566,6 +1816,19 @@ void IntersectProcessor::getStateInformation (juce::MemoryBlock& destData)
         stream.writeBool (s.oneShot);
         // v16 fields
         stream.writeFloat (s.centsDetune);
+        // v20 fields
+        stream.writeBool (s.filterEnabled);
+        stream.writeInt (s.filterType);
+        stream.writeInt (s.filterSlope);
+        stream.writeFloat (s.filterCutoff);
+        stream.writeFloat (s.filterReso);
+        stream.writeFloat (s.filterDrive);
+        stream.writeFloat (s.filterKeyTrack);
+        stream.writeFloat (s.filterEnvAttackSec);
+        stream.writeFloat (s.filterEnvDecaySec);
+        stream.writeFloat (s.filterEnvSustain);
+        stream.writeFloat (s.filterEnvReleaseSec);
+        stream.writeFloat (s.filterEnvAmount);
     }
 
     // v9: store file path only (no PCM)
@@ -1586,13 +1849,17 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
     juce::MemoryInputStream stream (data, (size_t) sizeInBytes, false);
 
     int version = stream.readInt();
-    if (version != 19)
+    if (version != 19 && version != 20 && version != 21)
         return;
 
     // APVTS state
     auto xmlString = stream.readString();
     if (auto xml = juce::parseXML (xmlString))
         apvts.replaceState (juce::ValueTree::fromXml (*xml));
+
+    if (version == 20)
+        if (auto* param = dynamic_cast<juce::RangedAudioParameter*> (apvts.getParameter (ParamIds::defaultFilterEnvAmount)))
+            param->setValueNotifyingHost (param->convertTo0to1 (0.0f));
 
     // UI state
     zoom.store (juce::jlimit (1.0f, 16384.0f, stream.readFloat()));
@@ -1640,6 +1907,24 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
         parsed.outputBus      = stream.readInt();
         parsed.oneShot        = stream.readBool();
         parsed.centsDetune    = stream.readFloat();
+        if (version >= 20)
+        {
+            parsed.filterEnabled = stream.readBool();
+            parsed.filterType = stream.readInt();
+            parsed.filterSlope = stream.readInt();
+            parsed.filterCutoff = stream.readFloat();
+            parsed.filterReso = stream.readFloat();
+            parsed.filterDrive = stream.readFloat();
+            parsed.filterKeyTrack = stream.readFloat();
+            parsed.filterEnvAttackSec = stream.readFloat();
+            parsed.filterEnvDecaySec = stream.readFloat();
+            parsed.filterEnvSustain = stream.readFloat();
+            parsed.filterEnvReleaseSec = stream.readFloat();
+            parsed.filterEnvAmount = stream.readFloat();
+
+            if (version == 20)
+                parsed.filterEnvAmount = 0.0f;
+        }
 
         if (i < validatedNumSlices)
             sliceManager.getSlice (i) = sanitiseRestoredSlice (parsed);

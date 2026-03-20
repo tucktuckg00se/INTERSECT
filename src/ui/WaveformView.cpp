@@ -1,6 +1,7 @@
 #include "WaveformView.h"
 #include "UIHelpers.h"
 #include "IntersectLookAndFeel.h"
+#include "../Constants.h"
 #include "../PluginProcessor.h"
 #include "../audio/AudioAnalysis.h"
 
@@ -152,7 +153,6 @@ void WaveformView::paint (juce::Graphics& g)
     auto sampleSnap = processor.sampleData.getSnapshot();
     g.fillAll (getTheme().waveformBg);
 
-    // Grid lines
     int cy = getHeight() / 2;
     g.setColour (getTheme().gridLine.withAlpha (0.5f));
     g.drawHorizontalLine (cy, 0.0f, (float) getWidth());
@@ -239,9 +239,9 @@ void WaveformView::paintLazyChopOverlay (juce::Graphics& g)
     int x2 = sampleToPixel (std::max (chopSample, headSample));
     if (x2 > x1)
     {
-        g.setColour (juce::Colour (0xFFCC4444).withAlpha (0.15f));
+        g.setColour (getTheme().lazyChopOverlay.withAlpha (0.15f));
         g.fillRect (x1, 0, x2 - x1, getHeight());
-        g.setColour (juce::Colour (0xFFCC4444).withAlpha (0.5f));
+        g.setColour (getTheme().lazyChopOverlay.withAlpha (0.5f));
         g.drawVerticalLine (sampleToPixel (chopSample), 0.0f, (float) getHeight());
     }
 }
@@ -365,11 +365,15 @@ void WaveformView::drawWaveform (juce::Graphics& g)
         // Top envelope (max peaks, left to right)
         fillPath.startNewSubPath (0.0f, (float) cy - peaks[0].maxVal * scale);
         for (int px = 1; px < numPeaks; ++px)
+        {
             fillPath.lineTo ((float) px, (float) cy - peaks[(size_t) px].maxVal * scale);
+        }
 
         // Bottom envelope (min peaks, right to left)
         for (int px = numPeaks - 1; px >= 0; --px)
+        {
             fillPath.lineTo ((float) px, (float) cy - peaks[(size_t) px].minVal * scale);
+        }
 
         fillPath.closeSubPath();
         g.fillPath (fillPath);
@@ -422,59 +426,25 @@ void WaveformView::drawSlices (juce::Graphics& g)
 
         if (i == sel || (previewActive && previewIdx == i))
         {
-            // Selected: purple overlay
-            g.setColour (getTheme().selectionOverlay.withAlpha (0.22f));
+            g.setColour (s.colour.withAlpha (0.05f));
             g.fillRect (x1, 0, sw, getHeight());
 
-            // Markers with triangle handles at bottom
-            g.setColour (getTheme().foreground.withAlpha (0.8f));
+            g.setColour (s.colour.withAlpha (0.42f));
             g.drawVerticalLine (x1, 0.0f, (float) getHeight());
             g.drawVerticalLine (x2 - 1, 0.0f, (float) getHeight());
 
-            // Triangle handles at bottom for start (larger/brighter when hovered)
-            {
-                bool hov = (hoveredEdge == HoveredEdge::Left);
-                float tw = hov ? 10.0f : 7.0f;
-                float th = hov ? 12.0f : 9.0f;
-                float alpha = hov ? 1.0f : 0.9f;
-                juce::Path triS;
-                triS.addTriangle ((float) x1, (float) getHeight(),
-                                  (float) x1 + tw, (float) getHeight(),
-                                  (float) x1, (float) getHeight() - th);
-                g.setColour (getTheme().foreground.withAlpha (alpha));
-                g.fillPath (triS);
-            }
+            auto handleHeight = hoveredEdge == HoveredEdge::Left || hoveredEdge == HoveredEdge::Right ? 30.0f : 24.0f;
+            auto handleY = (float) getHeight() - handleHeight;
+            g.fillRoundedRectangle ((float) x1 - 2.0f, handleY, 5.0f, handleHeight, 2.0f);
+            g.fillRoundedRectangle ((float) x2 - 3.0f, handleY, 5.0f, handleHeight, 2.0f);
 
-            // Triangle handles at bottom for end (larger/brighter when hovered)
-            {
-                bool hov = (hoveredEdge == HoveredEdge::Right);
-                float tw = hov ? 10.0f : 7.0f;
-                float th = hov ? 12.0f : 9.0f;
-                float alpha = hov ? 1.0f : 0.9f;
-                juce::Path triE;
-                triE.addTriangle ((float) (x2 - 1), (float) getHeight(),
-                                  (float) (x2 - 1) - tw, (float) getHeight(),
-                                  (float) (x2 - 1), (float) getHeight() - th);
-                g.setColour (getTheme().foreground.withAlpha (alpha));
-                g.fillPath (triE);
-            }
-
-            // "S" and "E" labels near handles
-            g.setFont (IntersectLookAndFeel::makeFont (10.0f, true));
-            g.setColour (getTheme().foreground.withAlpha (0.7f));
-            g.drawText ("S", x1 + 2, getHeight() - 24, 12, 12, juce::Justification::centredLeft);
-            g.drawText ("E", x2 - 14, getHeight() - 24, 12, 12, juce::Justification::centredRight);
-
-            // Label
-            g.setColour (getTheme().foreground.withAlpha (0.85f));
-            g.setFont (IntersectLookAndFeel::makeFont (13.0f, true));
-            g.drawText ("Slice " + juce::String (i + 1), x1 + 3, 3, 70, 14,
-                         juce::Justification::centredLeft);
+            g.setColour (s.colour.withAlpha (0.92f));
+            g.setFont (IntersectLookAndFeel::makeFont (9.0f, true));
+            g.drawText ("Slice " + juce::String (i + 1), x1, 7, sw, 12, juce::Justification::centredTop);
         }
         else
         {
-            // Non-selected: thin vertical edge lines only (no overlay fill)
-            g.setColour (s.colour.withAlpha (0.30f));
+            g.setColour (s.colour.withAlpha (0.12f));
             g.drawVerticalLine (x1, 0.0f, (float) getHeight());
             g.drawVerticalLine (x2 - 1, 0.0f, (float) getHeight());
         }
@@ -493,7 +463,7 @@ void WaveformView::drawPlaybackCursors (juce::Graphics& g)
             if (px >= 0 && px < getWidth())
             {
                 if (i == previewIdx && processor.lazyChop.isActive())
-                    g.setColour (juce::Colour (0xFFCC4444));  // red for preview
+                    g.setColour (getTheme().previewCursor);
                 else
                     g.setColour (getTheme().accent.withAlpha (0.7f));  // yellow
 
@@ -755,13 +725,13 @@ void WaveformView::mouseDrag (const juce::MouseEvent& e)
     {
         if (processor.snapToZeroCrossing.load())
             samplePos = AudioAnalysis::findNearestZeroCrossing (sampleSnap->buffer, samplePos);
-        dragPreviewStart = std::min (samplePos, dragPreviewEnd - 64);
+        dragPreviewStart = std::min (samplePos, dragPreviewEnd - kMinSliceLengthSamples);
     }
     else if (dragMode == DragEdgeRight && dragSliceIdx >= 0)
     {
         if (processor.snapToZeroCrossing.load())
             samplePos = AudioAnalysis::findNearestZeroCrossing (sampleSnap->buffer, samplePos);
-        dragPreviewEnd = std::max (samplePos, dragPreviewStart + 64);
+        dragPreviewEnd = std::max (samplePos, dragPreviewStart + kMinSliceLengthSamples);
     }
     else if (dragMode == MoveSlice && dragSliceIdx >= 0)
     {
@@ -831,7 +801,7 @@ void WaveformView::mouseUp (const juce::MouseEvent& e)
             drawStart = AudioAnalysis::findNearestZeroCrossing (sampleSnap->buffer, drawStart);
             endPos = AudioAnalysis::findNearestZeroCrossing (sampleSnap->buffer, endPos);
         }
-        if (std::abs (endPos - drawStart) >= 64)
+        if (std::abs (endPos - drawStart) >= kMinSliceLengthSamples)
         {
             IntersectProcessor::Command cmd;
             cmd.type = IntersectProcessor::CmdCreateSlice;
@@ -845,7 +815,7 @@ void WaveformView::mouseUp (const juce::MouseEvent& e)
         if (drawStartedFromAlt && ! altStillDown)
             setSliceDrawMode (false);
 
-        // If click without dragging (< 64 samples), keep draw mode active
+        // If click without dragging (< min slice length), keep draw mode active
     }
     else if (dragMode == DragEdgeLeft || dragMode == DragEdgeRight || dragMode == MoveSlice)
     {
@@ -871,6 +841,7 @@ void WaveformView::mouseUp (const juce::MouseEvent& e)
         cmd.type      = IntersectProcessor::CmdDuplicateSlice;
         cmd.intParam1 = ghostStart;
         cmd.intParam2 = ghostEnd;
+        cmd.sliceIdx  = dragSliceIdx;
         processor.pushCommand (cmd);
     }
 

@@ -82,8 +82,8 @@ juce_add_plugin(Intersect
 )
 
 juce_add_binary_data(IntersectFonts SOURCES
-    src/ui/fonts/IBMPlexSans-Regular.ttf
-    src/ui/fonts/IBMPlexSans-Bold.ttf
+    src/ui/fonts/Inter_24pt-Regular.ttf
+    src/ui/fonts/Inter_24pt-Bold.ttf
 )
 
 target_sources(Intersect PRIVATE
@@ -97,7 +97,7 @@ target_sources(Intersect PRIVATE
     src/params/ParamLayout.cpp
     src/ui/IntersectLookAndFeel.cpp
     src/ui/HeaderBar.cpp
-    src/ui/SliceControlBar.cpp
+    src/ui/SignalChainBar.cpp
     src/ui/WaveformView.cpp
     src/ui/WaveformCache.cpp
     src/ui/ScrollZoomBar.cpp

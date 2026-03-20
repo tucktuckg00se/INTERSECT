@@ -5,6 +5,10 @@
 
 namespace
 {
+
+static const juce::AudioBuffer<float> kEmptyBuffer;
+static const std::array<SampleData::PeakMipmap, SampleData::kNumMipmapLevels> kEmptyMipmaps;
+
 void buildMipmapsForBuffer (const juce::AudioBuffer<float>& src,
                             std::array<SampleData::PeakMipmap, SampleData::kNumMipmapLevels>& outMipmaps)
 {
@@ -118,24 +122,24 @@ void SampleData::applyDecodedSample (std::unique_ptr<DecodedSample> decoded)
     if (decoded == nullptr)
         return;
 
-    buffer = std::move (decoded->buffer);
-    peakMipmaps = std::move (decoded->peakMipmaps);
     loadedFileName = decoded->fileName;
     loadedFilePath = decoded->filePath;
-    auto view = std::make_shared<DecodedSample>();
-    view->buffer = buffer;
-    view->peakMipmaps = peakMipmaps;
-    view->fileName = loadedFileName;
-    view->filePath = loadedFilePath;
+    int frames = decoded->buffer.getNumSamples();
+
+    // Convert to shared_ptr — no buffer copy, no heap allocation.
+    auto shared = std::shared_ptr<const DecodedSample> (decoded.release());
+
+    // Audio-thread reference (non-atomic, only written here on audio thread).
+    activeDecoded = shared;
+    numFrames.store (frames, std::memory_order_release);
+
+    // Publish the same object to UI via atomic snapshot.
 #if INTERSECT_HAS_STD_ATOMIC_SHARED_PTR
-    snapshot.store (std::static_pointer_cast<const DecodedSample> (view),
-                    std::memory_order_release);
+    snapshot.store (shared, std::memory_order_release);
 #else
-    std::atomic_store_explicit (&snapshot,
-                                std::static_pointer_cast<const DecodedSample> (view),
-                                std::memory_order_release);
+    std::atomic_store_explicit (&snapshot, shared, std::memory_order_release);
 #endif
-    loaded = true;
+    loaded.store (true, std::memory_order_release);
 }
 
 bool SampleData::loadFromFile (const juce::File& file, double projectSampleRate)
@@ -149,13 +153,8 @@ bool SampleData::loadFromFile (const juce::File& file, double projectSampleRate)
 
 void SampleData::clear()
 {
-    buffer.setSize (2, 0, false, false, true);
-    for (auto& m : peakMipmaps)
-    {
-        m.samplesPerPeak = 0;
-        m.maxPeaks.clear();
-        m.minPeaks.clear();
-    }
+    activeDecoded.reset();
+    numFrames.store (0, std::memory_order_release);
 #if INTERSECT_HAS_STD_ATOMIC_SHARED_PTR
     snapshot.store (std::shared_ptr<const DecodedSample> {}, std::memory_order_release);
 #else
@@ -164,7 +163,7 @@ void SampleData::clear()
 #endif
     loadedFileName.clear();
     loadedFilePath.clear();
-    loaded = false;
+    loaded.store (false, std::memory_order_release);
 }
 
 SampleData::SnapshotPtr SampleData::getSnapshot() const
@@ -176,24 +175,34 @@ SampleData::SnapshotPtr SampleData::getSnapshot() const
 #endif
 }
 
+const juce::AudioBuffer<float>& SampleData::getBuffer() const
+{
+    if (activeDecoded)
+        return activeDecoded->buffer;
+    return kEmptyBuffer;
+}
+
+const std::array<SampleData::PeakMipmap, SampleData::kNumMipmapLevels>& SampleData::getMipmaps() const
+{
+    if (activeDecoded)
+        return activeDecoded->peakMipmaps;
+    return kEmptyMipmaps;
+}
+
 float SampleData::getInterpolatedSample (double pos, int channel) const
 {
-    if (! loaded || channel < 0 || channel > 1)
+    if (! activeDecoded || channel < 0 || channel > 1)
         return 0.0f;
 
+    const auto& buf = activeDecoded->buffer;
     int ipos = (int) pos;
     float frac = (float) (pos - ipos);
 
-    if (ipos < 0 || ipos >= buffer.getNumSamples() - 1)
+    if (ipos < 0 || ipos >= buf.getNumSamples() - 1)
         return 0.0f;
 
-    auto* data = buffer.getReadPointer (channel);
+    auto* data = buf.getReadPointer (channel);
     if (data == nullptr)
         return 0.0f;
     return data[ipos] + (data[ipos + 1] - data[ipos]) * frac;
-}
-
-void SampleData::buildMipmaps()
-{
-    buildMipmapsForBuffer (buffer, peakMipmaps);
 }

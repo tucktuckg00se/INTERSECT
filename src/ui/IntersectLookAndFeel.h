@@ -34,6 +34,13 @@ public:
     juce::Typeface::Ptr getTypefaceForFont (const juce::Font& f) override;
 
     static juce::Font makeFont (float pointSize, bool bold = false);
+    static juce::Font fitFontToWidth (const juce::String& text, float maxPointSize,
+                                      float minPointSize, int width, bool bold = false);
+    static void drawShellButton (juce::Graphics& g,
+                                 juce::Rectangle<float> bounds,
+                                 const juce::Colour& fill,
+                                 const juce::Colour& outline,
+                                 float cornerRadius);
 
 private:
     static juce::Typeface::Ptr sRegularTypeface;

@@ -8,6 +8,7 @@
 #include "audio/VoicePool.h"
 #include "audio/LazyChopEngine.h"
 #include "UndoManager.h"
+#include "params/GlobalParamSnapshot.h"
 #include "params/ParamIds.h"
 #include "params/ParamLayout.h"
 
@@ -103,6 +104,18 @@ public:
         FieldLoop,
         FieldOneShot,
         FieldCentsDetune,
+        FieldFilterEnabled,
+        FieldFilterType,
+        FieldFilterSlope,
+        FieldFilterCutoff,
+        FieldFilterReso,
+        FieldFilterDrive,
+        FieldFilterKeyTrack,
+        FieldFilterEnvAttack,
+        FieldFilterEnvDecay,
+        FieldFilterEnvSustain,
+        FieldFilterEnvRelease,
+        FieldFilterEnvAmount,
     };
 
     enum class MidiEditAction
@@ -150,6 +163,9 @@ public:
         // Fixed-size array avoids heap allocation/deallocation on the audio thread.
         std::array<int, 128> positions {};
         int numPositions = 0;
+        // Explicit target slice index, captured at push time.
+        // -1 means "no explicit target" (legacy commands that don't need one).
+        int sliceIdx = -1;
     };
 
     void pushCommand (Command cmd);
@@ -227,6 +243,13 @@ public:
     // Undo/redo
     UndoManager undoMgr;
 
+    // Message-thread cached APVTS state for RT-safe snapshot creation.
+    // Updated by editor timer; read by audio thread for undo snapshots.
+    void cacheApvtsState();  // call from message thread only
+    // Deferred APVTS restore: message thread picks up pending ValueTree.
+    // Returns true if a restore was applied.
+    bool applyDeferredApvtsRestore();
+
     // Shift preview request: -2=no-op, -1=stop, >=0=start at this sample position
     std::atomic<int> shiftPreviewRequest { -2 };
 
@@ -283,6 +306,7 @@ private:
     UndoManager::Snapshot makeSnapshot();
     void captureSnapshot();
     void restoreSnapshot (const UndoManager::Snapshot& snap);
+    GlobalParamSnapshot loadGlobalParamSnapshot() const;
     bool enqueueOverflowCommand (Command cmd);
     void drainOverflowCommands (bool& handledAny);
     bool enqueueCoalescedCommand (const Command& cmd);
@@ -300,9 +324,10 @@ private:
     std::atomic<int> overflowReadIndex { 0 };
     std::atomic<int> overflowWriteIndex { 0 };
     std::atomic<bool> pendingSetSliceParam { false };
-    std::atomic<int> pendingSetSliceParamField { 0 };
-    std::atomic<float> pendingSetSliceParamValue { 0.0f };
+    std::atomic<uint64_t> pendingSetSliceParamPayload { 0 };
+    std::atomic<int> pendingSetSliceParamIdx { -1 };
     std::atomic<bool> pendingSetSliceBounds { false };
+    std::atomic<uint32_t> pendingSetSliceBoundsSequence { 0 };
     std::atomic<int> pendingSetSliceBoundsIdx { -1 };
     std::atomic<int> pendingSetSliceBoundsStart { 0 };
     std::atomic<int> pendingSetSliceBoundsEnd { 0 };
@@ -326,6 +351,14 @@ private:
 
     bool heldNotes[128] = {};
 
+    // Message-thread cached APVTS state for RT-safe undo snapshots.
+    juce::ValueTree cachedApvtsState;
+    juce::CriticalSection cachedApvtsLock;
+
+    // Deferred APVTS restore: audio thread stores pending ValueTree here,
+    // message thread picks it up and calls replaceState().
+    std::atomic<juce::ValueTree*> pendingApvtsRestore { nullptr };
+
     // Cached parameter pointers
     std::atomic<float>* masterVolParam  = nullptr;
     std::atomic<float>* bpmParam        = nullptr;
@@ -347,6 +380,18 @@ private:
     std::atomic<float>* oneShotParam     = nullptr;
     std::atomic<float>* maxVoicesParam   = nullptr;
     std::atomic<float>* centsDetuneParam = nullptr;
+    std::atomic<float>* filterEnabledParam    = nullptr;
+    std::atomic<float>* filterTypeParam       = nullptr;
+    std::atomic<float>* filterSlopeParam      = nullptr;
+    std::atomic<float>* filterCutoffParam     = nullptr;
+    std::atomic<float>* filterResoParam       = nullptr;
+    std::atomic<float>* filterDriveParam      = nullptr;
+    std::atomic<float>* filterKeyTrackParam   = nullptr;
+    std::atomic<float>* filterEnvAttackParam  = nullptr;
+    std::atomic<float>* filterEnvDecayParam   = nullptr;
+    std::atomic<float>* filterEnvSustainParam = nullptr;
+    std::atomic<float>* filterEnvReleaseParam = nullptr;
+    std::atomic<float>* filterEnvAmountParam  = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (IntersectProcessor)
 };
