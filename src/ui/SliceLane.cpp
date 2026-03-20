@@ -88,17 +88,46 @@ void SliceLane::paint (juce::Graphics& g)
         }
     }
 
-    for (int oi = 0; oi < visibleCount; ++oi)
+    // Build left-to-right label order by x position using insertion sort on indices.
+    std::array<int, SliceManager::kMaxSlices> labelOrder {};
+    int labelOrderCount = 0;
+    for (int i = 0; i < visibleCount; ++i)
     {
-        const auto& si = visibleSlices[(size_t) oi];
-        int sw = si.x2 - si.x1;
+        int pos = labelOrderCount;
+        while (pos > 0 && visibleSlices[(size_t) labelOrder[(size_t) (pos - 1)]].x1 > visibleSlices[(size_t) i].x1)
+        {
+            labelOrder[(size_t) pos] = labelOrder[(size_t) (pos - 1)];
+            --pos;
+        }
+        labelOrder[(size_t) pos] = i;
+        ++labelOrderCount;
+    }
 
-        if (sw > 20)
+    std::array<int, SliceManager::kMaxSlices> labelEnds {};
+    int labelEndCount = 0;
+    for (int oi = 0; oi < labelOrderCount; ++oi)
+    {
+        const auto& si = visibleSlices[(size_t) labelOrder[(size_t) oi]];
+        int sw = si.x2 - si.x1;
+        if (sw > 14)
         {
             juce::String label = juce::String (si.idx + 1);
-            g.setFont (IntersectLookAndFeel::makeFont (9.0f, true));
-            g.setColour (si.selected ? si.col.brighter (0.1f) : si.col.withAlpha (0.95f));
-            g.drawText (label, si.x1, 1, sw, h - 2, juce::Justification::centred);
+            g.setFont (IntersectLookAndFeel::makeFont (12.0f, true));
+            int labelW = g.getCurrentFont().getStringWidth (label) + 6;
+            int labelX = si.x1 + 3;
+            for (int li = 0; li < labelEndCount; ++li)
+            {
+                int end = labelEnds[(size_t) li];
+                if (labelX < end)
+                    labelX = end + 1;
+            }
+            if (labelX + labelW < w)
+            {
+                g.setColour (si.selected ? getTheme().foreground.withAlpha (0.9f) : si.col.withAlpha (0.7f));
+                g.drawText (label, labelX, 0, labelW, h, juce::Justification::centredLeft);
+                if (labelEndCount < SliceManager::kMaxSlices)
+                    labelEnds[(size_t) labelEndCount++] = labelX + labelW;
+            }
         }
     }
 
