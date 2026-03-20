@@ -23,6 +23,8 @@ public:
     void drawPopupMenuSectionHeader (juce::Graphics&, const juce::Rectangle<int>& area,
                                      const juce::String& sectionName) override;
     juce::Font getPopupMenuFont() override;
+    void fillTextEditorBackground (juce::Graphics&, int width, int height, juce::TextEditor&) override;
+    void drawTextEditorOutline (juce::Graphics&, int width, int height, juce::TextEditor&) override;
 
     static void setMenuScale (float s) { sMenuScale = s; }
     static float getMenuScale() { return sMenuScale; }

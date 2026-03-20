@@ -1582,21 +1582,26 @@ void SignalChainBar::endGlobalGesture()
 void SignalChainBar::showSetBpmPopup()
 {
     juce::PopupMenu menu;
-    menu.addItem (1, "16 bars");
-    menu.addItem (2, "8 bars");
-    menu.addItem (3, "4 bars");
-    menu.addItem (4, "2 bars");
-    menu.addItem (5, "1 bar");
-    menu.addItem (6, "1/2 note");
-    menu.addItem (7, "1/4 note");
-    menu.addItem (8, "1/8 note");
-    menu.addItem (9, "1/16 note");
+    menu.setLookAndFeel (&getLookAndFeel());
+    menu.addSectionHeader ("Set BPM");
+    menu.addItem (1, "16 Bars");
+    menu.addItem (2, "8 Bars");
+    menu.addItem (3, "4 Bars");
+    menu.addItem (4, "2 Bars");
+    menu.addItem (5, "1 Bar");
+    menu.addItem (6, "1/2 Note");
+    menu.addItem (7, "1/4 Note");
+    menu.addItem (8, "1/8 Note");
+    menu.addItem (9, "1/16 Note");
 
     auto* topLevel = getTopLevelComponent();
     const float menuScale = IntersectLookAndFeel::getMenuScale();
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this)
+                            .withDeletionCheck (*this)
                             .withParentComponent (topLevel)
-                            .withStandardItemHeight ((int) (24.0f * menuScale)),
+                            .withMaximumNumColumns (1)
+                            .withMinimumWidth ((int) std::round (156.0f * menuScale))
+                            .withStandardItemHeight ((int) std::round (24.0f * menuScale)),
         [this] (int result)
         {
             if (result <= 0 || result > 9)
@@ -1643,16 +1648,17 @@ void SignalChainBar::showTextEditor (const Cell& cell)
 {
     textEditor = std::make_unique<juce::TextEditor>();
     addAndMakeVisible (*textEditor);
-    auto valueBounds = cell.bounds.reduced (kCellInsetX, 0).withTrimmedTop (kValueYOffset);
+    auto valueBounds = cell.bounds.reduced (kCellInsetX, 0).withTrimmedTop (kValueYOffset).expanded (1, 1);
     textEditor->setBounds (valueBounds);
     textEditor->setFont (IntersectLookAndFeel::fitFontToWidth (cell.valueText, 10.5f, 8.5f,
                                                                 valueBounds.getWidth(), false));
-    textEditor->setColour (juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
+    textEditor->setColour (juce::TextEditor::backgroundColourId, getTheme().surface2.brighter (0.12f).withAlpha (0.98f));
     textEditor->setColour (juce::TextEditor::textColourId, getTheme().text1.brighter (0.3f));
-    textEditor->setColour (juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
-    textEditor->setColour (juce::TextEditor::focusedOutlineColourId, getTheme().accent.withAlpha (0.4f));
+    textEditor->setColour (juce::TextEditor::outlineColourId, getTheme().surface5.withAlpha (0.85f));
+    textEditor->setColour (juce::TextEditor::focusedOutlineColourId, getTheme().accent.withAlpha (0.9f));
     textEditor->setColour (juce::TextEditor::highlightColourId, getTheme().accent.withAlpha (0.25f));
     textEditor->setJustification (juce::Justification::centredLeft);
+    textEditor->setBorder (juce::BorderSize<int> (1, 4, 1, 4));
     textEditor->setIndents (0, 0);
     textEditor->setText (formatTrimmed (storedToDisplay (cell, cell.currentValue), cell.textDecimals), false);
     textEditor->selectAll();
@@ -1706,7 +1712,9 @@ void SignalChainBar::showRootEditor()
     textEditor->setFont (IntersectLookAndFeel::makeFont (10.0f));
     textEditor->setColour (juce::TextEditor::backgroundColourId, getTheme().surface1.brighter (0.15f));
     textEditor->setColour (juce::TextEditor::textColourId, getTheme().text2);
-    textEditor->setColour (juce::TextEditor::outlineColourId, getTheme().accent);
+    textEditor->setColour (juce::TextEditor::outlineColourId, getTheme().surface5.withAlpha (0.85f));
+    textEditor->setColour (juce::TextEditor::focusedOutlineColourId, getTheme().accent.withAlpha (0.9f));
+    textEditor->setBorder (juce::BorderSize<int> (1, 4, 1, 4));
     textEditor->setText (juce::String (ui.rootNote), false);
     textEditor->selectAll();
     textEditor->grabKeyboardFocus();

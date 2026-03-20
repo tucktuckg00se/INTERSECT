@@ -5,11 +5,38 @@
 
 namespace
 {
+enum ThemeMenuItemId
+{
+    kMenuScaleStatus = 1000,
+    kMenuScaleDown,
+    kMenuScaleUp,
+    kMenuNrpnEnabled,
+    kMenuConsumeCc,
+    kMenuMidiStatus,
+    kMenuSetMidiOmni,
+    kMenuMidiPrev,
+    kMenuMidiNext,
+    kMenuThemeBase = 2000
+};
+
 float measureTextWidth (const juce::Font& font, const juce::String& text)
 {
     juce::GlyphArrangement glyphs;
     glyphs.addLineOfText (font, text, 0.0f, 0.0f);
     return glyphs.getBoundingBox (0, -1, true).getWidth();
+}
+
+juce::String formatScaleStatus (float scale)
+{
+    return "UI Scale  " + juce::String (scale, 2) + "x";
+}
+
+juce::String formatNrpnStatus (int channel)
+{
+    if (channel == 0)
+        return "NRPN Settings  OMNI";
+
+    return "NRPN Settings  CH " + juce::String (channel);
 }
 }
 
@@ -175,75 +202,93 @@ void HeaderBar::showThemePopup()
         return;
 
     auto themes = editor->getAvailableThemes();
+    themes.sortNatural();
     auto currentName = getTheme().name;
 
     const bool nrpnEnabled = processor.midiEditState.enabled.load (std::memory_order_relaxed);
     const bool blockCc     = processor.midiEditState.consumeMidiEditCc.load (std::memory_order_relaxed);
     const int  nrpnCh      = processor.midiEditState.channel.load (std::memory_order_relaxed);
-    const juce::String chStr = (nrpnCh == 0) ? "OMNI" : juce::String (nrpnCh);
+    const float currentScale = processor.apvts.getRawParameterValue (ParamIds::uiScale)->load();
+
+    juce::PopupMenu nrpnMenu;
+    nrpnMenu.setLookAndFeel (&getLookAndFeel());
+    nrpnMenu.addSectionHeader ("NRPN Settings");
+    nrpnMenu.addItem (kMenuNrpnEnabled, "Enable NRPN Editing", true, nrpnEnabled);
+    nrpnMenu.addItem (kMenuConsumeCc, "Consume NRPN CCs", true, blockCc);
+    nrpnMenu.addSeparator();
+    nrpnMenu.addItem (kMenuMidiStatus, nrpnCh == 0 ? "Current Channel  OMNI"
+                                                    : "Current Channel  CH " + juce::String (nrpnCh),
+                      false, false);
+    nrpnMenu.addItem (kMenuSetMidiOmni, "Set MIDI Channel to OMNI", nrpnCh != 0);
+    nrpnMenu.addItem (kMenuMidiPrev, "Previous MIDI Channel", nrpnCh > 0);
+    nrpnMenu.addItem (kMenuMidiNext, "Next MIDI Channel", nrpnCh < 16);
+
+    juce::PopupMenu themesMenu;
+    themesMenu.setLookAndFeel (&getLookAndFeel());
+    themesMenu.addSectionHeader ("Themes");
+    for (int i = 0; i < themes.size(); ++i)
+        themesMenu.addItem (kMenuThemeBase + i, themes[i], true, themes[i] == currentName);
 
     juce::PopupMenu menu;
+    menu.setLookAndFeel (&getLookAndFeel());
     menu.addSectionHeader ("INTERSECT  v" + juce::String (JucePlugin_VersionString));
+    menu.addItem (kMenuScaleStatus, formatScaleStatus (currentScale), false, false);
+    menu.addItem (kMenuScaleUp, "Scale Up", currentScale < 3.0f);
+    menu.addItem (kMenuScaleDown, "Scale Down", currentScale > 0.5f);
     menu.addSeparator();
-
-    float currentScale = processor.apvts.getRawParameterValue (ParamIds::uiScale)->load();
-    menu.addSectionHeader ("Scale  " + juce::String (currentScale, 2) + "x");
-    menu.addItem (100, "- 0.25");
-    menu.addItem (101, "+ 0.25");
-    menu.addSeparator();
-
-    menu.addSectionHeader ("NRPN");
-    menu.addItem (200, "Enable", true, nrpnEnabled);
-    menu.addItem (201, "Consume CCs", true, blockCc);
-    menu.addSectionHeader ("MIDI Channel: " + chStr);
-    menu.addItem (202, "Channel  -");
-    menu.addItem (203, "Channel  +");
-    menu.addSeparator();
-
-    menu.addSectionHeader ("Theme");
-    for (int i = 0; i < themes.size(); ++i)
-        menu.addItem (i + 1, themes[i], true, themes[i] == currentName);
+    menu.addSubMenu (formatNrpnStatus (nrpnCh), nrpnMenu);
+    menu.addSubMenu ("Themes  " + currentName, themesMenu);
 
     auto* topLevel = getTopLevelComponent();
     float ms = IntersectLookAndFeel::getMenuScale();
-    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&themeBtn)
-                            .withParentComponent (topLevel)
-                            .withStandardItemHeight ((int) (24 * ms)),
+    auto options = juce::PopupMenu::Options().withTargetComponent (&themeBtn)
+                                              .withDeletionCheck (*this)
+                                              .withParentComponent (topLevel)
+                                              .withMinimumWidth ((int) std::round (220.0f * ms))
+                                              .withMaximumNumColumns (1)
+                                              .withStandardItemHeight ((int) std::round (24.0f * ms));
+
+    menu.showMenuAsync (options,
         [this, editor, themes] (int result)
         {
             float scale = processor.apvts.getRawParameterValue (ParamIds::uiScale)->load();
 
-            if (result == 100)
+            if (result == kMenuScaleDown)
                 adjustScale (-0.25f);
-            else if (result == 101)
+            else if (result == kMenuScaleUp)
                 adjustScale (0.25f);
-            else if (result == 200)
+            else if (result == kMenuNrpnEnabled)
             {
                 const bool current = processor.midiEditState.enabled.load (std::memory_order_relaxed);
                 processor.midiEditState.enabled.store (! current, std::memory_order_release);
                 editor->saveUserSettings (scale, getTheme().name);
             }
-            else if (result == 201)
+            else if (result == kMenuConsumeCc)
             {
                 const bool current = processor.midiEditState.consumeMidiEditCc.load (std::memory_order_relaxed);
                 processor.midiEditState.consumeMidiEditCc.store (! current, std::memory_order_relaxed);
                 editor->saveUserSettings (scale, getTheme().name);
             }
-            else if (result == 202)
+            else if (result == kMenuSetMidiOmni)
+            {
+                processor.midiEditState.channel.store (0, std::memory_order_relaxed);
+                editor->saveUserSettings (scale, getTheme().name);
+            }
+            else if (result == kMenuMidiPrev)
             {
                 const int ch = processor.midiEditState.channel.load (std::memory_order_relaxed);
                 processor.midiEditState.channel.store (juce::jlimit (0, 16, ch - 1), std::memory_order_relaxed);
                 editor->saveUserSettings (scale, getTheme().name);
             }
-            else if (result == 203)
+            else if (result == kMenuMidiNext)
             {
                 const int ch = processor.midiEditState.channel.load (std::memory_order_relaxed);
                 processor.midiEditState.channel.store (juce::jlimit (0, 16, ch + 1), std::memory_order_relaxed);
                 editor->saveUserSettings (scale, getTheme().name);
             }
-            else if (result > 0 && result <= themes.size())
+            else if (result >= kMenuThemeBase && result < kMenuThemeBase + themes.size())
             {
-                editor->applyTheme (themes[result - 1]);
+                editor->applyTheme (themes[result - kMenuThemeBase]);
             }
         });
 }

@@ -673,7 +673,9 @@ void SliceControlBar::mouseDoubleClick (const juce::MouseEvent& e)
         textEditor->setFont (IntersectLookAndFeel::makeFont (14.0f));
         textEditor->setColour (juce::TextEditor::backgroundColourId, getTheme().surface2.brighter (0.15f));
         textEditor->setColour (juce::TextEditor::textColourId, getTheme().text2);
-        textEditor->setColour (juce::TextEditor::outlineColourId, getTheme().accent);
+        textEditor->setColour (juce::TextEditor::outlineColourId, getTheme().surface5.withAlpha (0.85f));
+        textEditor->setColour (juce::TextEditor::focusedOutlineColourId, getTheme().accent.withAlpha (0.9f));
+        textEditor->setBorder (juce::BorderSize<int> (1, 4, 1, 4));
         textEditor->setText (juce::String (ui.rootNote), false);
         textEditor->selectAll();
         textEditor->grabKeyboardFocus();
@@ -793,7 +795,9 @@ void SliceControlBar::showTextEditor (const ParamCell& cell, float currentValue)
     textEditor->setFont (IntersectLookAndFeel::makeFont (14.0f));
     textEditor->setColour (juce::TextEditor::backgroundColourId, getTheme().surface2.brighter (0.15f));
     textEditor->setColour (juce::TextEditor::textColourId, getTheme().text2);
-    textEditor->setColour (juce::TextEditor::outlineColourId, getTheme().accent);
+    textEditor->setColour (juce::TextEditor::outlineColourId, getTheme().surface5.withAlpha (0.85f));
+    textEditor->setColour (juce::TextEditor::focusedOutlineColourId, getTheme().accent.withAlpha (0.9f));
+    textEditor->setBorder (juce::BorderSize<int> (1, 4, 1, 4));
 
     // Display value
     juce::String displayVal;
@@ -868,21 +872,26 @@ void SliceControlBar::showTextEditor (const ParamCell& cell, float currentValue)
 void SliceControlBar::showSetBpmPopup()
 {
     juce::PopupMenu menu;
-    menu.addItem (1, "16 bars");
-    menu.addItem (2, "8 bars");
-    menu.addItem (3, "4 bars");
-    menu.addItem (4, "2 bars");
-    menu.addItem (5, "1 bar");
-    menu.addItem (6, "1/2 note");
-    menu.addItem (7, "1/4 note");
-    menu.addItem (8, "1/8 note");
-    menu.addItem (9, "1/16 note");
+    menu.setLookAndFeel (&getLookAndFeel());
+    menu.addSectionHeader ("Set BPM");
+    menu.addItem (1, "16 Bars");
+    menu.addItem (2, "8 Bars");
+    menu.addItem (3, "4 Bars");
+    menu.addItem (4, "2 Bars");
+    menu.addItem (5, "1 Bar");
+    menu.addItem (6, "1/2 Note");
+    menu.addItem (7, "1/4 Note");
+    menu.addItem (8, "1/8 Note");
+    menu.addItem (9, "1/16 Note");
 
     auto* topLvl = getTopLevelComponent();
     float ms = IntersectLookAndFeel::getMenuScale();
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this)
+                            .withDeletionCheck (*this)
                             .withParentComponent (topLvl)
-                            .withStandardItemHeight ((int) (24 * ms)),
+                            .withMaximumNumColumns (1)
+                            .withMinimumWidth ((int) std::round (156.0f * ms))
+                            .withStandardItemHeight ((int) std::round (24.0f * ms)),
         [this] (int result) {
             if (result <= 0 || result > 9) return;
             const float bars[] = { 0.0f, 16.0f, 8.0f, 4.0f, 2.0f, 1.0f, 0.5f, 0.25f, 0.125f, 0.0625f };
