@@ -137,7 +137,7 @@ struct ThemeData
         t.paramValue      = juce::Colour (0xFF7888A0);
         t.paramValueOn    = juce::Colour (0xFF48C0A8);
         t.paramValueOff   = juce::Colour (0xFF181C24);
-        t.contextBarBg    = juce::Colour (0xFF0A0B10);
+        t.contextBarBg    = juce::Colour (0xFFE0E0EC);
         t.signalChainBg   = juce::Colour (0xFF0A0C10);
         t.moduleBorder    = juce::Colour (0xFF161A20);
         t.slicePalette[0]  = juce::Colour (0xFF5AABB8); // Cold Teal

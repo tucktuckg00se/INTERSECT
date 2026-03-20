@@ -34,6 +34,29 @@ lockInactive: 9999a8        # unlocked/inherited parameter indicator
 button: d0d4dc              # button background
 buttonHover: bcc0cc         # button hover background
 
+# Signal chain bar
+module_name_playback: 4a7098  # playback module header colour
+module_name_filter: 98783a    # filter module header colour
+module_name_amp: 4a7858       # amp module header colour
+module_name_output: 685090    # output module header colour
+tab_global_active: 4878a0     # global tab active colour
+tab_slice_active: a880c8      # slice tab active colour
+override_bar: b84830          # override indicator bar
+override_bar_hover: d86050    # override indicator bar hover
+override_label: a04030        # overridden parameter label
+override_value: 303840        # overridden parameter value
+override_count: 904030        # override count text
+filter_toggle_on: 806838      # filter enabled toggle colour
+set_bpm_text: 1a8888          # SET BPM button text
+set_bpm_border: a0c8c0        # SET BPM button border
+param_label: 8090a0           # parameter label text
+param_value: 405060           # parameter value text
+param_value_on: 1a8888        # boolean parameter ON colour
+param_value_off: c8ccd0       # boolean parameter OFF colour
+context_bar_bg: e0e0ec        # context bar background
+signal_chain_bg: e4e4f0       # signal chain background
+module_border: c8c8d4         # module separator border
+
 # Slice palette (colours assigned to new slices)
 slice1: 5aabb8              # Cold Teal
 slice2: b85a5a              # Muted Red

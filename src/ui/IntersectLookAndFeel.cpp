@@ -126,9 +126,9 @@ void IntersectLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& 
 
 void IntersectLookAndFeel::drawPopupMenuBackground (juce::Graphics& g, int width, int height)
 {
-    g.fillAll (getTheme().darkBar);
-    g.setColour (getTheme().separator);
-    g.drawRect (0, 0, width, height, 1);
+    g.fillAll (getTheme().darkBar.brighter (0.04f));
+    g.setColour (getTheme().separator.brighter (0.1f));
+    g.drawRoundedRectangle (0.5f, 0.5f, (float) width - 1.0f, (float) height - 1.0f, 4.0f, 1.0f);
 }
 
 void IntersectLookAndFeel::drawPopupMenuItem (juce::Graphics& g, const juce::Rectangle<int>& area,
@@ -146,14 +146,14 @@ void IntersectLookAndFeel::drawPopupMenuItem (juce::Graphics& g, const juce::Rec
 
     if (isHighlighted && isActive)
     {
-        g.setColour (getTheme().buttonHover);
-        g.fillRect (area);
+        g.setColour (getTheme().buttonHover.brighter (0.08f));
+        g.fillRoundedRectangle (area.reduced (3, 1).toFloat(), 3.0f);
     }
 
     g.setColour (isTicked ? getTheme().accent
                           : (isActive ? getTheme().foreground : getTheme().foreground.withAlpha (0.4f)));
     g.setFont (getPopupMenuFont());
-    g.drawText (text, area.reduced ((int) (8 * sMenuScale), 0), juce::Justification::centredLeft);
+    g.drawText (text, area.reduced ((int) (10 * sMenuScale), 0), juce::Justification::centredLeft);
 }
 
 void IntersectLookAndFeel::drawPopupMenuSectionHeader (juce::Graphics& g,

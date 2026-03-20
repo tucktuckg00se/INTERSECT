@@ -19,6 +19,8 @@ constexpr int kRowGap = 0;
 constexpr int kContextTabGap = 0;
 constexpr int kContextTextGap = 12;
 constexpr int kCellInsetX = 3;
+constexpr int kCellGap = 6;
+constexpr int kGroupGap = 10;
 constexpr int kLabelYOffset = 0;
 constexpr int kLabelHeight = 9;
 constexpr int kValueYOffset = 9;
@@ -478,7 +480,7 @@ void SignalChainBar::rebuildLayout()
         noteCell.minVal = 0.0f;
         noteCell.maxVal = 127.0f;
         noteCell.step = 1.0f;
-        noteCell.dragPerPixel = 0.1f;
+        noteCell.dragPerPixel = 0.25f;
         addParamCell (noteCell);
 
         // MIDI number cell (e.g. "MIDI 38") — interactive
@@ -493,7 +495,7 @@ void SignalChainBar::rebuildLayout()
         midiCell.minVal = 0.0f;
         midiCell.maxVal = 127.0f;
         midiCell.step = 1.0f;
-        midiCell.dragPerPixel = 0.1f;
+        midiCell.dragPerPixel = 0.25f;
         addParamCell (midiCell);
     }
     else
@@ -508,9 +510,9 @@ void SignalChainBar::rebuildLayout()
 
         contextInfoBounds = toIntBounds (contextRow.items[infoItemIndex].currentBounds);
 
-        contextTitle = "GLOBAL DEFAULTS";
+        contextTitle.clear();
         if (ui.sampleLoaded)
-            contextSubtitle = formatTrimmed ((float) ui.sampleNumFrames / sampleRate, 2) + "s SAMPLE";
+            contextSubtitle = formatTrimmed ((float) ui.sampleNumFrames / sampleRate, 2) + "s";
         else if (ui.sampleMissing)
             contextSubtitle = "MISSING SAMPLE, RELINK REQUIRED";
         else if (hasValidSlice)
@@ -652,25 +654,25 @@ void SignalChainBar::rebuildLayout()
     const auto outputRows = moduleRows (modules[3]);
 
     const auto playbackRow1 = makeRowCells (playbackRows.first, {
-        { 1.0f, 8 }, { 0.92f, 8 }, { 0.9f, 0 }
+        { 1.0f, kCellGap }, { 0.92f, kCellGap }, { 0.9f, 0 }
     });
     const auto filterRow1 = makeRowCells (filterRows.first, {
-        { 0.82f, 6 }, { 0.9f, 10 }, { 1.18f, 6 }, { 0.96f, 10 }, { 0.94f, 6 }, { 0.84f, 0 }
+        { 0.82f, kCellGap }, { 0.9f, kCellGap }, { 1.18f, kCellGap }, { 0.96f, kCellGap }, { 0.94f, kCellGap }, { 0.84f, 0 }
     });
     const auto filterRow2 = makeRowCells (filterRows.second, {
-        { 0.92f, 6 }, { 0.92f, 6 }, { 0.82f, 6 }, { 0.95f, 14 }, { 1.06f, 0 }
+        { 0.92f, kCellGap }, { 0.92f, kCellGap }, { 0.82f, kCellGap }, { 0.95f, kGroupGap }, { 1.06f, 0 }
     });
     const auto ampRow1 = makeRowCells (ampRows.first, {
-        { 1.0f, 10 }, { 1.0f, 10 }, { 0.92f, 0 }
+        { 1.0f, kCellGap }, { 1.0f, kCellGap }, { 0.92f, 0 }
     });
     const auto ampRow2 = makeRowCells (ampRows.second, {
-        { 1.02f, 12 }, { 0.82f, 0 }
+        { 1.02f, kCellGap }, { 0.82f, 0 }
     });
     const auto outputRow1 = makeRowCells (outputRows.first, {
-        { 0.78f, 10 }, { 0.94f, 10 }, { 0.84f, 0 }
+        { 0.78f, kCellGap }, { 0.94f, kCellGap }, { 0.84f, 0 }
     });
     const auto outputRow2 = makeRowCells (outputRows.second, {
-        { 1.0f, 12 }, { 0.96f, 0 }
+        { 1.0f, kCellGap }, { 0.96f, 0 }
     });
 
     {
@@ -701,14 +703,14 @@ void SignalChainBar::rebuildLayout()
                                                              : std::pair<bool, bool> { gStretch, false };
     const auto playbackRow2 = resolvedAlgo == 1
         ? makeRowCells (playbackRows.second, {
-            { 1.45f, 10 }, { 0.96f, 5 }, { 0.92f, 5 }, { 0.8f, 10 }, { 1.04f, 8 }, { 0.74f, 0 }
+            { 1.45f, kGroupGap }, { 0.96f, kCellGap }, { 0.92f, kCellGap }, { 0.8f, kGroupGap }, { 1.04f, kCellGap }, { 0.74f, 0 }
         })
         : (resolvedAlgo == 2
             ? makeRowCells (playbackRows.second, {
-                { 1.46f, 10 }, { 1.06f, 10 }, { 1.06f, 8 }, { 0.78f, 0 }
+                { 1.46f, kGroupGap }, { 1.06f, kGroupGap }, { 1.06f, kCellGap }, { 0.78f, 0 }
             })
             : makeRowCells (playbackRows.second, {
-                { 1.46f, 10 }, { 1.18f, 8 }, { 0.82f, 0 }
+                { 1.46f, kGroupGap }, { 1.18f, kCellGap }, { 0.82f, 0 }
             }));
     const bool repitchStretch = resolvedAlgo == 0 && resolvedStretch;
     const float dawBpm = processor.dawBpm.load (std::memory_order_relaxed);
@@ -747,7 +749,7 @@ void SignalChainBar::rebuildLayout()
     cell.minVal = -48.0f;
     cell.maxVal = 48.0f;
     cell.step = 0.01f;
-    cell.dragPerPixel = 0.1f;
+    cell.dragPerPixel = 0.5f;
     cell.textDecimals = 2;
     cell.isLocked = pitchLocked;
     cell.isReadOnly = repitchStretch;
@@ -1185,23 +1187,23 @@ void SignalChainBar::rebuildLayout()
                    (float) loopMode, 0.0f, 2.0f, 1.0f, 0.0f, 0, loopLocked, false, true, 3, 0.0f, true);
     addOutputCell (outputRow1[2], "MUTE", juce::String (muteGroup),
                    ParamIds::defaultMuteGroup, IntersectProcessor::FieldMuteGroup, kLockMuteGroup,
-                   (float) muteGroup, 0.0f, 32.0f, 1.0f, 0.1f, 0, muteLocked);
+                   (float) muteGroup, 0.0f, 32.0f, 1.0f, 0.25f, 0, muteLocked);
 
     addOutputCell (outputRow2[0], "GAIN", formatGain (gain),
                    ParamIds::masterVolume, IntersectProcessor::FieldVolume, kLockVolume,
-                   gain, -100.0f, 24.0f, 0.1f, 0.1f, 1, gainLocked, false, false, 0, 0.0f, true);
+                   gain, -100.0f, 24.0f, 0.1f, 0.3f, 1, gainLocked, false, false, 0, 0.0f, true);
 
     if (sliceScope)
     {
         addOutputCell (outputRow2[1], "OUT", juce::String (outputBus + 1),
                        {}, IntersectProcessor::FieldOutputBus, kLockOutputBus,
-                       (float) outputBus, 0.0f, 15.0f, 1.0f, 0.1f, 0, outputLocked, false, false, 0, 1.0f);
+                       (float) outputBus, 0.0f, 15.0f, 1.0f, 0.25f, 0, outputLocked, false, false, 0, 1.0f);
     }
     else
     {
         addOutputCell (outputRow2[1], "VOICES", juce::String (gVoices),
                        ParamIds::maxVoices, -1, 0u,
-                       (float) gVoices, 1.0f, 31.0f, 1.0f, 0.1f, 0, false);
+                       (float) gVoices, 1.0f, 31.0f, 1.0f, 0.25f, 0, false);
     }
 
 }
@@ -1315,9 +1317,9 @@ void SignalChainBar::drawTabCell (juce::Graphics& g, const Cell& cell) const
 
     if (cell.isActive)
     {
-        const float y = (float) (cell.bounds.getBottom() - 2);
         g.setColour (accent);
-        g.drawLine ((float) cell.bounds.getX(), y, (float) cell.bounds.getRight(), y, 2.0f);
+        auto barBounds = cell.bounds.reduced (2, 0);
+        g.fillRect (barBounds.getX(), cell.bounds.getBottom() - 4, barBounds.getWidth(), 2);
     }
 
     if (cell.tabTarget == TabTarget::Global)
@@ -1718,15 +1720,23 @@ void SignalChainBar::mouseDrag (const juce::MouseEvent& e)
     const float dragStep = cell.dragPerPixel > 0.0f
         ? cell.dragPerPixel
         : juce::jmax (0.0001f, (storedToInteraction (cell, cell.maxVal) - storedToInteraction (cell, cell.minVal)) / 200.0f);
-    const float snap = e.mods.isShiftDown()
-        ? juce::jmax (cell.step * 5.0f, 1.0e-4f)
-        : juce::jmax (cell.step, 1.0e-4f);
 
     float interactionValue = dragStartInteractionValue + deltaY * dragStep;
     interactionValue = clampInteractionValue (cell, interactionValue);
 
     float storedValue = interactionToStored (cell, interactionValue);
-    storedValue = clampStoredValue (cell, std::round (storedValue / snap) * snap);
+
+    if (e.mods.isShiftDown())
+    {
+        const float fineSnap = juce::jmax (cell.step, 1.0e-4f);
+        storedValue = clampStoredValue (cell, std::round (storedValue / fineSnap) * fineSnap);
+    }
+    else
+    {
+        float displayValue = storedToDisplay (cell, storedValue);
+        displayValue = std::round (displayValue);
+        storedValue = clampStoredValue (cell, displayToStored (cell, displayValue));
+    }
     applyCellValue (cell, storedValue, false);
     repaint();
 }

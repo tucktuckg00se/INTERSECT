@@ -1,0 +1,57 @@
+# oskarnurm/koda.nvim
+
+name: koda
+background: 101010
+waveformBg: 000000
+darkBar: 101010
+header: 101010
+foreground: b0b0b0
+gridLine: 272727
+separator: 50585d
+waveform: 458ee6
+selectionOverlay: 8ebeec
+accent: ffffff
+lockActive: ff7676
+lockInactive: 50585d
+button: 272727
+buttonHover: 777777
+
+# Signal chain bar
+module_name_playback: 458ee6  # blue
+module_name_filter: d9ba73    # gold
+module_name_amp: 86cd82       # green
+module_name_output: f2a4db    # pink
+tab_global_active: 458ee6     # blue
+tab_slice_active: f2a4db      # pink
+override_bar: ff7676          # red
+override_bar_hover: ff9090    # red lighter
+override_label: cc5555        # red muted
+override_value: e0e0e0        # bright text
+override_count: cc5555        # red muted
+filter_toggle_on: d9ba73      # gold
+set_bpm_text: ffffff          # white accent
+set_bpm_border: 50585d        # muted border
+param_label: 50585d           # muted
+param_value: 909090           # mid gray
+param_value_on: ffffff        # white accent
+param_value_off: 1a1a1a       # near black
+context_bar_bg: 0a0a0a        # darker bg
+signal_chain_bg: 0c0c0c       # dark bg
+module_border: 272727         # grid
+
+slice1: 86cd82
+slice2: ff7676
+slice3: d9ba73
+slice4: 5abfb5
+slice5: f2a4db
+slice6: ff5733
+slice7: 8ebeec
+slice8: 458ee6
+slice9: 14ba19
+slice10: 701516
+slice11: ffffff
+slice12: b0b0b0
+slice13: 777777
+slice14: 50585d
+slice15: 272727
+slice16: 86cd82

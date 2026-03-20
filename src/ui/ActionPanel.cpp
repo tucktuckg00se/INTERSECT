@@ -164,11 +164,6 @@ void ActionPanel::paint (juce::Graphics& g)
     const auto& theme = getTheme();
     g.fillAll (theme.header);
 
-    // Top and bottom borders
-    g.setColour (theme.moduleBorder);
-    g.drawHorizontalLine (0, 0.0f, (float) getWidth());
-    g.drawHorizontalLine (getHeight() - 1, 0.0f, (float) getWidth());
-
     const bool lazyActive = processor.lazyChop.isActive();
     const bool addActive = waveformView.isSliceDrawModeActive();
 
@@ -181,11 +176,11 @@ void ActionPanel::paint (juce::Graphics& g)
     const bool snapActive = processor.snapToZeroCrossing.load();
     const bool fmActive = processor.midiSelectsSlice.load();
 
-    const auto inactiveText = juce::Colour (0xFF384858);
-    const auto activeText = juce::Colour (0xFF48C0A8);
-    const auto activeBg = juce::Colour (0xFF081818);
-    const auto hoverText = juce::Colour (0xFF7090A8);
-    const auto hoverBg = juce::Colour (0xFF0E1218);
+    const auto inactiveText = theme.paramLabel;
+    const auto activeText = theme.accent;
+    const auto activeBg = theme.button;
+    const auto hoverText = theme.paramValue;
+    const auto hoverBg = theme.buttonHover;
 
     auto font = IntersectLookAndFeel::makeFont (11.0f);
     g.setFont (font);
@@ -233,14 +228,17 @@ void ActionPanel::paint (juce::Graphics& g)
             g.setColour (inactiveText);
 
         g.drawFittedText (displayText, item.bounds, juce::Justification::centred, 1);
+    }
 
-        // Separator line (1px right border) except for last item
-        if (i < (int) items.size() - 1)
-        {
-            g.setColour (juce::Colour (0xFF161A20));
-            g.fillRect (item.bounds.getRight() - 1, item.bounds.getY(),
-                        1, item.bounds.getHeight());
-        }
+    // Pass 2: Draw borders on top so backgrounds never overwrite them
+    g.setColour (theme.moduleBorder);
+    g.drawHorizontalLine (0, 0.0f, (float) getWidth());
+    g.drawHorizontalLine (getHeight() - 1, 0.0f, (float) getWidth());
+    for (int i = 0; i < (int) items.size() - 1; ++i)
+    {
+        const auto& item = items[(size_t) i];
+        g.fillRect (item.bounds.getRight() - 1, item.bounds.getY(),
+                    1, item.bounds.getHeight());
     }
 }
 
