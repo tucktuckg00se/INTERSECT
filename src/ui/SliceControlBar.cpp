@@ -369,8 +369,7 @@ void SliceControlBar::paint (juce::Graphics& g)
 
 void SliceControlBar::mouseDown (const juce::MouseEvent& e)
 {
-    if (textEditor != nullptr)
-        textEditor.reset();
+    dismissTextEditor();
 
     activeDragCell = -1;
     draggingRootNote = false;
@@ -658,6 +657,19 @@ void SliceControlBar::mouseDrag (const juce::MouseEvent& e)
     repaint();
 }
 
+void SliceControlBar::dismissTextEditor()
+{
+    if (textEditor == nullptr)
+        return;
+
+    // This must only run after any active TextEditor callback has returned.
+    // Clearing the callback members here destroys their std::function storage.
+    textEditor->onReturnKey = nullptr;
+    textEditor->onEscapeKey = nullptr;
+    textEditor->onFocusLost = nullptr;
+    textEditor.reset();
+}
+
 void SliceControlBar::mouseDoubleClick (const juce::MouseEvent& e)
 {
     auto pos = e.getPosition();
@@ -666,6 +678,7 @@ void SliceControlBar::mouseDoubleClick (const juce::MouseEvent& e)
     // Root note text entry (only when no slices)
     if (ui.numSlices == 0 && rootNoteArea.contains (pos))
     {
+        dismissTextEditor();
         textEditor = std::make_unique<juce::TextEditor>();
         addAndMakeVisible (*textEditor);
         textEditor->setBounds (rootNoteArea.getX(), rootNoteArea.getY() + 15,
@@ -676,35 +689,40 @@ void SliceControlBar::mouseDoubleClick (const juce::MouseEvent& e)
         textEditor->setColour (juce::TextEditor::outlineColourId, getTheme().surface5.withAlpha (0.85f));
         textEditor->setColour (juce::TextEditor::focusedOutlineColourId, getTheme().accent.withAlpha (0.9f));
         textEditor->setBorder (juce::BorderSize<int> (1, 4, 1, 4));
+        textEditor->setEscapeAndReturnKeysConsumed (true);
         textEditor->setText (juce::String (ui.rootNote), false);
         textEditor->selectAll();
         textEditor->grabKeyboardFocus();
 
         juce::Component::SafePointer<SliceControlBar> safeThis (this);
+        auto dismissEditorLater = [safeThis] {
+            juce::MessageManager::callAsync ([safeThis] {
+                if (safeThis == nullptr) return;
+                safeThis->dismissTextEditor();
+                safeThis->repaint();
+            });
+        };
         textEditor->onReturnKey = [safeThis] {
             if (safeThis == nullptr || safeThis->textEditor == nullptr) return;
             const int val = juce::jlimit (0, 127, safeThis->textEditor->getText().getIntValue());
-            safeThis->textEditor->onFocusLost = nullptr;
-            safeThis->textEditor.reset();
+            juce::MessageManager::callAsync ([safeThis, val] {
+                if (safeThis == nullptr) return;
+                safeThis->dismissTextEditor();
 
-            IntersectProcessor::Command cmd;
-            cmd.type = IntersectProcessor::CmdSetRootNote;
-            cmd.intParam1 = val;
-            safeThis->processor.pushCommand (cmd);
-            if (safeThis != nullptr)
+                IntersectProcessor::Command cmd;
+                cmd.type = IntersectProcessor::CmdSetRootNote;
+                cmd.intParam1 = val;
+                safeThis->processor.pushCommand (cmd);
                 safeThis->repaint();
+            });
         };
-        textEditor->onEscapeKey = [safeThis] {
+        textEditor->onEscapeKey = [safeThis, dismissEditorLater] {
             if (safeThis == nullptr) return;
-            safeThis->textEditor->onFocusLost = nullptr;
-            safeThis->textEditor.reset();
-            safeThis->repaint();
+            dismissEditorLater();
         };
-        textEditor->onFocusLost = [safeThis] {
+        textEditor->onFocusLost = [safeThis, dismissEditorLater] {
             if (safeThis == nullptr) return;
-            safeThis->textEditor->onFocusLost = nullptr;
-            safeThis->textEditor.reset();
-            safeThis->repaint();
+            dismissEditorLater();
         };
         return;
     }
@@ -789,6 +807,7 @@ void SliceControlBar::mouseDoubleClick (const juce::MouseEvent& e)
 
 void SliceControlBar::showTextEditor (const ParamCell& cell, float currentValue)
 {
+    dismissTextEditor();
     textEditor = std::make_unique<juce::TextEditor>();
     addAndMakeVisible (*textEditor);
     textEditor->setBounds (cell.x + 14, cell.y + 14, cell.w - 16, 16);
@@ -798,6 +817,7 @@ void SliceControlBar::showTextEditor (const ParamCell& cell, float currentValue)
     textEditor->setColour (juce::TextEditor::outlineColourId, getTheme().surface5.withAlpha (0.85f));
     textEditor->setColour (juce::TextEditor::focusedOutlineColourId, getTheme().accent.withAlpha (0.9f));
     textEditor->setBorder (juce::BorderSize<int> (1, 4, 1, 4));
+    textEditor->setEscapeAndReturnKeysConsumed (true);
 
     // Display value
     juce::String displayVal;
@@ -825,6 +845,13 @@ void SliceControlBar::showTextEditor (const ParamCell& cell, float currentValue)
     float maxV = cell.maxVal;
 
     juce::Component::SafePointer<SliceControlBar> safeThis (this);
+    auto dismissEditorLater = [safeThis] {
+        juce::MessageManager::callAsync ([safeThis] {
+            if (safeThis == nullptr) return;
+            safeThis->dismissTextEditor();
+            safeThis->repaint();
+        });
+    };
 
     textEditor->onReturnKey = [safeThis, fieldId, minV, maxV] {
         if (safeThis == nullptr || safeThis->textEditor == nullptr) return;
@@ -845,27 +872,22 @@ void SliceControlBar::showTextEditor (const ParamCell& cell, float currentValue)
         cmd.type = IntersectProcessor::CmdSetSliceParam;
         cmd.intParam1 = fieldId;
         cmd.floatParam1 = val;
-        safeThis->textEditor->onFocusLost = nullptr;
-        safeThis->textEditor.reset();
-        safeThis->processor.pushCommand (cmd);
-        if (safeThis != nullptr)
+        juce::MessageManager::callAsync ([safeThis, cmd] {
+            if (safeThis == nullptr) return;
+            safeThis->dismissTextEditor();
+            safeThis->processor.pushCommand (cmd);
             safeThis->repaint();
+        });
     };
 
-    textEditor->onEscapeKey = [safeThis] {
+    textEditor->onEscapeKey = [safeThis, dismissEditorLater] {
         if (safeThis == nullptr) return;
-        auto& self = *safeThis;
-        self.textEditor->onFocusLost = nullptr;
-        self.textEditor.reset();
-        self.repaint();
+        dismissEditorLater();
     };
 
-    textEditor->onFocusLost = [safeThis] {
+    textEditor->onFocusLost = [safeThis, dismissEditorLater] {
         if (safeThis == nullptr) return;
-        auto& self = *safeThis;
-        self.textEditor->onFocusLost = nullptr;
-        self.textEditor.reset();
-        self.repaint();
+        dismissEditorLater();
     };
 }
 

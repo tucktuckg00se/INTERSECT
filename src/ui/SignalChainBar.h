@@ -156,6 +156,7 @@ private:
     void beginGlobalGesture (const Cell& cell);
     void endGlobalGesture();
 
+    void dismissTextEditor();
     void showSetBpmPopup();
     void showTextEditor (const Cell& cell);
     void showRootEditor();

@@ -33,6 +33,7 @@ private:
                         int fieldId, float minVal, float maxVal, float step,
                         bool isBoolean, bool isChoice, int& outWidth);
     void drawLockIcon (juce::Graphics& g, int x, int y, bool locked);
+    void dismissTextEditor();
     void showTextEditor (const ParamCell& cell, float currentValue);
     void showSetBpmPopup();
 
