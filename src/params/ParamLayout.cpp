@@ -208,7 +208,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout ParamLayout::createLayout()
     params.push_back (std::make_unique<juce::AudioParameterFloat> (
         juce::ParameterID { ParamIds::defaultFilterEnvAmount, 1 },
         "Filter Env Amount",
-        juce::NormalisableRange<float> (-20000.0f, 20000.0f, 1.0f),
+        juce::NormalisableRange<float> (-96.0f, 96.0f, 0.1f),
         0.0f));
 
     // ── Global utility ─────────────────────────────────────────────────────────

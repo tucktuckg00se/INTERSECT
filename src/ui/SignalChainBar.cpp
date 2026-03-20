@@ -24,6 +24,12 @@ constexpr int kLabelHeight = 9;
 constexpr int kValueYOffset = 9;
 constexpr int kMinValueHeight = 13;
 
+const juce::NormalisableRange<float>& getFilterCutoffDragRange()
+{
+    static const juce::NormalisableRange<float> range (20.0f, 20000.0f, 1.0f, 0.25f);
+    return range;
+}
+
 struct RowCellSpec
 {
     float weight = 1.0f;
@@ -223,6 +229,30 @@ float SignalChainBar::clampStoredValue (const Cell& cell, float storedValue) con
 float SignalChainBar::clampDisplayValue (const Cell& cell, float displayValue) const
 {
     return storedToDisplay (cell, clampStoredValue (cell, displayToStored (cell, displayValue)));
+}
+
+float SignalChainBar::storedToInteraction (const Cell& cell, float storedValue) const
+{
+    if (cell.dragMapping == DragMapping::FilterCutoff)
+        return getFilterCutoffDragRange().convertTo0to1 (clampStoredValue (cell, storedValue));
+
+    return storedToDisplay (cell, storedValue);
+}
+
+float SignalChainBar::interactionToStored (const Cell& cell, float interactionValue) const
+{
+    if (cell.dragMapping == DragMapping::FilterCutoff)
+        return getFilterCutoffDragRange().convertFrom0to1 (juce::jlimit (0.0f, 1.0f, interactionValue));
+
+    return displayToStored (cell, interactionValue);
+}
+
+float SignalChainBar::clampInteractionValue (const Cell& cell, float interactionValue) const
+{
+    if (cell.dragMapping == DragMapping::FilterCutoff)
+        return juce::jlimit (0.0f, 1.0f, interactionValue);
+
+    return clampDisplayValue (cell, interactionValue);
 }
 
 void SignalChainBar::addTabCell (const juce::Rectangle<int>& bounds,
@@ -960,6 +990,7 @@ void SignalChainBar::rebuildLayout()
                                                 bool isChoice,
                                                 int choiceCount,
                                                 bool isLocked,
+                                                DragMapping dragMapping = DragMapping::Linear,
                                                 bool isBoolean = false,
                                                 float displayScale = 1.0f,
                                                 bool drawTrailingDivider = false)
@@ -972,6 +1003,7 @@ void SignalChainBar::rebuildLayout()
         c.globalParamId = globalId;
         c.fieldId = fieldId;
         c.lockBit = lockBit;
+        c.dragMapping = dragMapping;
         c.currentValue = value;
         c.minVal = minValue;
         c.maxVal = maxValue;
@@ -990,38 +1022,38 @@ void SignalChainBar::rebuildLayout()
 
     addFilterCell (filterRow1[0], "TYPE", getChoiceName (filterType, filterTypeNames),
                    ParamIds::defaultFilterType, IntersectProcessor::FieldFilterType, kLockFilterType,
-                   (float) filterType, 0.0f, 3.0f, 1.0f, 0.0f, 0, true, 4, filterTypeLocked, false, 1.0f, true);
+                   (float) filterType, 0.0f, 3.0f, 1.0f, 0.0f, 0, true, 4, filterTypeLocked, DragMapping::Linear, false, 1.0f, true);
     addFilterCell (filterRow1[1], "SLOPE", getChoiceName (filterSlope, filterSlopeNames),
                    ParamIds::defaultFilterSlope, IntersectProcessor::FieldFilterSlope, kLockFilterSlope,
-                   (float) filterSlope, 0.0f, 1.0f, 1.0f, 0.0f, 0, true, 2, filterSlopeLocked, false, 1.0f, true);
+                   (float) filterSlope, 0.0f, 1.0f, 1.0f, 0.0f, 0, true, 2, filterSlopeLocked, DragMapping::Linear, false, 1.0f, true);
     addFilterCell (filterRow1[2], "CUT", formatHz (filterCutoff),
                    ParamIds::defaultFilterCutoff, IntersectProcessor::FieldFilterCutoff, kLockFilterCutoff,
-                   filterCutoff, 20.0f, 20000.0f, 1.0f, 50.0f, 0, false, 0, filterCutoffLocked, false, 1.0f, true);
+                   filterCutoff, 20.0f, 20000.0f, 1.0f, 0.005f, 0, false, 0, filterCutoffLocked, DragMapping::FilterCutoff, false, 1.0f, true);
     addFilterCell (filterRow1[3], "RESO", formatPercent (filterReso, 1),
                    ParamIds::defaultFilterReso, IntersectProcessor::FieldFilterReso, kLockFilterReso,
-                   filterReso, 0.0f, 100.0f, 0.1f, 0.5f, 1, false, 0, filterResoLocked, false, 1.0f, true);
+                   filterReso, 0.0f, 100.0f, 0.1f, 0.5f, 1, false, 0, filterResoLocked, DragMapping::Linear, false, 1.0f, true);
     addFilterCell (filterRow1[4], "DRIVE", formatPercent (filterDrive, 1),
                    ParamIds::defaultFilterDrive, IntersectProcessor::FieldFilterDrive, kLockFilterDrive,
-                   filterDrive, 0.0f, 100.0f, 0.1f, 0.5f, 1, false, 0, filterDriveLocked, false, 1.0f, true);
+                   filterDrive, 0.0f, 100.0f, 0.1f, 0.5f, 1, false, 0, filterDriveLocked, DragMapping::Linear, false, 1.0f, true);
     addFilterCell (filterRow1[5], "KEY", formatPercent (filterKey, 1),
                    ParamIds::defaultFilterKeyTrack, IntersectProcessor::FieldFilterKeyTrack, kLockFilterKeyTrack,
                    filterKey, 0.0f, 100.0f, 0.1f, 0.5f, 1, false, 0, filterKeyLocked);
 
     addFilterCell (filterRow2[0], "ATK", formatMs (filterAtkSec * 1000.0f),
                    ParamIds::defaultFilterEnvAttack, IntersectProcessor::FieldFilterEnvAttack, kLockFilterEnvAttack,
-                   filterAtkSec, 0.0f, 10.0f, 0.0001f, 5.0f, 1, false, 0, filterAtkLocked, false, 1000.0f, true);
+                   filterAtkSec, 0.0f, 10.0f, 0.0001f, 5.0f, 1, false, 0, filterAtkLocked, DragMapping::Linear, false, 1000.0f, true);
     addFilterCell (filterRow2[1], "DEC", formatMs (filterDecSec * 1000.0f),
                    ParamIds::defaultFilterEnvDecay, IntersectProcessor::FieldFilterEnvDecay, kLockFilterEnvDecay,
-                   filterDecSec, 0.0f, 10.0f, 0.0001f, 5.0f, 1, false, 0, filterDecLocked, false, 1000.0f, true);
+                   filterDecSec, 0.0f, 10.0f, 0.0001f, 5.0f, 1, false, 0, filterDecLocked, DragMapping::Linear, false, 1000.0f, true);
     addFilterCell (filterRow2[2], "SUS", formatPercent (filterSus * 100.0f, 1),
                    ParamIds::defaultFilterEnvSustain, IntersectProcessor::FieldFilterEnvSustain, kLockFilterEnvSustain,
-                   filterSus, 0.0f, 1.0f, 0.001f, 0.5f, 1, false, 0, filterSusLocked, false, 100.0f, true);
+                   filterSus, 0.0f, 1.0f, 0.001f, 0.5f, 1, false, 0, filterSusLocked, DragMapping::Linear, false, 100.0f, true);
     addFilterCell (filterRow2[3], "REL", formatMs (filterRelSec * 1000.0f),
                    ParamIds::defaultFilterEnvRelease, IntersectProcessor::FieldFilterEnvRelease, kLockFilterEnvRelease,
-                   filterRelSec, 0.0f, 10.0f, 0.0001f, 5.0f, 1, false, 0, filterRelLocked, false, 1000.0f, true);
-    addFilterCell (filterRow2[4], "AMT", formatSigned (filterAmt, 0, ""),
+                   filterRelSec, 0.0f, 10.0f, 0.0001f, 5.0f, 1, false, 0, filterRelLocked, DragMapping::Linear, false, 1000.0f, true);
+    addFilterCell (filterRow2[4], "AMT", formatSigned (filterAmt, 1, "st"),
                    ParamIds::defaultFilterEnvAmount, IntersectProcessor::FieldFilterEnvAmount, kLockFilterEnvAmount,
-                   filterAmt, -20000.0f, 20000.0f, 1.0f, 50.0f, 0, false, 0, filterAmtLocked);
+                   filterAmt, -96.0f, 96.0f, 0.1f, 0.2f, 1, false, 0, filterAmtLocked);
 
     const auto [attackSec, attackLocked] = sliceScope ? resolveFloat (kLockAttack, selectedSlice->attackSec, gAttackMs / 1000.0f)
                                                       : std::pair<float, bool> { gAttackMs, false };
@@ -1653,7 +1685,7 @@ void SignalChainBar::mouseDown (const juce::MouseEvent& e)
 
         activeDragCell = i;
         dragStartY = pos.y;
-        dragStartDisplayValue = storedToDisplay (cell, cell.currentValue);
+        dragStartInteractionValue = storedToInteraction (cell, cell.currentValue);
 
         if (isSliceScopeActive())
         {
@@ -1685,14 +1717,17 @@ void SignalChainBar::mouseDrag (const juce::MouseEvent& e)
     const float deltaY = (float) (dragStartY - e.y);
     const float dragStep = cell.dragPerPixel > 0.0f
         ? cell.dragPerPixel
-        : juce::jmax (0.0001f, (storedToDisplay (cell, cell.maxVal) - storedToDisplay (cell, cell.minVal)) / 200.0f);
+        : juce::jmax (0.0001f, (storedToInteraction (cell, cell.maxVal) - storedToInteraction (cell, cell.minVal)) / 200.0f);
     const float snap = e.mods.isShiftDown()
-        ? juce::jmax (cell.step * cell.displayScale * 5.0f, 1.0e-4f)
-        : juce::jmax (cell.step * cell.displayScale, 1.0e-4f);
+        ? juce::jmax (cell.step * 5.0f, 1.0e-4f)
+        : juce::jmax (cell.step, 1.0e-4f);
 
-    float displayValue = dragStartDisplayValue + deltaY * dragStep;
-    displayValue = clampDisplayValue (cell, std::round (displayValue / snap) * snap);
-    applyCellValue (cell, displayToStored (cell, displayValue), false);
+    float interactionValue = dragStartInteractionValue + deltaY * dragStep;
+    interactionValue = clampInteractionValue (cell, interactionValue);
+
+    float storedValue = interactionToStored (cell, interactionValue);
+    storedValue = clampStoredValue (cell, std::round (storedValue / snap) * snap);
+    applyCellValue (cell, storedValue, false);
     repaint();
 }
 

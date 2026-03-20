@@ -9,6 +9,7 @@ INTERSECT is a sample slicer instrument plugin (VST3/AU/Standalone) with per-sli
 - [Quick Start](#quick-start)
 - [Installation](#installation)
 - [Workflow Basics](#workflow-basics)
+- [Interface Layout](#interface-layout)
 - [Controls and Shortcuts Reference](#controls-and-shortcuts-reference)
 - [MIDI Controller Routing (NRPN)](#midi-controller-routing-nrpn)
 - [Theme Customization](#theme-customization)
@@ -19,11 +20,12 @@ INTERSECT is a sample slicer instrument plugin (VST3/AU/Standalone) with per-sli
 
 ## Quick Start
 
-1. Load a sample with **LOAD** or drag an audio file onto the waveform.
-2. Create slices with **ADD** (draw), **LAZY** (real-time chop), or **AUTO** (transients/equal split).
-3. Play slices from MIDI. New slices are mapped from root note `C2` (MIDI `36`) upward.
-4. Use the second bar to lock per-slice overrides (lock icon) or inherit sample defaults.
-5. Toggle **FM** if you want played MIDI notes to auto-select slices in the UI.
+1. Load a sample with **LOAD**, click the sample name area in the header, or drag an audio file onto the waveform.
+2. Create slices with **ADD** (draw on the waveform), **LAZY** (real-time chop), or **AUTO** (transients / equal split).
+3. Use the bottom **Signal Chain** bar in `GLOBAL` mode to set playback, filter, amp, and output defaults for the whole sample.
+4. Select a slice, switch the Signal Chain to `SLICE`, and edit per-slice overrides where needed.
+5. Trigger slices from MIDI. New slices are mapped from root note `C2` (MIDI `36`) upward.
+6. Toggle **FM** if you want played MIDI notes to auto-select slices in the UI.
 
 ## Installation
 
@@ -60,65 +62,159 @@ xattr -cr /Applications/INTERSECT.app
 ## Workflow Basics
 
 1. **One sample at a time:** INTERSECT loads one audio file per instance (`.wav`, `.ogg`, `.aiff`, `.flac`, `.mp3`).
-2. **Slice creation:** Draw slices manually, chop live with **LAZY**, or split via **AUTO**.
-3. **Inheritance model:** Header controls are sample defaults. Slice controls can lock overrides per field.
-4. **Playback model:** MIDI triggers slices by note mapping; mute groups can choke voices in the same group.
-5. **Load behavior:** File decoding/loading is asynchronous (off the audio thread).
+2. **Current editor layout:** header bar, slice lane, waveform, time/zoom bar, action bar, and bottom signal-chain editor.
+3. **Slice creation:** draw slices manually, chop live with **LAZY**, or split a selected slice via **AUTO**.
+4. **Inheritance model:** `GLOBAL` in the Signal Chain edits sample defaults. `SLICE` edits the selected slice and locks fields that diverge from the global value.
+5. **Playback model:** MIDI triggers slices by note mapping; mute groups can choke voices in the same group.
 6. **Algorithms:**
    - `Repitch`: pitch and speed are linked.
    - `Stretch`: independent time/pitch via Signalsmith Stretch (`TONAL`, `FMNT`, `FMNT C`).
    - `Bungee`: granular stretch mode with `GRAIN` choices (`Fast`, `Normal`, `Smooth`).
-7. **Repitch + Stretch interaction:** when `ALGO=Repitch` and `STRETCH=ON`, `PITCH`/`TUNE` become BPM-driven read-only displays.
-8. **SET BPM:** compute BPM from selected slice length (or full sample context) against a musical duration.
-9. **MIDI host stop handling:** responds to `All Notes Off (CC 123)` and `All Sound Off (CC 120)`.
-10. **Undo/redo:** snapshot-based history for slice and parameter edits.
+7. **Repitch + Stretch interaction:** when `ALGO=Repitch` and `STRETCH=ON`, `PITCH` and `TUNE` become BPM-driven read-only displays.
+8. **SET BPM:** available in the Playback module for both `GLOBAL` and `SLICE`; it calculates BPM from musical duration.
+9. **Filter model:** the filter is per-voice and resolves its settings at note-on. Cutoff changes affect newly triggered notes immediately, but do not retarget voices that are already playing.
+10. **Filter envelope amount:** `AMT` is measured in semitones, so `+12 st` means the envelope can push cutoff up by one octave and `-12 st` means one octave down. This stays consistent across low and high base cutoff values.
+11. **Key tracking:** `KEY` is a percentage of note tracking. `0%` ignores note pitch, `100%` makes cutoff follow pitch at full keyboard scaling, and intermediate values blend between them.
+12. **Drive:** `DRIVE` is pre-filter saturation. It adds harmonics before the filter rather than simply turning the signal up.
+13. **Load behavior:** file decoding/loading is asynchronous (off the audio thread).
+14. **Undo/redo:** snapshot-based history for slice and parameter edits.
+15. **MIDI host stop handling:** responds to `All Notes Off (CC 123)` and `All Sound Off (CC 120)`.
+
+## Interface Layout
+
+### Header Bar
+
+| Area | Function | Notes |
+| --- | --- | --- |
+| Sample name / status | Shows loaded file name and length, or missing-file relink prompt | Click to load a sample; missing-file text opens relink |
+| `SLICES` | Slice count | Read-only |
+| `ROOT` | Root note for new slices | Editable only while there are no slices |
+| `UNDO` / `REDO` | History navigation | Same as `Ctrl/Cmd + Z` and `Ctrl/Cmd + Shift + Z` |
+| `PANIC` | Kills active voices immediately | Also stops lazy chop |
+| `LOAD` | Open file browser | Replaces current sample |
+| `SET` | Popup for theme, UI scale, and NRPN settings | Also shows current plugin version |
+
+### Slice Lane and Waveform
+
+| Area | Function | Notes |
+| --- | --- | --- |
+| Slice lane | Compact slice-region overview above the waveform | Reflects selection and zoom |
+| Waveform | Main editing surface | Drag-and-drop loading, slice selection, boundary editing, move/duplicate, preview |
+| Overlay hints | Contextual help and action prompts | Used by `ADD`, `AUTO`, and other actions |
+| Playback cursors | Voice-position display | Shows active playheads |
+| Transient preview markers | Auto Chop preview | Dashed markers shown before applying transient split |
+
+### Time / Zoom Bar
+
+| Area | Function | Notes |
+| --- | --- | --- |
+| Time ruler | Shows time markings for the current view | Updates with zoom level |
+| Drag horizontally | Scroll | Uses the current zoom level |
+| Drag vertically | Zoom | Anchored to the drag start position |
+
+### Action Bar
+
+| Button | Function | Notes |
+| --- | --- | --- |
+| `ADD` | Toggle draw-slice mode | Drag on the waveform to create a slice |
+| `LAZY` / `STOP` | Start/stop real-time lazy chopping | Label changes while active |
+| `AUTO` | Open/close Auto Chop panel | Requires a selected slice |
+| `COPY` | Duplicate selected slice | Equivalent to duplicate command |
+| `DEL` | Delete selected slice | No effect with no selection |
+| `ZX` | Snap edits to nearest zero crossing | Toggle |
+| `FM` | Follow MIDI note selection | Auto-selects the played slice |
+
+### Signal Chain Bar
+
+The bottom bar is the main parameter editor. It has `GLOBAL` and `SLICE` tabs plus four modules: `PLAYBACK`, `FILTER`, `AMP`, and `OUTPUT`.
+
+When a slice is selected, the `SLICE` tab also shows:
+- slice length
+- note name
+- MIDI note number
+- override count
+
+General behavior:
+- Drag up/down on a value to edit it.
+- Double-click a value to type it directly.
+- In `SLICE` mode, editing a field locks that field for the selected slice when it differs from the global value.
+- In `SLICE` mode, clicking a locked field label or right-clicking the field clears that override.
 
 ## Controls and Shortcuts Reference
 
-### Header Bar (sample defaults)
+### Header Bar
 
 | Control | Function | Notes |
 | --- | --- | --- |
-| `BPM` | Sample default BPM | Drag up/down, double-click to type |
-| `SET BPM` | Calculate BPM from duration menu | 16 bars to 1/16 note |
-| `PITCH` | Semitone shift | `-48` to `+48` |
-| `TUNE` | Fine detune | `-100` to `+100` cents |
-| `ALGO` | Algorithm selector | `Repitch`, `Stretch`, `Bungee` |
-| `TONAL` | Tonality limit (Stretch only) | `0` to `8000` Hz |
-| `FMNT` | Formant shift (Stretch only) | `-24` to `+24` semitones |
-| `FMNT C` | Formant compensation (Stretch only) | Toggle |
-| `GRAIN` | Grain mode (Bungee only) | `Fast`, `Normal`, `Smooth` |
-| `STRETCH` | Tempo-sync stretch toggle | Toggle |
-| `1SHOT` | One-shot playback default | Plays through slice regardless of note-off |
-| `ATK / DEC / SUS / REL` | ADSR defaults | Drag or type |
-| `TAIL` | Release-tail toggle | Continue reading past slice edge during release |
-| `REV` | Reverse playback toggle | Toggle |
-| `LOOP` | Loop mode | `OFF`, `LOOP`, `PP` |
-| `MUTE` | Mute group default | `0` to `32` |
-| `GAIN` | Master gain | `-100` to `+24` dB |
-| `VOICES` | Max playable voices | `1` to `31` |
-| `LOAD` | Open file chooser | Replaces current sample |
+| Sample info text | Load / relink sample | Click the text area |
+| `SLICES` | Slice count | Read-only |
+| `ROOT` | Root note for new slices | Editable only before any slices exist |
+| `UNDO / REDO` | History navigation | Buttons in the header |
 | `PANIC` | Kill active voices immediately | Also stops lazy chop |
-| `UNDO / REDO` | History navigation | Buttons in header |
+| `LOAD` | Open file chooser | Replaces current sample |
 | `SET` | Theme, scale, and NRPN popup | Theme chooser, `+/- 0.25` scale, and NRPN settings |
-| Sample info text | Load/relink shortcut | Click sample name area to load; missing file text opens relink dialog |
 
-### Slice Control Bar (selected slice)
+### Signal Chain Bar
+
+#### Playback Module
 
 | Control | Function | Notes |
 | --- | --- | --- |
-| Lock icon (per field) | Toggle inheritance vs override | Locked fields use per-slice value |
-| `BPM`, `PITCH`, `TUNE`, `ALGO` | Per-slice core settings | Mirror sample defaults when unlocked |
-| `SET BPM` | Slice BPM from duration menu | Applies to selected slice |
-| `TONAL`, `FMNT`, `FMNT C` | Stretch-specific per-slice controls | Visible when `ALGO=Stretch` |
-| `GRAIN` | Bungee-specific per-slice control | Visible when `ALGO=Bungee` |
-| `STRETCH`, `1SHOT` | Per-slice toggles | Lockable |
-| `ATK / DEC / SUS / REL` | Per-slice envelope | Lockable |
-| `TAIL`, `REV`, `LOOP`, `MUTE` | Per-slice behavior controls | Lockable |
-| `GAIN` | Per-slice gain override | Lockable, dB |
-| `OUT` | Per-slice output bus | `1` to `16` (host bus availability applies) |
-| `MIDI` | Slice MIDI note | Editable per slice |
-| `ROOT` | Root note for new slices | Editable when no slices exist |
+| `BPM` | Tempo reference | `20` to `999` |
+| `SET BPM` | Calculate BPM from duration menu | 16 bars to 1/16 note |
+| `PITCH` | Semitone shift | `-48` to `+48 st` |
+| `TUNE` | Fine detune | `-100` to `+100 ct` |
+| `ALGO` | Playback algorithm | `Repitch`, `Stretch`, `Bungee` |
+| `TONAL` | Tonality limit | Stretch only |
+| `FMNT` | Formant shift | Stretch only |
+| `FMNT C` | Formant compensation | Stretch only |
+| `GRAIN` | Grain mode | Bungee only: `Fast`, `Normal`, `Smooth` |
+| `STRETCH` | Tempo-sync stretch toggle | Works with the selected algorithm |
+| `1SHOT` | One-shot playback | Ignores note-off until the slice ends |
+
+Playback notes:
+- When `ALGO=Repitch` and `STRETCH=ON`, `PITCH` and `TUNE` become BPM-derived read-only displays.
+- In `SLICE` mode, the context row also exposes the selected slice's note name and MIDI note number.
+
+#### Filter Module
+
+| Control | Function | Notes |
+| --- | --- | --- |
+| `ON` | Enable/disable the filter | Per-voice filter toggle |
+| `TYPE` | Filter mode | `LP`, `HP`, `BP`, `NT` |
+| `SLOPE` | Filter steepness | `12 dB` or `24 dB` |
+| `CUT` | Base cutoff frequency | Displayed in Hz |
+| `RESO` | Resonance amount | Higher values emphasize the cutoff region |
+| `DRIVE` | Pre-filter saturation | Adds harmonics before filtering |
+| `KEY` | Key tracking amount | `0-100%`, relative to the slice/root note mapping |
+| `ATK / DEC / SUS / REL` | Filter envelope shape | Separate from the amp envelope |
+| `AMT` | Filter envelope depth | Bipolar semitone offset (`st`) applied to cutoff |
+
+Filter notes:
+- Start with `ON`, `TYPE=LP`, modest `RESO`, and a lower `CUT` to hear the filter clearly.
+- Raise `DRIVE` if you want a dirtier or more aggressive tone before the filter stage.
+- Use `KEY` when you want higher MIDI notes to sound brighter and lower notes darker.
+- Use positive `AMT` for a classic opening filter envelope and negative `AMT` for an inverted sweep.
+- `AMT` is in semitones because it controls octave-style movement of cutoff. `+12 st` doubles the cutoff, `-12 st` halves it.
+- Filter settings resolve at note-on, so changing cutoff while a note is already playing affects the next note rather than re-tuning the current voice.
+
+#### Amp Module
+
+| Control | Function | Notes |
+| --- | --- | --- |
+| `ATK / DEC / SUS / REL` | Amp envelope | Standard ADSR for voice level |
+| `TAIL` | Release-tail toggle | Allows playback to continue past slice boundary during release |
+
+#### Output Module
+
+| Control | Function | Notes |
+| --- | --- | --- |
+| `REV` | Reverse playback | Toggle |
+| `LOOP` | Loop mode | `OFF`, `LOOP`, `PP` |
+| `MUTE` | Mute group | Voices in the same group choke each other |
+| `GAIN` | Gain | `-100` to `+24 dB` |
+| `OUT` | Output bus | `SLICE` mode only, `1` to `16` |
+| `VOICES` | Max playable voices | `GLOBAL` mode only, `1` to `31` |
 
 ### Action Bar
 
@@ -150,6 +246,7 @@ Requires a selected slice before opening.
 | --- | --- |
 | Drag-and-drop file | Load sample |
 | Click slice | Select slice |
+| Click empty waveform in `ADD` mode | Begin draw-slice gesture |
 | Drag `S` / `E` edge handles | Resize selected slice |
 | Drag inside selected slice | Move slice |
 | `Ctrl` + drag selected slice | Duplicate slice to new position |
@@ -159,6 +256,7 @@ Requires a selected slice before opening.
 | Mouse wheel | Cursor-anchored zoom |
 | `Shift` + mouse wheel | Horizontal scroll |
 | Middle-button drag | Combined horizontal scroll + vertical zoom |
+| Drag in time / zoom bar | Horizontal drag scrolls, vertical drag zooms |
 
 ### Keyboard Shortcuts
 

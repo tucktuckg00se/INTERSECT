@@ -92,7 +92,7 @@ static Slice sanitiseRestoredSlice (Slice s)
     s.filterEnvDecaySec = juce::jlimit (0.0f, 10.0f, s.filterEnvDecaySec);
     s.filterEnvSustain = juce::jlimit (0.0f, 1.0f, s.filterEnvSustain);
     s.filterEnvReleaseSec = juce::jlimit (0.0f, 10.0f, s.filterEnvReleaseSec);
-    s.filterEnvAmount = juce::jlimit (-20000.0f, 20000.0f, s.filterEnvAmount);
+    s.filterEnvAmount = juce::jlimit (-96.0f, 96.0f, s.filterEnvAmount);
     s.lockMask &= kValidLockMask;
     return s;
 }
@@ -1668,7 +1668,7 @@ void IntersectProcessor::getStateInformation (juce::MemoryBlock& destData)
     juce::MemoryOutputStream stream (destData, false);
 
     // Version
-    stream.writeInt (20);
+    stream.writeInt (21);
 
     // APVTS state
     auto state = apvts.copyState();
@@ -1755,13 +1755,17 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
     juce::MemoryInputStream stream (data, (size_t) sizeInBytes, false);
 
     int version = stream.readInt();
-    if (version != 19 && version != 20)
+    if (version != 19 && version != 20 && version != 21)
         return;
 
     // APVTS state
     auto xmlString = stream.readString();
     if (auto xml = juce::parseXML (xmlString))
         apvts.replaceState (juce::ValueTree::fromXml (*xml));
+
+    if (version == 20)
+        if (auto* param = dynamic_cast<juce::RangedAudioParameter*> (apvts.getParameter (ParamIds::defaultFilterEnvAmount)))
+            param->setValueNotifyingHost (param->convertTo0to1 (0.0f));
 
     // UI state
     zoom.store (juce::jlimit (1.0f, 16384.0f, stream.readFloat()));
@@ -1823,6 +1827,9 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
             parsed.filterEnvSustain = stream.readFloat();
             parsed.filterEnvReleaseSec = stream.readFloat();
             parsed.filterEnvAmount = stream.readFloat();
+
+            if (version == 20)
+                parsed.filterEnvAmount = 0.0f;
         }
 
         if (i < validatedNumSlices)

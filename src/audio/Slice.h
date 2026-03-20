@@ -75,7 +75,7 @@ struct Slice
     float    filterEnvDecaySec   = 0.0f;
     float    filterEnvSustain    = 1.0f;
     float    filterEnvReleaseSec = 0.0f;
-    float    filterEnvAmount     = 0.0f; // Hz bipolar
+    float    filterEnvAmount     = 0.0f; // semitones bipolar
     uint32_t lockMask      = 0;
     juce::Colour colour    { 0.4f, 0.7f, 0.95f, 1.0f };
 };

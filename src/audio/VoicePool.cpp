@@ -43,7 +43,7 @@ static inline float computeFilterCutoff (const Voice& v, float sampleRate)
 {
     const float keyTrackedCutoff = v.filterCutoff * v.filterKeyTrackRatio;
     const float envLevel = v.filterEnvelope.getLevel();
-    const float cutoff = keyTrackedCutoff + v.filterEnvAmount * envLevel;
+    const float cutoff = keyTrackedCutoff * std::pow (2.0f, v.filterEnvAmount * envLevel / 12.0f);
     return juce::jlimit (20.0f, sampleRate * 0.49f, cutoff);
 }
 
@@ -56,14 +56,15 @@ static inline void processVoiceFilter (Voice& v, float sampleRate, float& inOutL
     const float cutoff = computeFilterCutoff (v, sampleRate);
     inOutL = saturateSample (inOutL, v.filterDrive);
     inOutR = saturateSample (inOutR, v.filterDrive);
+    const auto coeffs = SvfFilter::computeCoeffs (cutoff, q, sampleRate);
 
-    float yL = v.filterL1.process (inOutL, cutoff, q, sampleRate, v.filterType);
-    float yR = v.filterR1.process (inOutR, cutoff, q, sampleRate, v.filterType);
+    float yL = v.filterL1.process (inOutL, coeffs, v.filterType);
+    float yR = v.filterR1.process (inOutR, coeffs, v.filterType);
 
     if (v.filterSlope > 0)
     {
-        yL = v.filterL2.process (yL, cutoff, q, sampleRate, v.filterType);
-        yR = v.filterR2.process (yR, cutoff, q, sampleRate, v.filterType);
+        yL = v.filterL2.process (yL, coeffs, v.filterType);
+        yR = v.filterR2.process (yR, coeffs, v.filterType);
     }
 
     inOutL = yL;

@@ -40,6 +40,12 @@ private:
         SetBpm,
     };
 
+    enum class DragMapping
+    {
+        Linear,
+        FilterCutoff,
+    };
+
     enum class TabTarget
     {
         None,
@@ -59,6 +65,7 @@ private:
         juce::String globalParamId;
         int fieldId = -1;
         uint32_t lockBit = 0;
+        DragMapping dragMapping = DragMapping::Linear;
         float currentValue = 0.0f;
         float minVal = 0.0f;
         float maxVal = 1.0f;
@@ -99,6 +106,9 @@ private:
     float displayToStored (const Cell& cell, float displayValue) const;
     float clampStoredValue (const Cell& cell, float storedValue) const;
     float clampDisplayValue (const Cell& cell, float displayValue) const;
+    float storedToInteraction (const Cell& cell, float storedValue) const;
+    float interactionToStored (const Cell& cell, float interactionValue) const;
+    float clampInteractionValue (const Cell& cell, float interactionValue) const;
 
     void addTabCell (const juce::Rectangle<int>& bounds,
                      const juce::String& text,
@@ -132,7 +142,7 @@ private:
     bool lastHadValidSlice = false;
     int activeDragCell = -1;
     int dragStartY = 0;
-    float dragStartDisplayValue = 0.0f;
+    float dragStartInteractionValue = 0.0f;
     juce::String activeGlobalParamId;
     bool globalGestureActive = false;
 
