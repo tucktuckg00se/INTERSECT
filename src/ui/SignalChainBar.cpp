@@ -1634,23 +1634,26 @@ void SignalChainBar::showSetBpmPopup()
             }
             else if (processor.sampleData.isLoaded())
             {
+                int startSmp = 0;
+                int endSmp = processor.sampleData.getNumFrames();
+
+                const int sel = processor.sliceManager.selectedSlice.load();
+                if (sel >= 0 && sel < processor.sliceManager.getNumSlices())
+                {
+                    const auto& s = processor.sliceManager.getSlice (sel);
+                    startSmp = s.startSample;
+                    endSmp = s.endSample;
+                }
+
                 const float sampleRate = processor.getSampleRate() > 0.0 ? (float) processor.getSampleRate() : 44100.0f;
-                const float newBpm = GrainEngine::calcStretchBpm (0,
-                                                                  processor.sampleData.getNumFrames(),
-                                                                  barCount,
-                                                                  sampleRate);
+                const float newBpm = GrainEngine::calcStretchBpm (startSmp, endSmp, barCount, sampleRate);
                 if (auto* bpmParam = processor.apvts.getParameter (ParamIds::defaultBpm))
                 {
                     bpmParam->beginChangeGesture();
                     bpmParam->setValueNotifyingHost (bpmParam->convertTo0to1 (newBpm));
                     bpmParam->endChangeGesture();
                 }
-                if (auto* algoParam = processor.apvts.getParameter (ParamIds::defaultAlgorithm))
-                {
-                    algoParam->beginChangeGesture();
-                    algoParam->setValueNotifyingHost (algoParam->convertTo0to1 (1.0f));
-                    algoParam->endChangeGesture();
-                }
+                layoutDirty = true;
             }
 
             repaint();
