@@ -676,17 +676,15 @@ static void reseekStretcher (Voice& v, const SampleData& sample)
     seekLen = std::min (seekLen, v.endSample - v.startSample);
     seekLen = juce::jlimit (0, (int) v.stretchInBufL.size(), seekLen);
 
-    int maxFrame = sample.getNumFrames() - 1;
-    if (seekLen > 0 && maxFrame >= 0)
+    if (seekLen > 0 && sample.getNumFrames() > 0)
     {
         for (int i = 0; i < seekLen; ++i)
         {
-            int srcIdx = (v.direction > 0)
-                ? (int) v.stretchSrcPos + i
-                : (int) v.stretchSrcPos - i;
-            srcIdx = juce::jlimit (0, maxFrame, srcIdx);
-            v.stretchInBufL[(size_t) i] = sample.getInterpolatedSample (srcIdx, 0);
-            v.stretchInBufR[(size_t) i] = sample.getInterpolatedSample (srcIdx, 1);
+            double srcPos = (v.direction > 0)
+                ? v.stretchSrcPos + i
+                : v.stretchSrcPos - i;
+            v.stretchInBufL[(size_t) i] = readExactLoopSample (v, sample, srcPos, 0);
+            v.stretchInBufR[(size_t) i] = readExactLoopSample (v, sample, srcPos, 1);
         }
         float* ptrs[2] = { v.stretchInBufL.data(), v.stretchInBufR.data() };
         v.stretcher->outputSeek (ptrs, seekLen);
@@ -871,28 +869,16 @@ static void fillBungeeBlock (Voice& v, const SampleData& sample)
     // Advance source position from the engine
     v.bungeeSrcPos = request.position;
 
-    // Canonicalize position back into loop range for next grain
+    // Unbounded phase: do NOT canonicalize bungeeSrcPos back into loop range.
+    // readExactLoopSample() maps grain read positions through the loop at read time.
+    // This keeps Bungee's overlap-add state coherent across loop boundaries.
     if (v.pingPong)
     {
-        const double lo = (double) v.startSample;
-        const double hi = (double) (v.endSample - 1);
-        while (v.bungeeSrcPos > hi || v.bungeeSrcPos < lo)
-        {
-            if (v.bungeeSrcPos > hi)
-            {
-                v.bungeeSrcPos = 2.0 * hi - v.bungeeSrcPos;
-                v.bungeeSpeed = -v.bungeeSpeed;
-            }
-            if (v.bungeeSrcPos < lo)
-            {
-                v.bungeeSrcPos = 2.0 * lo - v.bungeeSrcPos;
-                v.bungeeSpeed = -v.bungeeSpeed;
-            }
-        }
-    }
-    else if (v.looping)
-    {
-        v.bungeeSrcPos = wrapLoopPosition (v.bungeeSrcPos, v.startSample, v.endSample);
+        // Flip speed only when crossing a boundary in the current travel direction
+        if (v.bungeeSpeed > 0.0 && v.bungeeSrcPos >= (double) v.endSample)
+            v.bungeeSpeed = -std::abs (v.bungeeSpeed);
+        else if (v.bungeeSpeed < 0.0 && v.bungeeSrcPos < (double) v.startSample)
+            v.bungeeSpeed = std::abs (v.bungeeSpeed);
     }
 }
 
@@ -1019,7 +1005,13 @@ void VoicePool::processVoiceSample (int i, const SampleData& sample, double /*sr
             v.bungeeOutReadPos++;
         }
 
-        voicePositions[i].store ((float) v.bungeeSrcPos, std::memory_order_relaxed);
+        // Wrap unbounded Bungee phase for UI cursor display only
+        if (v.looping)
+            voicePositions[i].store ((float) wrapLoopPosition (v.bungeeSrcPos, v.startSample, v.endSample), std::memory_order_relaxed);
+        else if (v.pingPong)
+            voicePositions[i].store ((float) reflectPingPongPosition (v.bungeeSrcPos, v.startSample, v.endSample), std::memory_order_relaxed);
+        else
+            voicePositions[i].store ((float) v.bungeeSrcPos, std::memory_order_relaxed);
     }
     else
     {
