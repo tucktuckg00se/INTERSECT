@@ -418,7 +418,7 @@ void IntersectProcessor::setPendingStateFile (const juce::File& file)
 void IntersectProcessor::clearPendingStateFile()
 {
     const juce::ScopedLock sl (pendingStateFileLock);
-    pendingStateFile = {};
+    pendingStateFile = juce::File{};
 }
 
 juce::File IntersectProcessor::getPendingStateFile() const
