@@ -3,6 +3,7 @@
 #include <array>
 #include <optional>
 #include <vector>
+#include "Constants.h"
 #include "RtText.h"
 #include "audio/SampleData.h"
 #include "audio/SliceManager.h"
@@ -178,7 +179,7 @@ public:
     {
         int numSlices = 0;
         int selectedSlice = -1;
-        int rootNote = 36;
+        int rootNote = kDefaultRootNote;
         bool sampleLoaded = false;
         bool sampleMissing = false;
         int sampleNumFrames = 0;
@@ -300,8 +301,16 @@ private:
 
     struct UiStatusMessage
     {
+        enum class Source
+        {
+            none = 0,
+            generic,
+            droppedCommands,
+        };
+
         RtText<256> text;
         bool isWarning = false;
+        Source source = Source::none;
     };
 
     struct PendingSliceTimelineRemap
@@ -335,7 +344,12 @@ private:
     void clearMissingFileInfo();
     const MissingFileInfo& getMissingFileInfo() const;
     void setUiStatusMessage (const juce::String& text, bool isWarning);
+    void setUiStatusMessage (const RtText<256>& text,
+                             bool isWarning,
+                             UiStatusMessage::Source source = UiStatusMessage::Source::generic);
     void clearUiStatusMessage();
+    bool clearDroppedCommandWarning();
+    void setDroppedCommandWarning (uint32_t droppedCount, uint32_t droppedCriticalCount);
     const UiStatusMessage& getUiStatusMessage() const;
     void setPendingStateFile (const juce::File& file);
     void clearPendingStateFile();
@@ -363,6 +377,7 @@ private:
     std::array<Command, kFifoSize> commandBuffer;
     juce::AbstractFifo commandFifo { kFifoSize };
     std::atomic<uint32_t> droppedCommandCount { 0 };
+    std::atomic<uint32_t> droppedCriticalCommandCount { 0 };
     std::atomic<uint32_t> droppedCommandTotal { 0 };
     std::atomic<uint32_t> droppedCriticalCommandTotal { 0 };
     static constexpr int kOverflowFifoSize = 32;
@@ -396,7 +411,7 @@ private:
     std::atomic<uint32_t> uiSnapshotVersion { 0 };
     PendingSliceTimelineRemap pendingSliceTimelineRemap;
 
-    std::array<bool, 128> heldNotes {};
+    std::array<bool, kMidiNoteCount> heldNotes {};
 
     std::array<ParamUndoState, 2> pendingParamRestoreStates {};
     std::atomic<int> pendingParamRestoreIndex { -1 };

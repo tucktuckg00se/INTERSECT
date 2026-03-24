@@ -1,6 +1,7 @@
 #pragma once
 
 #include <juce_gui_basics/juce_gui_basics.h>
+#include "../Constants.h"
 #include "../params/GlobalParamSnapshot.h"
 #include <array>
 #include <functional>
@@ -112,7 +113,7 @@ private:
         const Slice* selectedSlice = nullptr;
         int numSlices = 0;
         int selectedSliceIndex = -1;
-        int rootNote = 36;
+        int rootNote = kDefaultRootNote;
         int sampleNumFrames = 0;
         bool sampleLoaded = false;
         bool sampleMissing = false;
@@ -204,7 +205,7 @@ private:
     bool expanded = false;
     bool draggingRoot = false;
     int rootDragStartY = 0;
-    float rootDragStartValue = 36.0f;
+    float rootDragStartValue = (float) kDefaultRootNote;
 
     std::vector<Cell> cells;
     std::array<ModuleLayout, 4> modules {};

@@ -30,7 +30,7 @@ int SliceManager::createSlice (int start, int end)
     s.active      = true;
     s.startSample = start;
     s.endSample   = end;
-    s.midiNote    = std::min (rootNote.load() + idx, 127);
+    s.midiNote    = std::min (rootNote.load() + idx, kMaxMidiNote);
     s.lockMask    = 0;
 
     // Default override values
@@ -107,7 +107,7 @@ void SliceManager::rebuildMidiMap()
         if (slices[i].active)
         {
             int note = slices[i].midiNote;
-            if (note >= 0 && note < 128)
+            if (note >= 0 && note < kMidiNoteCount)
             {
                 if (midiMap[note] < 0)
                     midiMap[note] = i;
@@ -119,7 +119,7 @@ void SliceManager::rebuildMidiMap()
 
 int SliceManager::midiNoteToSlice (int note) const
 {
-    if (note < 0 || note >= 128)
+    if (note < 0 || note >= kMidiNoteCount)
         return -1;
     return midiMap[note];
 }
@@ -127,7 +127,7 @@ int SliceManager::midiNoteToSlice (int note) const
 const std::vector<int>& SliceManager::midiNoteToSlices (int note) const
 {
     static const std::vector<int> empty;
-    if (note < 0 || note >= 128)
+    if (note < 0 || note >= kMidiNoteCount)
         return empty;
     return midiMapMulti[note];
 }

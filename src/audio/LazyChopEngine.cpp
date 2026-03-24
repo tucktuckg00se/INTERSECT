@@ -24,7 +24,7 @@ void LazyChopEngine::start (int sampleLen, SliceManager& sliceMgr,
         if (s.active && s.midiNote >= nextMidiNote)
             nextMidiNote = s.midiNote + 1;
     }
-    nextMidiNote = std::min (nextMidiNote, 127);
+    nextMidiNote = std::min (nextMidiNote, kMaxMidiNote);
 }
 
 void LazyChopEngine::startPreview (VoicePool& voicePool, int fromPos)
@@ -114,7 +114,7 @@ int LazyChopEngine::onNote (int note, VoicePool& voicePool, SliceManager& sliceM
             {
                 auto& s = sliceMgr.getSlice (idx);
                 s.midiNote = nextMidiNote;
-                nextMidiNote = std::min (nextMidiNote + 1, 127);
+                nextMidiNote = std::min (nextMidiNote + 1, kMaxMidiNote);
                 sliceMgr.rebuildMidiMap();
                 resultIdx = idx;
             }
@@ -130,7 +130,7 @@ int LazyChopEngine::onNote (int note, VoicePool& voicePool, SliceManager& sliceM
         {
             auto& s = sliceMgr.getSlice (newIdx);
             s.midiNote = nextMidiNote;
-            nextMidiNote = std::min (nextMidiNote + 1, 127);
+            nextMidiNote = std::min (nextMidiNote + 1, kMaxMidiNote);
             sliceMgr.rebuildMidiMap();
             resultIdx = newIdx;
         }

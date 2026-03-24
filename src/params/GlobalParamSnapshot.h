@@ -2,6 +2,7 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
+#include "../Constants.h"
 #include "ParamIds.h"
 
 struct GlobalParamSnapshot
@@ -44,9 +45,10 @@ struct GlobalParamSnapshot
     float filterEnvReleaseSec = 0.0f;
     float filterEnvAmount = 0.0f;
 
-    int rootNote = 36;
+    int rootNote = kDefaultRootNote;
 
-    static GlobalParamSnapshot loadFrom (const juce::AudioProcessorValueTreeState& apvts, int rootNoteValue = 36)
+    static GlobalParamSnapshot loadFrom (const juce::AudioProcessorValueTreeState& apvts,
+                                         int rootNoteValue = kDefaultRootNote)
     {
         auto loadFloat = [&apvts] (const juce::String& paramId, float fallback) -> float
         {

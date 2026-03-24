@@ -647,7 +647,7 @@ void SignalChainBar::rebuildContextBar (const LayoutInput& input)
             noteCell.fieldId = IntersectProcessor::FieldMidiNote;
             noteCell.currentValue = (float) input.selectedSlice->midiNote;
             noteCell.minVal = 0.0f;
-            noteCell.maxVal = 127.0f;
+            noteCell.maxVal = (float) kMaxMidiNote;
             noteCell.step = 1.0f;
             noteCell.dragPerPixel = 0.25f;
             addParamCell (noteCell);
@@ -662,7 +662,7 @@ void SignalChainBar::rebuildContextBar (const LayoutInput& input)
             midiCell.fieldId = IntersectProcessor::FieldMidiNote;
             midiCell.currentValue = (float) input.selectedSlice->midiNote;
             midiCell.minVal = 0.0f;
-            midiCell.maxVal = 127.0f;
+            midiCell.maxVal = (float) kMaxMidiNote;
             midiCell.step = 1.0f;
             midiCell.dragPerPixel = 0.25f;
             addParamCell (midiCell);
@@ -740,7 +740,7 @@ void SignalChainBar::rebuildContextBar (const LayoutInput& input)
         noteCell.fieldId = IntersectProcessor::FieldMidiNote;
         noteCell.currentValue = (float) input.selectedSlice->midiNote;
         noteCell.minVal = 0.0f;
-        noteCell.maxVal = 127.0f;
+        noteCell.maxVal = (float) kMaxMidiNote;
         noteCell.step = 1.0f;
         noteCell.dragPerPixel = 0.25f;
         addParamCell (noteCell);
@@ -754,7 +754,7 @@ void SignalChainBar::rebuildContextBar (const LayoutInput& input)
         midiCell.fieldId = IntersectProcessor::FieldMidiNote;
         midiCell.currentValue = (float) input.selectedSlice->midiNote;
         midiCell.minVal = 0.0f;
-        midiCell.maxVal = 127.0f;
+        midiCell.maxVal = (float) kMaxMidiNote;
         midiCell.step = 1.0f;
         midiCell.dragPerPixel = 0.25f;
         addParamCell (midiCell);
@@ -1379,7 +1379,7 @@ void SignalChainBar::rebuildOutputModule (const LayoutInput& input,
 
     addOutputCell (row2[0], "MUTE", juce::String (muteGroup),
                    ParamIds::defaultMuteGroup, IntersectProcessor::FieldMuteGroup, kLockMuteGroup,
-                   (float) muteGroup, 0.0f, 32.0f, 1.0f, 0.25f, 0, muteLocked, false, false, 0, 0.0f, true);
+                   (float) muteGroup, 0.0f, (float) kMaxMuteGroups, 1.0f, 0.25f, 0, muteLocked, false, false, 0, 0.0f, true);
     addOutputCell (row2[1], "GAIN", formatGain (gain),
                    ParamIds::masterVolume, IntersectProcessor::FieldVolume, kLockVolume,
                    gain, -100.0f, 24.0f, 0.1f, 0.3f, 1, gainLocked, false, false, 0, 0.0f, true);
@@ -1388,7 +1388,7 @@ void SignalChainBar::rebuildOutputModule (const LayoutInput& input,
     {
         addOutputCell (row2[2], "OUT", juce::String (outputBus + 1),
                        {}, IntersectProcessor::FieldOutputBus, kLockOutputBus,
-                       (float) outputBus, 0.0f, 15.0f, 1.0f, 0.25f, 0, outputLocked, false, false, 0, 1.0f);
+                       (float) outputBus, 0.0f, (float) (kMaxOutputBuses - 1), 1.0f, 0.25f, 0, outputLocked, false, false, 0, 1.0f);
         return;
     }
 
@@ -1989,7 +1989,7 @@ void SignalChainBar::showRootEditor()
     {
         if (safeThis == nullptr || safeThis->textEditor == nullptr)
             return;
-        const int newRootNote = juce::jlimit (0, 127, safeThis->textEditor->getText().getIntValue());
+        const int newRootNote = juce::jlimit (0, kMaxMidiNote, safeThis->textEditor->getText().getIntValue());
 
         juce::MessageManager::callAsync ([safeThis, newRootNote]
         {
@@ -2142,7 +2142,9 @@ void SignalChainBar::mouseDrag (const juce::MouseEvent& e)
     if (draggingRoot)
     {
         const float deltaY = (float) (rootDragStartY - e.y);
-        const int newVal = juce::jlimit (0, 127, (int) (rootDragStartValue + deltaY * (127.0f / 200.0f)));
+        const int newVal = juce::jlimit (0, kMaxMidiNote,
+                                         (int) (rootDragStartValue
+                                                + deltaY * ((float) kMaxMidiNote / 200.0f)));
         IntersectProcessor::Command cmd;
         cmd.type = IntersectProcessor::CmdSetRootNote;
         cmd.intParam1 = newVal;

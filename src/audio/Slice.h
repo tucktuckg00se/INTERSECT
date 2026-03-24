@@ -1,4 +1,5 @@
 #pragma once
+#include "../Constants.h"
 #include <cstdint>
 #include <juce_graphics/juce_graphics.h>
 
@@ -43,7 +44,7 @@ struct Slice
     bool     active        = false;
     int      startSample   = 0;
     int      endSample     = 0;
-    int      midiNote      = 36;
+    int      midiNote      = kDefaultRootNote;
     float    bpm           = 120.0f;
     float    pitchSemitones = 0.0f;
     int      algorithm     = 0;       // 0=Repitch, 1=Stretch, 2=Bungee

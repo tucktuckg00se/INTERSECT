@@ -69,7 +69,8 @@ struct Voice
     bool         bungeeResetNeeded  = false;
 
     // Bungee ping-pong crossfade fields
-    int          bungeePPFade       = 0;
-    int          bungeePPFadeLen    = 64;
+    int          bungeePPFade       = 0;   // remaining fade samples
+    int          bungeePPFadeLen    = 64;  // configured fade buffer size, updated from sample rate
+    int          bungeePPFadeActiveLen = 0;
     std::vector<float> bungeePPFadeL, bungeePPFadeR;
 };

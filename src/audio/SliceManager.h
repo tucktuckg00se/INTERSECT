@@ -1,4 +1,5 @@
 #pragma once
+#include "../Constants.h"
 #include "Slice.h"
 #include <array>
 #include <atomic>
@@ -35,7 +36,7 @@ public:
     void setNumSlices (int n) { numSlices = juce::jlimit (0, kMaxSlices, n); }
 
     std::atomic<int> selectedSlice { -1 };
-    std::atomic<int> rootNote { 36 };
+    std::atomic<int> rootNote { kDefaultRootNote };
 
     void setSlicePalette (const juce::Colour* p) { palette.store (p, std::memory_order_relaxed); }
 
@@ -52,6 +53,6 @@ private:
 
     std::array<Slice, kMaxSlices> slices;
     int numSlices = 0;
-    std::array<int, 128> midiMap;               // first slice for note (legacy compat)
-    std::array<std::vector<int>, 128> midiMapMulti;  // all slices for note
+    std::array<int, kMidiNoteCount> midiMap;               // first slice for note (legacy compat)
+    std::array<std::vector<int>, kMidiNoteCount> midiMapMulti;  // all slices for note
 };

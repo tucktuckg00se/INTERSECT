@@ -2,6 +2,7 @@
 #include "Voice.h"
 #include "SliceManager.h"
 #include "SampleData.h"
+#include "../Constants.h"
 #include <array>
 #include <atomic>
 #include <juce_core/juce_core.h>
@@ -45,7 +46,7 @@ struct VoiceStartParams
     float globalFilterEnvSustain    = 1.0f;
     float globalFilterEnvReleaseSec = 0.0f;
     float globalFilterEnvAmount     = 0.0f;
-    int   rootNote = 36;
+    int   rootNote = kDefaultRootNote;
 };
 
 struct PreviewStretchParams
@@ -87,7 +88,7 @@ public:
     void processSample (const SampleData& sample, double sampleRate,
                         float& outL, float& outR);
 
-    void setSampleRate (double sr) { sampleRate = sr; }
+    void setSampleRate (double sr);
     double getSampleRate() const { return sampleRate; }
 
     void setMaxActiveVoices (int n);
@@ -128,6 +129,7 @@ public:
                              float& outL, float& outR);
 
 private:
+    void updateBungeePingPongFadeLength();
 
     std::array<Voice, kMaxVoices> voices;
     int maxActive = 16; // playable voices, excluding preview voice

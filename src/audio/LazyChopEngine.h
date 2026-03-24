@@ -1,5 +1,6 @@
 #pragma once
 #include <juce_audio_basics/juce_audio_basics.h>
+#include "../Constants.h"
 #include "VoicePool.h"
 #include "SliceManager.h"
 
@@ -24,7 +25,7 @@ private:
     bool active       = false;
     bool playing      = false;
     int  chopPos      = 0;
-    int  nextMidiNote = 36;
+    int  nextMidiNote = kDefaultRootNote;
     int  sampleLength = 0;
     int  lastNote     = -1;
 

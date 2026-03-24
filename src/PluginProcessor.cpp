@@ -110,7 +110,7 @@ static Slice sanitiseRestoredSlice (Slice s)
     if (s.endSample - s.startSample < kMinSliceLengthSamples)
         s.endSample = s.startSample + kMinSliceLengthSamples;
 
-    s.midiNote = juce::jlimit (0, 127, s.midiNote);
+    s.midiNote = juce::jlimit (0, kMaxMidiNote, s.midiNote);
     s.bpm = juce::jlimit (20.0f, 999.0f, s.bpm);
     s.pitchSemitones = juce::jlimit (-48.0f, 48.0f, s.pitchSemitones);
     s.algorithm = juce::jlimit (0, 2, s.algorithm);
@@ -118,13 +118,13 @@ static Slice sanitiseRestoredSlice (Slice s)
     s.decaySec = juce::jlimit (0.0f, 5.0f, s.decaySec);
     s.sustainLevel = juce::jlimit (0.0f, 1.0f, s.sustainLevel);
     s.releaseSec = juce::jlimit (0.0f, 5.0f, s.releaseSec);
-    s.muteGroup = juce::jlimit (0, 32, s.muteGroup);
+    s.muteGroup = juce::jlimit (0, kMaxMuteGroups, s.muteGroup);
     s.loopMode = juce::jlimit (0, 2, s.loopMode);
     s.tonalityHz = juce::jlimit (0.0f, 8000.0f, s.tonalityHz);
     s.formantSemitones = juce::jlimit (-24.0f, 24.0f, s.formantSemitones);
     s.grainMode = juce::jlimit (0, 2, s.grainMode);
     s.volume = juce::jlimit (-100.0f, 24.0f, s.volume);
-    s.outputBus = juce::jlimit (0, 15, s.outputBus);
+    s.outputBus = juce::jlimit (0, kMaxOutputBuses - 1, s.outputBus);
     s.centsDetune = juce::jlimit (-100.0f, 100.0f, s.centsDetune);
     s.filterType = juce::jlimit (0, 3, s.filterType);
     s.filterSlope = juce::jlimit (0, 1, s.filterSlope);
@@ -355,10 +355,20 @@ const IntersectProcessor::MissingFileInfo& IntersectProcessor::getMissingFileInf
 
 void IntersectProcessor::setUiStatusMessage (const juce::String& text, bool isWarning)
 {
+    RtText<256> rtText;
+    rtText.assign (text);
+    setUiStatusMessage (rtText, isWarning, UiStatusMessage::Source::generic);
+}
+
+void IntersectProcessor::setUiStatusMessage (const RtText<256>& text,
+                                             bool isWarning,
+                                             UiStatusMessage::Source source)
+{
     const int writeIndex = 1 - uiStatusMessageIndex.load (std::memory_order_relaxed);
     auto& status = uiStatusMessages[(size_t) writeIndex];
-    status.text.assign (text);
+    status.text = text;
     status.isWarning = isWarning;
+    status.source = source;
     uiStatusMessageIndex.store (writeIndex, std::memory_order_release);
 }
 
@@ -367,6 +377,31 @@ void IntersectProcessor::clearUiStatusMessage()
     const int writeIndex = 1 - uiStatusMessageIndex.load (std::memory_order_relaxed);
     uiStatusMessages[(size_t) writeIndex] = {};
     uiStatusMessageIndex.store (writeIndex, std::memory_order_release);
+}
+
+bool IntersectProcessor::clearDroppedCommandWarning()
+{
+    if (getUiStatusMessage().source != UiStatusMessage::Source::droppedCommands)
+        return false;
+
+    clearUiStatusMessage();
+    return true;
+}
+
+void IntersectProcessor::setDroppedCommandWarning (uint32_t droppedCount, uint32_t droppedCriticalCount)
+{
+    RtText<256> text;
+    text.appendAscii ("Warning: dropped ");
+    text.appendUnsigned (droppedCount);
+    text.appendAscii (" commands");
+    if (droppedCriticalCount > 0)
+    {
+        text.appendAscii (" (");
+        text.appendUnsigned (droppedCriticalCount);
+        text.appendAscii (" critical)");
+    }
+    text.appendAscii (". Some edits may not have applied.");
+    setUiStatusMessage (text, true, UiStatusMessage::Source::droppedCommands);
 }
 
 const IntersectProcessor::UiStatusMessage& IntersectProcessor::getUiStatusMessage() const
@@ -830,7 +865,10 @@ void IntersectProcessor::pushCommand (Command cmd)
     droppedCommandCount.fetch_add (1, std::memory_order_relaxed);
     droppedCommandTotal.fetch_add (1, std::memory_order_relaxed);
     if (critical)
+    {
+        droppedCriticalCommandCount.fetch_add (1, std::memory_order_relaxed);
         droppedCriticalCommandTotal.fetch_add (1, std::memory_order_relaxed);
+    }
 }
 
 bool IntersectProcessor::enqueueOverflowCommand (Command cmd)
@@ -955,6 +993,21 @@ void IntersectProcessor::drainCommands()
         uiSnapshotDirty.store (true, std::memory_order_release);
 
     const auto dropped = droppedCommandCount.exchange (0, std::memory_order_relaxed);
+    const auto droppedCritical = droppedCriticalCommandCount.exchange (0, std::memory_order_relaxed);
+    bool statusChanged = false;
+    if (dropped > 0)
+    {
+        setDroppedCommandWarning (dropped, droppedCritical);
+        statusChanged = true;
+    }
+    else if (handledAny)
+    {
+        statusChanged = clearDroppedCommandWarning();
+    }
+
+    if (statusChanged)
+        uiSnapshotDirty.store (true, std::memory_order_release);
+
     if (handledAny || dropped > 0)
         updateHostDisplay (ChangeDetails().withNonParameterStateChanged (true));
 }
@@ -1220,7 +1273,7 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                         setBoolField (s.reverse, val > 0.5f, globals.reverse, kLockReverse);
                         break;
                     case FieldOutputBus:
-                        s.outputBus = juce::jlimit (0, 15, (int) val);
+                        s.outputBus = juce::jlimit (0, kMaxOutputBuses - 1, (int) val);
                         s.lockMask |= kLockOutputBus;
                         break;
                     case FieldLoop:
@@ -1269,7 +1322,7 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                         setFloatField (s.filterEnvAmount, val, globals.filterEnvAmount, kLockFilterEnvAmount);
                         break;
                     case FieldMidiNote:
-                        s.midiNote = juce::jlimit (0, 127, (int) val);
+                        s.midiNote = juce::jlimit (0, kMaxMidiNote, (int) val);
                         sliceManager.rebuildMidiMap();
                         break;
                 }
@@ -1364,7 +1417,7 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                         dst = srcCopy;
                         dst.startSample = s;
                         dst.endSample   = e;
-                        dst.midiNote    = juce::jlimit (0, 127, baseNote + i);
+                        dst.midiNote    = juce::jlimit (0, kMaxMidiNote, baseNote + i);
                         dst.colour      = savedColour;
                         dst.active      = true;
                     }
@@ -1413,7 +1466,7 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                         dst = srcCopy;
                         dst.startSample = s;
                         dst.endSample   = e;
-                        dst.midiNote    = juce::jlimit (0, 127, baseNote + subIdx);
+                        dst.midiNote    = juce::jlimit (0, kMaxMidiNote, baseNote + subIdx);
                         dst.colour      = savedColour;
                         dst.active      = true;
                     }
@@ -1462,7 +1515,7 @@ void IntersectProcessor::handleCommand (const Command& cmd)
             break;
 
         case CmdSetRootNote:
-            sliceManager.rootNote.store (juce::jlimit (0, 127, cmd.intParam1),
+            sliceManager.rootNote.store (juce::jlimit (0, kMaxMidiNote, cmd.intParam1),
                                          std::memory_order_relaxed);
             break;
 
@@ -1975,12 +2028,11 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     }
 
     // Collect write pointers for all enabled output buses
-    static constexpr int kMaxBuses = 16;
-    float* busL[kMaxBuses] = {};
-    float* busR[kMaxBuses] = {};
+    std::array<float*, kMaxOutputBuses> busL {};
+    std::array<float*, kMaxOutputBuses> busR {};
     int numActiveBuses = 0;
 
-    for (int b = 0; b < std::min (getBusCount (false), kMaxBuses); ++b)
+    for (int b = 0; b < std::min (getBusCount (false), kMaxOutputBuses); ++b)
     {
         auto* bus = getBus (false, b);
         if (bus != nullptr && bus->isEnabled())
@@ -2205,7 +2257,7 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
     int savedSelectedSlice = stream.readInt();
 
     midiSelectsSlice.store (stream.readBool());
-    sliceManager.rootNote.store (juce::jlimit (0, 127, stream.readInt()));
+    sliceManager.rootNote.store (juce::jlimit (0, kMaxMidiNote, stream.readInt()));
 
     // Slice data
     const int storedNumSlices = stream.readInt();

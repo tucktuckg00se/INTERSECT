@@ -1,5 +1,6 @@
 #pragma once
 #include <array>
+#include "Constants.h"
 #include "audio/Slice.h"
 #include "audio/SliceManager.h"
 #include "params/ParamUndoState.h"
@@ -14,7 +15,7 @@ public:
         std::array<Slice, SliceManager::kMaxSlices> slices;
         int numSlices = 0;
         int selectedSlice = -1;
-        int rootNote = 36;
+        int rootNote = kDefaultRootNote;
         ParamUndoState params;
         bool midiSelectsSlice = false;
         bool snapToZeroCrossing = false;

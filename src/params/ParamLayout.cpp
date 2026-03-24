@@ -82,7 +82,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout ParamLayout::createLayout()
     params.push_back (std::make_unique<juce::AudioParameterInt> (
         juce::ParameterID { ParamIds::defaultMuteGroup, 1 },
         "Sample Mute Group",
-        0, 32, 0));
+        0, kMaxMuteGroups, 0));
 
     // Sample Decay: 0..5000 ms, default 100ms
     params.push_back (std::make_unique<juce::AudioParameterFloat> (

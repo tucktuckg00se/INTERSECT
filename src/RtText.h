@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <cstdint>
 #include <limits>
 
 #include <juce_core/juce_core.h>
@@ -34,6 +35,43 @@ struct RtText
     bool isEmpty() const noexcept
     {
         return length == 0;
+    }
+
+    void assignAscii (const char* text) noexcept
+    {
+        clear();
+        appendAscii (text);
+    }
+
+    void appendAscii (const char* text) noexcept
+    {
+        if (text == nullptr)
+            return;
+
+        size_t index = (size_t) length;
+        while (index < kMaxStoredLength && *text != '\0')
+            bytes[index++] = *text++;
+
+        length = static_cast<uint16_t> (index);
+        bytes[index] = '\0';
+    }
+
+    void appendUnsigned (uint32_t value) noexcept
+    {
+        char digits[10];
+        int count = 0;
+
+        do
+        {
+            digits[count++] = (char) ('0' + (value % 10u));
+            value /= 10u;
+        }
+        while (value > 0u && count < 10);
+
+        while (count > 0 && length < kMaxStoredLength)
+            bytes[(size_t) length++] = digits[--count];
+
+        bytes[(size_t) length] = '\0';
     }
 
     void assign (const juce::String& text) noexcept
