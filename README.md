@@ -3,6 +3,7 @@
 INTERSECT is a sample slicer instrument plugin (VST3/AU/Standalone) with per-slice locking, multiple time/pitch algorithms, and MIDI-triggered slice playback.
 
 ![INTERSECT screenshot](.github/assets/screenshot.png)
+*Theme shown: Open Color (`oc.intersectstyle`)*
 
 ## Table of Contents
 
