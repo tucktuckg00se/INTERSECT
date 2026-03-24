@@ -91,27 +91,19 @@ static double wrapLoopPosition (double pos, int start, int end)
 }
 
 // Reflects pos through a ping-pong cycle over [start, end-1].
-// Returns the reflected position and the effective direction at that phase.
+// Returns the reflected position only (stateless position mapping).
 // Does not duplicate the turnaround sample.
-static double reflectPingPongPosition (double pos, int start, int end, int& directionOut)
+static double reflectPingPongPosition (double pos, int start, int end)
 {
     const double lo = (double) start;
     const double hi = (double) (end - 1);
     const double span = hi - lo;
     if (span <= 0.0)
-    {
-        directionOut = 1;
         return lo;
-    }
 
     double t = pos - lo;
-    // Track whether we've inverted direction an odd number of times
-    bool flipped = false;
     if (t < 0.0)
-    {
         t = -t;
-        flipped = !flipped;
-    }
 
     const double fullCycle = 2.0 * span;
     t = std::fmod (t, fullCycle);
@@ -119,15 +111,9 @@ static double reflectPingPongPosition (double pos, int start, int end, int& dire
         t += fullCycle;
 
     if (t <= span)
-    {
-        directionOut = flipped ? -1 : 1;
         return lo + t;
-    }
     else
-    {
-        directionOut = flipped ? 1 : -1;
         return lo + (fullCycle - t);
-    }
 }
 
 // Reads a sample from the virtual looped source at an arbitrary position.
@@ -142,8 +128,7 @@ static float readExactLoopSample (const Voice& v, const SampleData& sample,
 
     if (v.pingPong)
     {
-        int unusedDir = 1;
-        double mapped = reflectPingPongPosition (pos, v.startSample, v.endSample, unusedDir);
+        double mapped = reflectPingPongPosition (pos, v.startSample, v.endSample);
         return sample.getInterpolatedSample (juce::jlimit (0.0, (double) maxFrame, mapped), channel);
     }
 
@@ -164,9 +149,16 @@ static VoiceBoundaryAction advanceStretchSrcPos (Voice& v)
 
     if (v.pingPong)
     {
-        int newDir = v.direction;
-        v.stretchSrcPos = reflectPingPongPosition (v.stretchSrcPos, v.startSample, v.endSample, newDir);
-        v.direction = newDir;
+        if (v.stretchSrcPos >= v.endSample)
+        {
+            v.stretchSrcPos = 2.0 * (v.endSample - 1) - v.stretchSrcPos;
+            v.direction = -1;
+        }
+        else if (v.stretchSrcPos < v.startSample)
+        {
+            v.stretchSrcPos = 2.0 * v.startSample - v.stretchSrcPos;
+            v.direction = 1;
+        }
         return VoiceBoundaryAction::continuePlayback;
     }
 
@@ -882,9 +874,21 @@ static void fillBungeeBlock (Voice& v, const SampleData& sample)
     // Canonicalize position back into loop range for next grain
     if (v.pingPong)
     {
-        int newDir = 1;
-        v.bungeeSrcPos = reflectPingPongPosition (v.bungeeSrcPos, v.startSample, v.endSample, newDir);
-        v.bungeeSpeed = std::abs (v.bungeeSpeed) * (double) newDir;
+        const double lo = (double) v.startSample;
+        const double hi = (double) (v.endSample - 1);
+        while (v.bungeeSrcPos > hi || v.bungeeSrcPos < lo)
+        {
+            if (v.bungeeSrcPos > hi)
+            {
+                v.bungeeSrcPos = 2.0 * hi - v.bungeeSrcPos;
+                v.bungeeSpeed = -v.bungeeSpeed;
+            }
+            if (v.bungeeSrcPos < lo)
+            {
+                v.bungeeSrcPos = 2.0 * lo - v.bungeeSrcPos;
+                v.bungeeSpeed = -v.bungeeSpeed;
+            }
+        }
     }
     else if (v.looping)
     {
