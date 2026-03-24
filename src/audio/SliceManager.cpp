@@ -30,7 +30,7 @@ int SliceManager::createSlice (int start, int end)
     s.active      = true;
     s.startSample = start;
     s.endSample   = end;
-    s.midiNote    = std::min (rootNote.load() + idx, kMaxMidiNote);
+    s.midiNote    = nextMidiNote();
     s.lockMask    = 0;
 
     // Default override values
@@ -138,4 +138,49 @@ float SliceManager::resolveParam (int sliceIdx, LockBit lockBit, float sliceValu
         return globalDefault;
 
     return (slices[sliceIdx].lockMask & lockBit) ? sliceValue : globalDefault;
+}
+
+int SliceManager::nextMidiNote() const
+{
+    int highest = rootNote.load() - 1;
+    for (int i = 0; i < numSlices; ++i)
+        if (slices[i].active && slices[i].midiNote > highest)
+            highest = slices[i].midiNote;
+    return std::min (highest + 1, kMaxMidiNote);
+}
+
+void SliceManager::repackMidiNotes (bool sortByPosition)
+{
+    if (sortByPosition && numSlices > 1)
+    {
+        // Track the selected slice across the sort
+        int selStart = -1, selEnd = -1;
+        int sel = selectedSlice.load();
+        if (sel >= 0 && sel < numSlices)
+        {
+            selStart = slices[sel].startSample;
+            selEnd   = slices[sel].endSample;
+        }
+
+        std::sort (slices.begin(), slices.begin() + numSlices,
+                   [] (const Slice& a, const Slice& b) { return a.startSample < b.startSample; });
+
+        // Restore selectedSlice index after sort
+        if (selStart >= 0)
+        {
+            for (int i = 0; i < numSlices; ++i)
+            {
+                if (slices[i].startSample == selStart && slices[i].endSample == selEnd)
+                {
+                    selectedSlice = i;
+                    break;
+                }
+            }
+        }
+    }
+
+    int root = rootNote.load();
+    for (int i = 0; i < numSlices; ++i)
+        slices[i].midiNote = std::min (root + i, kMaxMidiNote);
+    rebuildMidiMap();
 }

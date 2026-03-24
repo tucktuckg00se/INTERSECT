@@ -90,6 +90,135 @@ void ActionPanel::toggleFollowMidiSelection()
     repaint();
 }
 
+void ActionPanel::triggerReseqMidi()
+{
+    if (reseqPanel != nullptr)
+    {
+        dismissReseqPanel();
+        repaint();
+        return;
+    }
+
+    if (processor.sliceManager.getNumSlices() < 2)
+    {
+        waveformView.showOverlayHint ("Need at least 2 slices to resequence.", 2200);
+        return;
+    }
+
+    showReseqPanel();
+    repaint();
+}
+
+void ActionPanel::dismissReseqPanel()
+{
+    if (reseqPanel != nullptr)
+    {
+        if (auto* parent = reseqPanel->getParentComponent())
+            parent->removeChildComponent (reseqPanel.get());
+        reseqPanel.reset();
+    }
+}
+
+void ActionPanel::showReseqPanel()
+{
+    class ReseqPanel : public juce::Component
+    {
+    public:
+        juce::Label label;
+        juce::TextButton byPosBtn { "BY POSITION" };
+        juce::TextButton byOrderBtn { "AS CREATED" };
+        juce::TextButton cancelBtn { "CANCEL" };
+
+        ReseqPanel()
+        {
+            const auto& theme = getTheme();
+
+            addAndMakeVisible (label);
+            label.setFont (IntersectLookAndFeel::makeFont (11.0f));
+            label.setColour (juce::Label::textColourId, theme.text2.withAlpha (0.8f));
+            label.setJustificationType (juce::Justification::centredLeft);
+            label.setText ("Resequence MIDI notes from root note:", juce::dontSendNotification);
+
+            for (auto* btn : { &byPosBtn, &byOrderBtn, &cancelBtn })
+            {
+                btn->setColour (juce::TextButton::buttonColourId, theme.surface4);
+                btn->setColour (juce::TextButton::textColourOnId, theme.text2);
+                btn->setColour (juce::TextButton::textColourOffId, theme.text2);
+                addAndMakeVisible (btn);
+            }
+        }
+
+        void paint (juce::Graphics& g) override
+        {
+            g.setColour (getTheme().surface2.withAlpha (0.95f));
+            g.fillRect (getLocalBounds());
+            g.setColour (getTheme().surface5);
+            g.drawRect (getLocalBounds(), 1);
+        }
+
+        void resized() override
+        {
+            int h = getHeight();
+            int pad = 4;
+            int btnH = h - pad * 2;
+            int gap = 6;
+            int cancelW = 60;
+
+            int x = pad + 4;
+            int labelW = 240;
+            label.setBounds (x, pad, labelW, btnH);
+            x += labelW + gap;
+
+            byPosBtn.setBounds (x, pad, 120, btnH);
+            x += 120 + gap;
+
+            byOrderBtn.setBounds (x, pad, 110, btnH);
+
+            cancelBtn.setBounds (getWidth() - cancelW - pad, pad, cancelW, btnH);
+        }
+    };
+
+    auto reseq = std::make_unique<ReseqPanel>();
+
+    reseq->byPosBtn.onClick = [this] {
+        IntersectProcessor::Command cmd;
+        cmd.type = IntersectProcessor::CmdRepackMidi;
+        cmd.intParam1 = 1;
+        processor.pushCommand (cmd);
+        dismissReseqPanel();
+        waveformView.showOverlayHint ("MIDI notes resequenced by position.", 2200);
+        repaint();
+    };
+
+    reseq->byOrderBtn.onClick = [this] {
+        IntersectProcessor::Command cmd;
+        cmd.type = IntersectProcessor::CmdRepackMidi;
+        cmd.intParam1 = 0;
+        processor.pushCommand (cmd);
+        dismissReseqPanel();
+        waveformView.showOverlayHint ("MIDI notes resequenced as created.", 2200);
+        repaint();
+    };
+
+    reseq->cancelBtn.onClick = [this] {
+        dismissReseqPanel();
+        repaint();
+    };
+
+    reseqPanel = std::move (reseq);
+
+    if (auto* editor = waveformView.getParentComponent())
+    {
+        auto wfBounds = waveformView.getBoundsInParent();
+        int panelH = 34;
+        int panelX = wfBounds.getX();
+        int panelW = wfBounds.getWidth();
+        int panelY = wfBounds.getBottom() - panelH;
+        reseqPanel->setBounds (panelX, panelY, panelW, panelH);
+        editor->addAndMakeVisible (*reseqPanel);
+    }
+}
+
 void ActionPanel::toggleAutoChop()
 {
     if (autoChopPanel != nullptr)
@@ -127,7 +256,7 @@ void ActionPanel::resized()
     row.flexWrap = juce::FlexBox::Wrap::noWrap;
     row.alignItems = juce::FlexBox::AlignItems::stretch;
 
-    // ADD(0), LAZY(1), AUTO(2), COPY(3), DEL(4) get flex:1; ZX(5), FM(6) get fixed width
+    // ADD(0), LAZY(1), AUTO(2), COPY(3), DEL(4) get flex:1; ZX(5), FM(6), RESEQ(7) get fixed width
     row.items.add (juce::FlexItem().withFlex (1.0f));  // ADD
     row.items.add (juce::FlexItem().withFlex (1.0f));  // LAZY
     row.items.add (juce::FlexItem().withFlex (1.0f));  // AUTO
@@ -135,21 +264,23 @@ void ActionPanel::resized()
     row.items.add (juce::FlexItem().withFlex (1.0f));  // DEL
     row.items.add (juce::FlexItem().withWidth (kNarrowWidth));  // ZX
     row.items.add (juce::FlexItem().withWidth (kNarrowWidth));  // FM
+    row.items.add (juce::FlexItem().withWidth (52.0f));         // RESEQ
 
     row.performLayout (bounds.toFloat());
 
     struct ItemDef { juce::String text; int id; bool narrow; };
     const ItemDef defs[] = {
-        { "ADD",  0, false },
-        { "LAZY", 1, false },
-        { "AUTO", 2, false },
-        { "COPY", 3, false },
-        { "DEL",  4, false },
-        { "ZX",   5, true  },
-        { "FM",   6, true  },
+        { "ADD",   0, false },
+        { "LAZY",  1, false },
+        { "AUTO",  2, false },
+        { "COPY",  3, false },
+        { "DEL",   4, false },
+        { "ZX",    5, true  },
+        { "FM",    6, true  },
+        { "RESEQ", 7, true  },
     };
 
-    for (int i = 0; i < 7; ++i)
+    for (int i = 0; i < 8; ++i)
     {
         ActionItem item;
         item.text = defs[i].text;
@@ -168,12 +299,15 @@ void ActionPanel::paint (juce::Graphics& g)
     const bool lazyActive = processor.lazyChop.isActive();
     const bool addActive = waveformView.isSliceDrawModeActive();
 
-    // Auto chop panel removes itself from parent on cancel/apply;
-    // detect orphaned panel and clean up the unique_ptr.
+    // Panels remove themselves from parent on cancel/apply;
+    // detect orphaned panels and clean up the unique_ptrs.
     if (autoChopPanel != nullptr && autoChopPanel->getParentComponent() == nullptr)
         autoChopPanel.reset();
+    if (reseqPanel != nullptr && reseqPanel->getParentComponent() == nullptr)
+        reseqPanel.reset();
 
     const bool autoActive = autoChopPanel != nullptr;
+    const bool reseqActive = reseqPanel != nullptr;
     const bool snapActive = processor.snapToZeroCrossing.load();
     const bool fmActive = processor.midiSelectsSlice.load();
 
@@ -203,6 +337,7 @@ void ActionPanel::paint (juce::Graphics& g)
             case 2: isActive = autoActive; break;
             case 5: isActive = snapActive; break;
             case 6: isActive = fmActive; break;
+            case 7: isActive = reseqActive; break;
             default: break;
         }
 
@@ -268,6 +403,7 @@ void ActionPanel::mouseDown (const juce::MouseEvent& e)
         case 4: triggerDeleteSelectedSlice(); break;
         case 5: toggleSnapToZeroCrossing(); break;
         case 6: toggleFollowMidiSelection(); break;
+        case 7: triggerReseqMidi(); break;
         default: break;
     }
 }

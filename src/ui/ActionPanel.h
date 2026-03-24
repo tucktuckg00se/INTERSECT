@@ -24,6 +24,7 @@ public:
     void toggleSnapToZeroCrossing();
     void toggleFollowMidiSelection();
     void toggleAutoChop();
+    void triggerReseqMidi();
     bool isAutoChopOpen() const { return autoChopPanel != nullptr; }
 
 private:
@@ -44,4 +45,8 @@ private:
     int hitTestItem (juce::Point<int> pos) const;
 
     std::unique_ptr<AutoChopPanel> autoChopPanel;
+    std::unique_ptr<juce::Component> reseqPanel;
+
+    void dismissReseqPanel();
+    void showReseqPanel();
 };

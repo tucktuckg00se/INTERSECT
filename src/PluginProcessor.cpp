@@ -1108,6 +1108,7 @@ void IntersectProcessor::handleCommand (const Command& cmd)
         case CmdDuplicateSlice:
         case CmdSplitSlice:
         case CmdTransientChop:
+        case CmdRepackMidi:
             if (! gestureSnapshotCaptured)
                 captureSnapshot();
             gestureSnapshotCaptured = false;
@@ -1390,8 +1391,8 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                 int count = juce::jlimit (2, 128, cmd.intParam1);
                 int len = endS - startS;
                 // Notes for sub-slices start one past the highest note any existing
-                // slice can have, so no existing note is disturbed.
-                int baseNote = sliceManager.rootNote.load() + sliceManager.getNumSlices();
+                // slice has, so no existing note is disturbed.
+                int baseNote = sliceManager.nextMidiNote();
 
                 sliceManager.deleteSlice (sel);
 
@@ -1439,7 +1440,7 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                 Slice srcCopy = sliceManager.getSlice (sel);
                 int startS = srcCopy.startSample;
                 int endS = srcCopy.endSample;
-                int baseNote = sliceManager.rootNote.load() + sliceManager.getNumSlices();
+                int baseNote = sliceManager.nextMidiNote();
 
                 // Build fixed-size boundary list: [startS, ...positions..., endS]
                 int bounds[SliceManager::kMaxSlices + 2];
@@ -1480,6 +1481,10 @@ void IntersectProcessor::handleCommand (const Command& cmd)
             }
             break;
         }
+
+        case CmdRepackMidi:
+            sliceManager.repackMidiNotes (cmd.intParam1 != 0);
+            break;
 
         case CmdRelinkFile:
             relinkFileAsync (cmd.fileParam);

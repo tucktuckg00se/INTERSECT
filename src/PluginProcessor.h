@@ -59,6 +59,7 @@ public:
         CmdDuplicateSlice,
         CmdSplitSlice,
         CmdTransientChop,
+        CmdRepackMidi,
         CmdRelinkFile,
         CmdFileLoadCompleted,
         CmdFileLoadFailed,
