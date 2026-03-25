@@ -1,4 +1,9 @@
 cmake_minimum_required(VERSION 3.22)
+
+if(APPLE)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "10.13" CACHE STRING "Minimum macOS version")
+endif()
+
 set(INTERSECT_VERSION "" CACHE STRING "Plugin version (injected by CI, or auto-detected from git tag)")
 if(INTERSECT_VERSION STREQUAL "")
     find_package(Git QUIET)

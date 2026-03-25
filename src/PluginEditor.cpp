@@ -334,7 +334,8 @@ void IntersectEditor::timerCallback()
 void IntersectEditor::ensureDefaultThemes()
 {
     auto dir = getThemesDir();
-    dir.createDirectory();
+    if (! dir.createDirectory())
+        return;  // sandboxed or read-only — fall back to in-memory defaults
 
     auto darkFile = dir.getChildFile ("dark.intersectstyle");
     auto darkText = ThemeData::darkTheme().toThemeFile();
@@ -403,7 +404,8 @@ void IntersectEditor::applyTheme (const juce::String& themeName)
 void IntersectEditor::saveUserSettings (float scale, const juce::String& themeName)
 {
     auto file = getUserSettingsFile();
-    file.getParentDirectory().createDirectory();
+    if (! file.getParentDirectory().createDirectory())
+        return;  // sandboxed or read-only — skip silently
     juce::String content;
     content << "uiScale: " << juce::String (scale, 2) << "\n";
     content << "theme: " << themeName << "\n";

@@ -3,8 +3,8 @@
 #include "Constants.h"
 #include "audio/GrainEngine.h"
 #include "audio/AudioAnalysis.h"
-#include <bit>
 #include <cmath>
+#include <cstring>
 #include <functional>
 #include <memory>
 
@@ -186,16 +186,22 @@ constexpr float kMidiEditZoomClampMax = 16384.0f;
 constexpr double kMidiEditZoomStepsPerOctave = 6.0;
 constexpr double kMidiEditGestureIdleSeconds = 0.3;
 
+union FloatBits { float f; uint32_t u; };
+
 uint64_t packPendingSliceParamPayload (int field, float value)
 {
+    FloatBits fb;
+    fb.f = value;
     return (uint64_t) (uint32_t) field << 32
-        | (uint64_t) std::bit_cast<uint32_t> (value);
+        | (uint64_t) fb.u;
 }
 
 void unpackPendingSliceParamPayload (uint64_t payload, int& field, float& value)
 {
     field = (int) (payload >> 32);
-    value = std::bit_cast<float> ((uint32_t) (payload & 0xFFFFFFFFu));
+    FloatBits fb;
+    fb.u = (uint32_t) (payload & 0xFFFFFFFFu);
+    value = fb.f;
 }
 
 PreviewStretchParams makePreviewStretchParams (const GlobalParamSnapshot& globals,

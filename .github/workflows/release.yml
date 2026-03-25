@@ -84,10 +84,16 @@ jobs:
         run: echo "PLUGIN_VERSION=$(echo '${{ github.ref_name }}' | sed 's/^v//')" >> $GITHUB_ENV
 
       - name: Configure
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DINTERSECT_VERSION=${{ env.PLUGIN_VERSION }}
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=10.13 -DINTERSECT_VERSION=${{ env.PLUGIN_VERSION }}
 
       - name: Build
         run: cmake --build build --config Release
+
+      - name: Codesign
+        run: |
+          codesign --force --deep --sign - build/Intersect_artefacts/Release/AU/INTERSECT.component
+          codesign --force --deep --sign - build/Intersect_artefacts/Release/VST3/INTERSECT.vst3
+          codesign --force --deep --sign - build/Intersect_artefacts/Release/Standalone/INTERSECT.app
 
       - name: Package
         run: |
@@ -114,10 +120,16 @@ jobs:
         run: echo "PLUGIN_VERSION=$(echo '${{ github.ref_name }}' | sed 's/^v//')" >> $GITHUB_ENV
 
       - name: Configure
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DINTERSECT_VERSION=${{ env.PLUGIN_VERSION }}
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=10.13 -DINTERSECT_VERSION=${{ env.PLUGIN_VERSION }}
 
       - name: Build
         run: cmake --build build --config Release
+
+      - name: Codesign
+        run: |
+          codesign --force --deep --sign - build/Intersect_artefacts/Release/AU/INTERSECT.component
+          codesign --force --deep --sign - build/Intersect_artefacts/Release/VST3/INTERSECT.vst3
+          codesign --force --deep --sign - build/Intersect_artefacts/Release/Standalone/INTERSECT.app
 
       - name: Package
         run: |
