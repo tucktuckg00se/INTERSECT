@@ -1,0 +1,160 @@
+# Changelog
+
+All notable changes to INTERSECT will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+
+## [Unreleased]
+
+## [0.10.0] - 2026-03-20
+### Added
+- Multimode filter with per-voice processing (type, slope, cutoff, resonance, drive, key tracking, filter ADSR envelope)
+- New bundled colour themes
+- RESEQ action to re-sequence MIDI notes across slices (v0.10.9)
+
+### Changed
+- Tightened envelope timing controls (attack/decay/release ranges)
+- Renamed signal chain modules; moved MUTE to row 2 (v0.10.5)
+- Refined popup menus and parameter editing (v0.10.2)
+- Simplified signal chain UI and adjusted theme colours (v0.10.2)
+- Switched voice mixing to block render paths (v0.10.7)
+
+### Fixed
+- AU cold open failure on older macOS (v0.10.10, issue #13)
+- Bungee loop buzzing with unbounded phase model (v0.10.8)
+- Ping-pong direction tracking for stretch engines (v0.10.8)
+- Stretch engine seam resets replaced with exact virtual loop feeding (v0.10.8)
+- Sample restore timeline drift (v0.10.6)
+- Global SET BPM now uses selected slice range (v0.10.4)
+- Text editor Enter-key crash — async teardown regression (v0.10.3)
+- Text-entry crash fix restored after GUI rewrite (v0.10.1)
+- Duplicate MIDI notes on slice creation (v0.10.9)
+- Clang/GCC build compatibility for juce::File assignment (v0.10.7)
+- State restore and real-time safety hardening (v0.10.7)
+
+## [0.9.0] - 2026-02-28
+### Added
+- NRPN MIDI controller routing
+- SET popup for BPM/pitch assignment
+- .aif file extension support (v0.9.1)
+- Auto-detect plugin version from git tag (v0.9.2)
+
+### Fixed
+- Text editor use-after-free crash (v0.9.3)
+- FontOptions constructor compatibility (v0.9.2)
+- Windows CI version string parsing (bash shell fix)
+
+## [0.8.0] - 2026-02-18
+### Added
+- Filled waveform rendering with peak mipmaps
+- Theme-aware slice UI and colour palette
+- One-shot (1SHOT) playback mode (v0.8.7)
+- Output safety clamp and NaN/Inf guard (v0.8.5)
+- macOS Intel x64 build (v0.8.4)
+- Button tooltips and keyboard shortcuts (v0.8.3)
+- Async sample loading with tune controls (v0.8.8)
+- Live slice drag preview and smart repaint scheduling (v0.8.10)
+- Shift+key shortcuts and overlay hint system (v0.8.14)
+- Lazy chop real-time slice placement (v0.8.11)
+- Pitch range extended from ±24 to ±48 semitones (v0.8.12)
+
+### Changed
+- Merged pingPong + loop into 3-way loop mode (v0.8.1)
+- Removed WSOLA algorithm; renamed DAW parameters (v0.8.6)
+- Follow MIDI now works during lazy chop (v0.8.6)
+- STRETCH control moved to row 1 (v0.8.7)
+- HeaderBar always visible (v0.8.11)
+
+### Fixed
+- Null pointer crash on sample load (v0.8.2)
+- macOS release build failures (v0.8.9)
+- MIDI note collision on slice split (v0.8.13)
+- Redo functionality (v0.8.3)
+- MIDI All Notes Off / All Sound Off handling (v0.8.7)
+- Click-to-cycle parameter choices (v0.8.2)
+
+## [0.7.0] - 2026-02-17
+### Added
+- Theme-aware slice colour palette (v0.7.1)
+- `.intersectstyle` theme file extension (v0.7.1)
+
+### Changed
+- Repository flattened to single-project structure
+- Theme colour naming standardized
+- Release zip naming updated
+
+### Fixed
+- Undo state restoration
+- Button theming (v0.7.1)
+
+## [0.6.0] - 2026-02-17
+### Added
+- Auto-chop with transient detection
+- Undo/redo system
+
+### Changed
+- Auto-chop panel redesigned with sensitivity slider (v0.6.1)
+
+### Fixed
+- Transient detection accuracy (v0.6.1)
+
+## [0.5.0] - 2026-02-17
+### Added
+- Multi-output bus routing
+- Reverse (REV) playback mode
+- Multi-slice simultaneous triggering
+- Voice count display
+- Sub-sample zoom waveform rendering (v0.5.2)
+
+### Changed
+- Wider plugin window
+
+### Fixed
+- Bungee ping-pong playback (v0.5.1)
+- Lazy chop preview in multi-output mode (v0.5.2)
+- Sample replace crash (v0.5.1)
+
+## [0.4.0] - 2026-02-16
+### Added
+- Gain parameter
+- Release tail control
+- Ping-pong mode for all stretch algorithms
+
+### Fixed
+- Blank-space drag behaviour (v0.4.1)
+- Button overflow in narrow layouts (v0.4.1)
+- Bungee ping-pong audio pop (v0.4.1)
+- Sample relink after file move
+
+## [0.3.0] - 2026-02-15
+### Changed
+- Improved font rendering sharpness
+- Enlarged UI fonts and controls
+- SliceLane visually separated from waveform
+- SliceControlBar layout reorganized
+
+## [0.2.0] - 2026-02-15
+### Added
+- Lazy chop with time-stretch preview
+- Path-based sample state restoration
+- Missing sample relink dialog
+
+### Fixed
+- Button ordering in action panel
+
+## [0.1.0] - 2026-02-15
+### Added
+- VST3, AU, and Standalone audio sampler plugin
+- Sample loading via drag-and-drop (WAV, OGG, AIFF, FLAC, MP3)
+- Manual slice creation with per-slice MIDI note assignment
+- Per-slice parameter control with lock/inherit system
+- Signalsmith Stretch and Bungee time/pitch processing
+- WSOLA stretch algorithm
+- ADSR envelope per voice
+- Mute groups
+- Waveform display with scroll, zoom, and cursor-anchored zoom
+- Lazy chop with preview highlight
+- YAML theme support with IBM Plex Sans font
+- LOAD button and draw preview mode
+- Root note control and UI scale persistence
+- Cross-platform CI/CD release workflow (Windows, macOS, Linux)

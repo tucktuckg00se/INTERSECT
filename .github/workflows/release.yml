@@ -150,6 +150,25 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v5
+
+      - name: Extract changelog for this version
+        run: |
+          VERSION=$(echo "${{ github.ref_name }}" | sed 's/^v//')
+          # Extract the section for this version from CHANGELOG.md
+          # Matches from the version heading to the next heading (or EOF)
+          awk -v ver="$VERSION" '
+            /^## \[/ {
+              if (found) exit
+              if (index($0, "[" ver "]")) { found=1; next }
+            }
+            found { print }
+          ' CHANGELOG.md > release_notes.md
+          # If no changelog section found, use a default message
+          if [ ! -s release_notes.md ]; then
+            echo "Release ${{ github.ref_name }}" > release_notes.md
+          fi
+
       - uses: actions/download-artifact@v5
         with:
           path: artifacts
@@ -157,6 +176,8 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
+          body_path: release_notes.md
+          prerelease: ${{ contains(github.ref_name, '-rc') }}
           files: |
             artifacts/INTERSECT-Windows-x64/INTERSECT-${{ github.ref_name }}-Windows-x64.zip
             artifacts/INTERSECT-Linux-x64/INTERSECT-${{ github.ref_name }}-Linux-x64.zip
