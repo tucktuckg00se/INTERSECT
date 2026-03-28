@@ -175,6 +175,96 @@ inline std::vector<int> detectTransients (const juce::AudioBuffer<float>& buffer
             candidates.push_back ({ samplePos, odf[i] });
     }
 
+    // --- Step 3.5: Backtrack refinement — walk backward to true transient onset ---
+    {
+        // Time-based constants, converted to samples via sampleRate
+        constexpr float envWindowMs    = 0.7f;   // moving-max smoothing half-width
+        constexpr float noiseWindowMs  = 6.0f;   // RMS noise floor measurement window
+        constexpr float noiseGapMs     = 1.0f;   // gap between noise window end and peak search start
+        constexpr float prerollMs      = 0.2f;   // safety margin nudge after refinement
+        constexpr float backtrackFraction = 0.1f; // onset threshold: 10% of (peak - noise)
+
+        const int envHalf     = std::max (1, (int) std::round (sampleRate * envWindowMs   / 1000.0));
+        const int noiseWinLen = std::max (1, (int) std::round (sampleRate * noiseWindowMs / 1000.0));
+        const int noiseGap    = std::max (1, (int) std::round (sampleRate * noiseGapMs    / 1000.0));
+        const int preroll     = std::max (0, (int) std::round (sampleRate * prerollMs     / 1000.0));
+
+        // Smoothed envelope: moving maximum avoids zero-crossing dips in raw abs(mono)
+        auto envelope = [&] (int idx) -> float
+        {
+            float mx = 0.0f;
+            int lo = std::max (start, idx - envHalf);
+            int hi = std::min (end, idx + envHalf);
+            for (int s = lo; s < hi; ++s)
+                mx = std::max (mx, std::abs ((L[s] + R[s]) * 0.5f));
+            return mx;
+        };
+
+        std::sort (candidates.begin(), candidates.end(),
+                   [] (const Onset& a, const Onset& b) { return a.samplePos < b.samplePos; });
+
+        for (size_t ci = 0; ci < candidates.size(); ++ci)
+        {
+            int pos = candidates[ci].samplePos;
+            int earliest = start;
+            if (ci > 0)
+                earliest = std::max (earliest, candidates[ci - 1].samplePos + 1);
+
+            // Find actual peak in a hop-scale window around the candidate
+            int peakLo = std::max (earliest, pos - hopSize);
+            int peakHi = std::min (end, pos + hopSize / 2);
+            if (peakHi <= peakLo)
+                continue; // collapsed window near region boundary — skip refinement
+
+            int peakPos = peakLo;
+            float peakAmp = 0.0f;
+            for (int s = peakLo; s < peakHi; ++s)
+            {
+                float env = envelope (s);
+                if (env > peakAmp)
+                {
+                    peakAmp = env;
+                    peakPos = s;
+                }
+            }
+
+            // Noise floor: RMS of a window ending before the peak search region
+            int noiseEnd = std::max (start, peakLo - noiseGap);
+            int noiseStart = std::max (start, noiseEnd - noiseWinLen);
+            float noiseFloor = 0.0f;
+            if (noiseEnd > noiseStart)
+            {
+                float sumSq = 0.0f;
+                for (int s = noiseStart; s < noiseEnd; ++s)
+                {
+                    float v = std::abs ((L[s] + R[s]) * 0.5f);
+                    sumSq += v * v;
+                }
+                noiseFloor = std::sqrt (sumSq / (float) (noiseEnd - noiseStart));
+            }
+
+            // Backtrack threshold
+            float thresh = noiseFloor + backtrackFraction * (peakAmp - noiseFloor);
+
+            // Walk backward from peakPos until envelope drops below threshold
+            int refined = peakPos;
+            for (int s = peakPos; s >= earliest; --s)
+            {
+                if (envelope (s) < thresh)
+                {
+                    refined = s + 1;
+                    break;
+                }
+                refined = s;
+            }
+
+            // Small preroll safety margin
+            refined = std::max (earliest, refined - preroll);
+
+            candidates[ci].samplePos = refined;
+        }
+    }
+
     // --- Step 4: MIN post-filter — greedy strongest-first, remove close neighbors ---
     int minOnsetDist = (int) std::round (sampleRate * (double) minSliceLenMs / 1000.0);
     minOnsetDist = std::max (1, minOnsetDist);
