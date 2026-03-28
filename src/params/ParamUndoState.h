@@ -34,5 +34,4 @@ struct ParamUndoState
     float defaultFilterEnvRelease = 0.0f;
     float defaultFilterEnvAmount = 0.0f;
     float maxVoices = 16.0f;
-    float uiScale = 1.0f;
 };

@@ -5,6 +5,12 @@ All notable changes to INTERSECT will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
+### Fixed
+- Undo now restores the pre-drag value in one step instead of stepping through intermediate values
+- Global parameter changes (BPM, pitch, filter, etc.) are now undoable
+- Root note changes are now undoable
+- Undo no longer couples unrelated slice and global parameter changes
+
 ### Changed
 - Action tooltips are shorter, and RESEQ now has a Shift+R shortcut.
 

@@ -657,6 +657,15 @@ void SliceControlBar::mouseDrag (const juce::MouseEvent& e)
     repaint();
 }
 
+void SliceControlBar::mouseUp (const juce::MouseEvent&)
+{
+    if (draggingRootNote || activeDragCell >= 0)
+        processor.pendingEndGesture.store (true, std::memory_order_release);
+
+    activeDragCell = -1;
+    draggingRootNote = false;
+}
+
 void SliceControlBar::dismissTextEditor()
 {
     if (textEditor == nullptr)

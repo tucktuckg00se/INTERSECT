@@ -1746,6 +1746,11 @@ void SignalChainBar::applyCellValue (const Cell& cell, float storedValue, bool o
 
     if (auto* param = processor.apvts.getParameter (cell.globalParamId))
     {
+        if (oneShotGlobal || ! globalGestureBaselineCaptured)
+        {
+            if (processor.enqueueUiUndoSnapshot())
+                globalGestureBaselineCaptured = true;
+        }
         if (oneShotGlobal)
             param->beginChangeGesture();
         param->setValueNotifyingHost (param->convertTo0to1 (storedValue));
@@ -1791,6 +1796,7 @@ void SignalChainBar::endGlobalGesture()
 
     activeGlobalParamId.clear();
     globalGestureActive = false;
+    globalGestureBaselineCaptured = false;
 }
 
 void SignalChainBar::dismissTextEditor()
@@ -1866,6 +1872,7 @@ void SignalChainBar::showSetBpmPopup (bool sliceScope)
                 const float newBpm = GrainEngine::calcStretchBpm (startSmp, endSmp, barCount, sampleRate);
                 if (auto* bpmParam = processor.apvts.getParameter (ParamIds::defaultBpm))
                 {
+                    processor.enqueueUiUndoSnapshot();
                     bpmParam->beginChangeGesture();
                     bpmParam->setValueNotifyingHost (bpmParam->convertTo0to1 (newBpm));
                     bpmParam->endChangeGesture();
@@ -2050,6 +2057,10 @@ void SignalChainBar::mouseDown (const juce::MouseEvent& e)
         const auto& ui = processor.getUiSliceSnapshot();
         if (ui.numSlices == 0)
         {
+            IntersectProcessor::Command gestureCmd;
+            gestureCmd.type = IntersectProcessor::CmdBeginGesture;
+            processor.pushCommand (gestureCmd);
+
             draggingRoot = true;
             rootDragStartY = e.y;
             rootDragStartValue = (float) ui.rootNote;
@@ -2190,9 +2201,15 @@ void SignalChainBar::mouseDrag (const juce::MouseEvent& e)
 
 void SignalChainBar::mouseUp (const juce::MouseEvent&)
 {
+    const bool wasDragging = activeDragCell >= 0 || draggingRoot || globalGestureActive;
+
     activeDragCell = -1;
     draggingRoot = false;
+    globalGestureBaselineCaptured = false;
     endGlobalGesture();
+
+    if (wasDragging)
+        processor.pendingEndGesture.store (true, std::memory_order_release);
 }
 
 void SignalChainBar::mouseDoubleClick (const juce::MouseEvent& e)

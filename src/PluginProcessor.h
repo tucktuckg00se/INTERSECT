@@ -173,6 +173,10 @@ public:
     };
 
     void pushCommand (Command cmd);
+    bool enqueueUiUndoSnapshot();
+
+    std::atomic<bool> pendingEndGesture { false };
+
     void loadFileAsync (const juce::File& file);
     void relinkFileAsync (const juce::File& file);
 
@@ -399,6 +403,10 @@ private:
     double currentSampleRate = 44100.0;
     bool gestureSnapshotCaptured = false;
     int blocksSinceGestureActivity = 0;
+    // UI-thread undo snapshot queue for direct APVTS writes
+    static constexpr int kUiUndoFifoSize = 4;
+    std::array<UndoManager::Snapshot, kUiUndoFifoSize> uiUndoBuffer {};
+    juce::AbstractFifo uiUndoFifo { kUiUndoFifoSize };
 
     juce::ThreadPool fileLoadPool { 1 };
     std::atomic<int> nextLoadToken { 0 };

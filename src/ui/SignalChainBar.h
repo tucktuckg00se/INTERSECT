@@ -185,6 +185,7 @@ private:
     float dragStartInteractionValue = 0.0f;
     juce::String activeGlobalParamId;
     bool globalGestureActive = false;
+    bool globalGestureBaselineCaptured = false;
 
     juce::Rectangle<int> contextBounds;
     juce::Rectangle<int> contextInfoBounds;

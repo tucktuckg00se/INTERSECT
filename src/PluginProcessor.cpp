@@ -473,8 +473,35 @@ ParamUndoState IntersectProcessor::captureParamUndoState() const
     state.defaultFilterEnvRelease = load (filterEnvReleaseParam, state.defaultFilterEnvRelease);
     state.defaultFilterEnvAmount = load (filterEnvAmountParam, state.defaultFilterEnvAmount);
     state.maxVoices = load (maxVoicesParam, state.maxVoices);
-    state.uiScale = load (uiScaleParam, state.uiScale);
     return state;
+}
+
+bool IntersectProcessor::enqueueUiUndoSnapshot()
+{
+    // Message thread only — builds a pre-change snapshot from the latest published
+    // UI state and queues it for the audio thread to push into undoMgr.
+    // Returns false if the FIFO was full (snapshot dropped).
+    const auto& ui = getUiSliceSnapshot();
+
+    UndoManager::Snapshot snap;
+    for (int i = 0; i < SliceManager::kMaxSlices; ++i)
+        snap.slices[(size_t) i] = ui.slices[(size_t) i];
+    snap.numSlices = ui.numSlices;
+    snap.selectedSlice = ui.selectedSlice;
+    snap.rootNote = ui.rootNote;
+    snap.params = captureParamUndoState();
+    snap.midiSelectsSlice = midiSelectsSlice.load (std::memory_order_relaxed);
+    snap.snapToZeroCrossing = snapToZeroCrossing.load (std::memory_order_relaxed);
+
+    const auto scope = uiUndoFifo.write (1);
+    if (scope.blockSize1 > 0)
+        uiUndoBuffer[(size_t) scope.startIndex1] = std::move (snap);
+    else if (scope.blockSize2 > 0)
+        uiUndoBuffer[(size_t) scope.startIndex2] = std::move (snap);
+    else
+        return false; // FIFO full — caller should not latch baseline flag
+
+    return true;
 }
 
 void IntersectProcessor::applyParamUndoState (const ParamUndoState& state)
@@ -517,7 +544,6 @@ void IntersectProcessor::applyParamUndoState (const ParamUndoState& state)
     apply (ParamIds::defaultFilterEnvRelease, state.defaultFilterEnvRelease);
     apply (ParamIds::defaultFilterEnvAmount, state.defaultFilterEnvAmount);
     apply (ParamIds::maxVoices, state.maxVoices);
-    apply (ParamIds::uiScale, state.uiScale);
 }
 
 bool IntersectProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -995,6 +1021,12 @@ void IntersectProcessor::drainCommands()
 
     drainCoalescedCommands (handledAny);
 
+    if (pendingEndGesture.exchange (false, std::memory_order_acq_rel))
+    {
+        gestureSnapshotCaptured = false;
+        blocksSinceGestureActivity = 0;
+    }
+
     if (handledAny)
         uiSnapshotDirty.store (true, std::memory_order_release);
 
@@ -1093,13 +1125,13 @@ void IntersectProcessor::handleCommand (const Command& cmd)
     switch (cmd.type)
     {
         case CmdBeginGesture:
-            if (! gestureSnapshotCaptured)
-                captureSnapshot();
+            captureSnapshot();
             gestureSnapshotCaptured = true;
             blocksSinceGestureActivity = 0;
             break;
 
         case CmdSetSliceParam:
+        case CmdSetRootNote:
             if (! gestureSnapshotCaptured)
                 captureSnapshot();
             gestureSnapshotCaptured = true;
@@ -1122,9 +1154,7 @@ void IntersectProcessor::handleCommand (const Command& cmd)
             break;
 
         default:
-            // Leave param gesture mode after idle/non-param commands.
-            if (cmd.type != CmdSetSliceParam)
-                gestureSnapshotCaptured = false;
+            gestureSnapshotCaptured = false;
             break;
     }
 
@@ -2008,6 +2038,15 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     if (loadStateChanged)
         updateHostDisplay (ChangeDetails().withNonParameterStateChanged (true));
 
+    // Drain UI-thread undo snapshots before command handling
+    {
+        const auto uiScope = uiUndoFifo.read (uiUndoFifo.getNumReady());
+        for (int i = 0; i < uiScope.blockSize1; ++i)
+            undoMgr.push (uiUndoBuffer[(size_t) (uiScope.startIndex1 + i)]);
+        for (int i = 0; i < uiScope.blockSize2; ++i)
+            undoMgr.push (uiUndoBuffer[(size_t) (uiScope.startIndex2 + i)]);
+    }
+
     drainCommands();
     applyLiveDragBoundsToSlice();
 
@@ -2024,7 +2063,10 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     else if (gestureSnapshotCaptured)
     {
         ++blocksSinceGestureActivity;
-        if (blocksSinceGestureActivity > 2)
+        const int gestureTimeoutBlocks =
+            juce::jmax (3, (int) std::ceil (0.5 * currentSampleRate
+                                            / juce::jmax (1, buffer.getNumSamples())));
+        if (blocksSinceGestureActivity > gestureTimeoutBlocks)
             gestureSnapshotCaptured = false;
     }
 
