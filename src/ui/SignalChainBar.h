@@ -105,6 +105,7 @@ private:
         juce::Rectangle<int> headerBounds;
         juce::Rectangle<int> bodyBounds;
         int overrideCount = 0;
+        float referenceWidth = 0.0f;
     };
 
     struct LayoutInput
@@ -134,9 +135,11 @@ private:
                               const std::pair<juce::Rectangle<int>, juce::Rectangle<int>>& rows,
                               const ModuleLayout& moduleLayout);
     void rebuildAmpModule (const LayoutInput& input,
-                           const std::pair<juce::Rectangle<int>, juce::Rectangle<int>>& rows);
+                           const std::pair<juce::Rectangle<int>, juce::Rectangle<int>>& rows,
+                           float referenceWidth);
     void rebuildOutputModule (const LayoutInput& input,
-                              const std::pair<juce::Rectangle<int>, juce::Rectangle<int>>& rows);
+                              const std::pair<juce::Rectangle<int>, juce::Rectangle<int>>& rows,
+                              float referenceWidth);
     void syncScopeFromSelection();
     bool isSliceScopeActive() const;
 

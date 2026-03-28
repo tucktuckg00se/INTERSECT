@@ -33,7 +33,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout ParamLayout::createLayout()
     params.push_back (std::make_unique<juce::AudioParameterChoice> (
         juce::ParameterID { ParamIds::defaultAlgorithm, 1 },
         "Sample Algorithm",
-        juce::StringArray { "Repitch", "Stretch", "Bungee" },
+        juce::StringArray { "Repitch", "Signalsmith", "Bungee" },
         0));
 
     // Sample Attack: 0..1000 ms, default 5ms

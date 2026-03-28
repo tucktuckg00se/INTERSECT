@@ -9,11 +9,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Filter drive asymmetry (ASYM) parameter — biases the drive waveshaper to add even-harmonic saturation for more tonal variety
 
 ### Changed
+- Stretch algorithm renamed to "Signalsmith" in the algorithm selector
+- Signal chain modules use consistent cell sizing and alignment across all rows
 - Auto Chop controls (SENS, MIN, DIV) now use drag-to-edit cells with double-click text entry
 - Transient detection uses spectral flux analysis — SENS controls detection threshold (0–100), MIN controls minimum slice length in ms
 - Action tooltips are shorter, and RESEQ now has a Shift+R shortcut
 
 ### Fixed
+- Filter row 2 cells no longer drift out of alignment with row 1
 - Filter key tracking now scales musically across the keyboard (previously over-tracked upward and under-tracked downward)
 - Filter resonance response is more evenly distributed across the knob range
 - Filter cutoff automation in the DAW now follows a logarithmic curve matching how we hear pitch

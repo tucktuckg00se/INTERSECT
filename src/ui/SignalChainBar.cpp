@@ -97,38 +97,52 @@ juce::Rectangle<int> toIntBounds (juce::Rectangle<float> bounds)
 
 constexpr float kBaseCellWidth = 46.0f;
 
+float rowNaturalWidth (std::initializer_list<RowCellSpec> specs)
+{
+    float w = 0.0f;
+    size_t index = 0;
+    for (const auto& spec : specs)
+    {
+        w += spec.weight * kBaseCellWidth + std::max (0.0f, spec.weight - 1.0f) * (float) kCellGap;
+        ++index;
+        if (index != specs.size() && spec.gapAfter > 0)
+            w += (float) spec.gapAfter;
+    }
+    return w;
+}
+
 std::vector<juce::Rectangle<int>> makeRowCells (juce::Rectangle<int> rowBounds,
-                                                std::initializer_list<RowCellSpec> specs)
+                                                std::initializer_list<RowCellSpec> specs,
+                                                float referenceWidth = 0.0f)
 {
     std::vector<juce::Rectangle<int>> rects;
     if (specs.size() == 0)
         return rects;
 
-    juce::FlexBox row;
-    row.flexDirection = juce::FlexBox::Direction::row;
-    row.flexWrap = juce::FlexBox::Wrap::noWrap;
-    row.alignItems = juce::FlexBox::AlignItems::stretch;
-    row.justifyContent = juce::FlexBox::JustifyContent::flexStart;
+    const float natWidth = rowNaturalWidth (specs);
+    const float gridWidth = std::max (natWidth, referenceWidth);
+    const float available = (float) rowBounds.getWidth();
+    const float scale = (gridWidth > 0.0f && available < gridWidth)
+                      ? available / gridWidth : 1.0f;
 
-    std::vector<int> cellIndices;
-    cellIndices.reserve (specs.size());
+    float pos = 0.0f;
     size_t index = 0;
     for (const auto& spec : specs)
     {
-        cellIndices.push_back (row.items.size());
-        auto item = juce::FlexItem().withWidth (spec.weight * kBaseCellWidth).withMinWidth (14.0f);
-        item.flexShrink = 1.0f;
-        row.items.add (item);
+        const float cellWidth = spec.weight * kBaseCellWidth
+                              + std::max (0.0f, spec.weight - 1.0f) * (float) kCellGap;
+
+        const int x = rowBounds.getX() + juce::roundToInt (pos * scale);
+        const int xEnd = rowBounds.getX() + juce::roundToInt ((pos + cellWidth) * scale);
+        const int w = std::max (14, xEnd - x);
+
+        rects.push_back ({ x, rowBounds.getY(), w, rowBounds.getHeight() });
+
+        pos += cellWidth;
         ++index;
         if (index != specs.size() && spec.gapAfter > 0)
-            row.items.add (juce::FlexItem().withWidth ((float) spec.gapAfter));
+            pos += (float) spec.gapAfter;
     }
-
-    row.performLayout (rowBounds.toFloat());
-
-    for (int itemIndex : cellIndices)
-        rects.push_back (toIntBounds (row.items[(int) itemIndex].currentBounds));
-
     return rects;
 }
 
@@ -418,7 +432,40 @@ void SignalChainBar::rebuildModuleStrip (const LayoutInput& input,
                                          const juce::Rectangle<int>& stripBounds,
                                          std::array<ModuleLayout, 4>& targetModules)
 {
-    const std::array<float, 4> moduleWeights { 2.2f, 2.0f, 1.0f, 1.2f };
+    // Resolve algo for Playback row2 width computation
+    const auto& globals = input.globals;
+    const int algo = input.sliceScope && input.selectedSlice
+        ? resolveLockedValue (input.selectedSlice, kLockAlgorithm,
+              input.selectedSlice->algorithm, globals.algorithm).first
+        : globals.algorithm;
+
+    // Compute module weights from each module's widest row
+    const float pbRow1 = rowNaturalWidth ({ { 1.0f, kCellGap }, { 1.0f, kCellGap }, { 1.0f, kGroupGap }, { 1.0f, kCellGap }, { 1.0f, 0 } });
+    const float pbRow2 = algo == 1
+        ? rowNaturalWidth ({ { 2.0f, kCellGap }, { 1.0f, kGroupGap }, { 1.0f, kCellGap }, { 1.0f, 0 } })
+        : (algo == 2
+            ? rowNaturalWidth ({ { 2.0f, kCellGap }, { 1.0f, 0 } })
+            : rowNaturalWidth ({ { 2.0f, 0 } }));
+
+    const float filtRow1 = rowNaturalWidth ({ { 1.0f, kCellGap }, { 1.0f, kCellGap }, { 1.0f, kCellGap }, { 1.0f, kCellGap }, { 1.0f, kCellGap }, { 1.0f, 0 } });
+    const float filtRow2 = rowNaturalWidth ({ { 1.0f, kCellGap }, { 1.0f, kCellGap }, { 1.0f, kCellGap }, { 1.0f, kCellGap }, { 1.0f, kCellGap }, { 1.0f, 0 } });
+
+    const float ampRow1 = rowNaturalWidth ({ { 1.0f, kCellGap }, { 1.0f, kCellGap }, { 1.0f, 0 } });
+    const float ampRow2 = rowNaturalWidth ({ { 1.0f, kCellGap }, { 1.0f, 0 } });
+
+    const float outRow1 = rowNaturalWidth ({ { 1.0f, kCellGap }, { 1.0f, kCellGap }, { 1.0f, 0 } });
+    const float outRow2 = rowNaturalWidth ({ { 1.0f, kCellGap }, { 1.0f, kCellGap }, { 1.0f, 0 } });
+
+    const std::array<float, 4> moduleWeights {
+        std::max (pbRow1, pbRow2),
+        std::max (filtRow1, filtRow2),
+        std::max (ampRow1, ampRow2),
+        std::max (outRow1, outRow2)
+    };
+
+    for (int i = 0; i < 4; ++i)
+        targetModules[(size_t) i].referenceWidth = moduleWeights[(size_t) i];
+
     const std::array<juce::String, 4> names { "TIME/PITCH", "FILTER", "AMP", "PLAYBACK" };
     const std::array<juce::Colour, 4> colours {
         getTheme().color1,
@@ -529,8 +576,8 @@ void SignalChainBar::rebuildLayout()
         rebuildModuleStrip (globalInput, globalStripBounds, modules);
         rebuildPlaybackModule (globalInput, splitRows (modules[0].bodyBounds), modules[0]);
         rebuildFilterModule (globalInput, splitRows (modules[1].bodyBounds), modules[1]);
-        rebuildAmpModule (globalInput, splitRows (modules[2].bodyBounds));
-        rebuildOutputModule (globalInput, splitRows (modules[3].bodyBounds));
+        rebuildAmpModule (globalInput, splitRows (modules[2].bodyBounds), modules[2].referenceWidth);
+        rebuildOutputModule (globalInput, splitRows (modules[3].bodyBounds), modules[3].referenceWidth);
 
         // Build slice strip
         LayoutInput sliceInput = input;
@@ -542,8 +589,8 @@ void SignalChainBar::rebuildLayout()
 
         rebuildPlaybackModule (sliceInput, splitRows (sliceModules[0].bodyBounds), sliceModules[0]);
         rebuildFilterModule (sliceInput, splitRows (sliceModules[1].bodyBounds), sliceModules[1]);
-        rebuildAmpModule (sliceInput, splitRows (sliceModules[2].bodyBounds));
-        rebuildOutputModule (sliceInput, splitRows (sliceModules[3].bodyBounds));
+        rebuildAmpModule (sliceInput, splitRows (sliceModules[2].bodyBounds), sliceModules[2].referenceWidth);
+        rebuildOutputModule (sliceInput, splitRows (sliceModules[3].bodyBounds), sliceModules[3].referenceWidth);
 
         // Tag slice-strip cells (only when a valid slice exists for interaction)
         if (input.hasValidSlice)
@@ -569,8 +616,8 @@ void SignalChainBar::rebuildLayout()
 
         rebuildPlaybackModule (input, splitRows (modules[0].bodyBounds), modules[0]);
         rebuildFilterModule (input, splitRows (modules[1].bodyBounds), modules[1]);
-        rebuildAmpModule (input, splitRows (modules[2].bodyBounds));
-        rebuildOutputModule (input, splitRows (modules[3].bodyBounds));
+        rebuildAmpModule (input, splitRows (modules[2].bodyBounds), modules[2].referenceWidth);
+        rebuildOutputModule (input, splitRows (modules[3].bodyBounds), modules[3].referenceWidth);
     }
 }
 
@@ -789,11 +836,11 @@ void SignalChainBar::rebuildPlaybackModule (const LayoutInput& input,
 {
     const auto* selectedSlice = input.selectedSlice;
     const auto& globals = input.globals;
-    const auto algoNames = juce::StringArray { "Repitch", "Stretch", "Bungee" };
+    const auto algoNames = juce::StringArray { "Repitch", "Signalsmith", "Bungee" };
     const auto grainNames = juce::StringArray { "Fast", "Normal", "Smooth" };
     const auto row1 = makeRowCells (rows.first, {
-        { 1.0f, kCellGap }, { 0.92f, kCellGap }, { 0.9f, 0 }
-    });
+        { 1.0f, kCellGap }, { 1.0f, kCellGap }, { 1.0f, kGroupGap }, { 1.0f, kCellGap }, { 1.0f, 0 }
+    }, moduleLayout.referenceWidth);
 
     Cell setBpmCell;
     setBpmCell.kind = CellKind::SetBpm;
@@ -827,15 +874,15 @@ void SignalChainBar::rebuildPlaybackModule (const LayoutInput& input,
 
     const auto row2 = resolvedAlgo == 1
         ? makeRowCells (rows.second, {
-            { 1.45f, kGroupGap }, { 0.96f, kCellGap }, { 0.92f, kCellGap }, { 0.8f, kGroupGap }, { 1.04f, 0 }
-        })
+            { 2.0f, kCellGap }, { 1.0f, kGroupGap }, { 1.0f, kCellGap }, { 1.0f, 0 }
+        }, moduleLayout.referenceWidth)
         : (resolvedAlgo == 2
             ? makeRowCells (rows.second, {
-                { 1.46f, kGroupGap }, { 1.06f, kGroupGap }, { 1.06f, 0 }
-            })
+                { 2.0f, kCellGap }, { 1.0f, 0 }
+            }, moduleLayout.referenceWidth)
             : makeRowCells (rows.second, {
-                { 1.46f, kGroupGap }, { 1.18f, 0 }
-            }));
+                { 2.0f, 0 }
+            }, moduleLayout.referenceWidth));
 
     const bool repitchStretch = resolvedAlgo == 0 && resolvedStretch;
     const float dawBpm = processor.dawBpm.load (std::memory_order_relaxed);
@@ -900,6 +947,23 @@ void SignalChainBar::rebuildPlaybackModule (const LayoutInput& input,
     cell.bounds = row1[2];
     cell.label = "TUNE";
     cell.valueText = formatSigned (displayCents, 1, "ct");
+    cell.drawTrailingDivider = true;
+    addParamCell (cell);
+
+    cell = {};
+    cell.module = Module::Playback;
+    cell.globalParamId = ParamIds::defaultStretchEnabled;
+    cell.fieldId = IntersectProcessor::FieldStretchEnabled;
+    cell.lockBit = kLockStretch;
+    cell.currentValue = resolvedStretch ? 1.0f : 0.0f;
+    cell.minVal = 0.0f;
+    cell.maxVal = 1.0f;
+    cell.step = 1.0f;
+    cell.isBoolean = true;
+    cell.isLocked = stretchLocked;
+    cell.bounds = row1[3];
+    cell.label = "STRETCH";
+    cell.valueText = formatBool (resolvedStretch);
     addParamCell (cell);
 
     cell = {};
@@ -1009,23 +1073,6 @@ void SignalChainBar::rebuildPlaybackModule (const LayoutInput& input,
         addParamCell (cell);
     }
 
-    const int stretchCellIndex = resolvedAlgo == 1 ? 4 : (resolvedAlgo == 2 ? 2 : 1);
-
-    cell = {};
-    cell.module = Module::Playback;
-    cell.globalParamId = ParamIds::defaultStretchEnabled;
-    cell.fieldId = IntersectProcessor::FieldStretchEnabled;
-    cell.lockBit = kLockStretch;
-    cell.currentValue = resolvedStretch ? 1.0f : 0.0f;
-    cell.minVal = 0.0f;
-    cell.maxVal = 1.0f;
-    cell.step = 1.0f;
-    cell.isBoolean = true;
-    cell.isLocked = stretchLocked;
-    cell.bounds = row2[(size_t) stretchCellIndex];
-    cell.label = "STRETCH";
-    cell.valueText = formatBool (resolvedStretch);
-    addParamCell (cell);
 }
 
 void SignalChainBar::rebuildFilterModule (const LayoutInput& input,
@@ -1037,11 +1084,11 @@ void SignalChainBar::rebuildFilterModule (const LayoutInput& input,
     const auto filterTypeNames = juce::StringArray { "LP", "HP", "BP", "NT" };
     const auto filterSlopeNames = juce::StringArray { "12dB", "24dB" };
     const auto row1 = makeRowCells (rows.first, {
-        { 0.82f, kCellGap }, { 0.9f, kCellGap }, { 1.18f, kCellGap }, { 0.96f, kCellGap }, { 0.94f, kCellGap }, { 0.84f, 0 }
-    });
+        { 1.0f, kCellGap }, { 1.0f, kCellGap }, { 1.0f, kCellGap }, { 1.0f, kCellGap }, { 1.0f, kCellGap }, { 1.0f, 0 }
+    }, moduleLayout.referenceWidth);
     const auto row2 = makeRowCells (rows.second, {
-        { 0.84f, kCellGap }, { 0.88f, kCellGap }, { 0.88f, kCellGap }, { 0.78f, kCellGap }, { 0.88f, kGroupGap }, { 1.0f, 0 }
-    });
+        { 1.0f, kCellGap }, { 1.0f, kCellGap }, { 1.0f, kCellGap }, { 1.0f, kCellGap }, { 1.0f, kCellGap }, { 1.0f, 0 }
+    }, moduleLayout.referenceWidth);
 
     const auto [filterEnabled, filterEnabledLocked] = input.sliceScope
         ? resolveLockedValue (selectedSlice, kLockFilterEnabled, selectedSlice->filterEnabled, globals.filterEnabled)
@@ -1178,41 +1225,42 @@ void SignalChainBar::rebuildFilterModule (const LayoutInput& input,
     addFilterCell (row2[0], "KEY", formatPercent (filterKey, 1),
                    ParamIds::defaultFilterKeyTrack, IntersectProcessor::FieldFilterKeyTrack, kLockFilterKeyTrack,
                    filterKey, 0.0f, 100.0f, 0.1f, 0.5f, 1, false, 0, filterKeyLocked, DragMapping::Linear, false, 1.0f, true);
-    addFilterCell (row2[1], "ATK", formatMs (filterAtkDisplayValue),
+    addFilterCell (row2[1], "AMT", formatSigned (filterAmt, 1, "st"),
+                   ParamIds::defaultFilterEnvAmount, IntersectProcessor::FieldFilterEnvAmount, kLockFilterEnvAmount,
+                   filterAmt, -96.0f, 96.0f, 0.1f, 0.2f, 1, false, 0, filterAmtLocked, DragMapping::Linear, false, 1.0f, true);
+    addFilterCell (row2[2], "ATK", formatMs (filterAtkDisplayValue),
                    ParamIds::defaultFilterEnvAttack, IntersectProcessor::FieldFilterEnvAttack, kLockFilterEnvAttack,
                    input.sliceScope ? filterAtkSec : filterAtkDisplayValue,
                    0.0f, input.sliceScope ? 10.0f : 10000.0f, input.sliceScope ? 0.001f : 1.0f,
                    1.0f, 0, false, 0, filterAtkLocked, DragMapping::Linear, false, input.sliceScope ? 1000.0f : 1.0f, true);
-    addFilterCell (row2[2], "DEC", formatMs (filterDecDisplayValue),
+    addFilterCell (row2[3], "DEC", formatMs (filterDecDisplayValue),
                    ParamIds::defaultFilterEnvDecay, IntersectProcessor::FieldFilterEnvDecay, kLockFilterEnvDecay,
                    input.sliceScope ? filterDecSec : filterDecDisplayValue,
                    0.0f, input.sliceScope ? 10.0f : 10000.0f, input.sliceScope ? 0.001f : 1.0f,
                    1.0f, 0, false, 0, filterDecLocked, DragMapping::Linear, false, input.sliceScope ? 1000.0f : 1.0f, true);
-    addFilterCell (row2[3], "SUS", formatPercent (filterSusDisplayValue, 1),
+    addFilterCell (row2[4], "SUS", formatPercent (filterSusDisplayValue, 1),
                    ParamIds::defaultFilterEnvSustain, IntersectProcessor::FieldFilterEnvSustain, kLockFilterEnvSustain,
                    filterSusValue, 0.0f, input.sliceScope ? 1.0f : 100.0f, input.sliceScope ? 0.001f : 0.1f,
                    0.5f, 1, false, 0, filterSusLocked, DragMapping::Linear, false, input.sliceScope ? 100.0f : 1.0f, true);
-    addFilterCell (row2[4], "REL", formatMs (filterRelDisplayValue),
+    addFilterCell (row2[5], "REL", formatMs (filterRelDisplayValue),
                    ParamIds::defaultFilterEnvRelease, IntersectProcessor::FieldFilterEnvRelease, kLockFilterEnvRelease,
                    input.sliceScope ? filterRelSec : filterRelDisplayValue,
                    0.0f, input.sliceScope ? 10.0f : 10000.0f, input.sliceScope ? 0.001f : 1.0f,
-                   1.0f, 0, false, 0, filterRelLocked, DragMapping::Linear, false, input.sliceScope ? 1000.0f : 1.0f, true);
-    addFilterCell (row2[5], "AMT", formatSigned (filterAmt, 1, "st"),
-                   ParamIds::defaultFilterEnvAmount, IntersectProcessor::FieldFilterEnvAmount, kLockFilterEnvAmount,
-                   filterAmt, -96.0f, 96.0f, 0.1f, 0.2f, 1, false, 0, filterAmtLocked);
+                   1.0f, 0, false, 0, filterRelLocked, DragMapping::Linear, false, input.sliceScope ? 1000.0f : 1.0f);
 }
 
 void SignalChainBar::rebuildAmpModule (const LayoutInput& input,
-                                       const std::pair<juce::Rectangle<int>, juce::Rectangle<int>>& rows)
+                                       const std::pair<juce::Rectangle<int>, juce::Rectangle<int>>& rows,
+                                       float referenceWidth)
 {
     const auto* selectedSlice = input.selectedSlice;
     const auto& globals = input.globals;
     const auto row1 = makeRowCells (rows.first, {
-        { 1.0f, kCellGap }, { 1.0f, kCellGap }, { 0.92f, 0 }
-    });
+        { 1.0f, kCellGap }, { 1.0f, kCellGap }, { 1.0f, 0 }
+    }, referenceWidth);
     const auto row2 = makeRowCells (rows.second, {
-        { 1.02f, kCellGap }, { 0.82f, 0 }
-    });
+        { 1.0f, kCellGap }, { 1.0f, 0 }
+    }, referenceWidth);
 
     const auto [attackSec, attackLocked] = input.sliceScope
         ? resolveLockedValue (selectedSlice, kLockAttack, selectedSlice->attackSec, globals.attackSec)
@@ -1299,17 +1347,18 @@ void SignalChainBar::rebuildAmpModule (const LayoutInput& input,
 }
 
 void SignalChainBar::rebuildOutputModule (const LayoutInput& input,
-                                          const std::pair<juce::Rectangle<int>, juce::Rectangle<int>>& rows)
+                                          const std::pair<juce::Rectangle<int>, juce::Rectangle<int>>& rows,
+                                          float referenceWidth)
 {
     const auto* selectedSlice = input.selectedSlice;
     const auto& globals = input.globals;
     const auto loopNames = juce::StringArray { "Off", "Loop", "PP" };
     const auto row1 = makeRowCells (rows.first, {
-        { 0.72f, kCellGap }, { 0.86f, kCellGap }, { 0.78f, 0 }
-    });
+        { 1.0f, kCellGap }, { 1.0f, kCellGap }, { 1.0f, 0 }
+    }, referenceWidth);
     const auto row2 = makeRowCells (rows.second, {
-        { 0.78f, kCellGap }, { 1.0f, kCellGap }, { 0.96f, 0 }
-    });
+        { 1.0f, kCellGap }, { 1.0f, kCellGap }, { 1.0f, 0 }
+    }, referenceWidth);
 
     const auto [reverse, reverseLocked] = input.sliceScope
         ? resolveLockedValue (selectedSlice, kLockReverse, selectedSlice->reverse, globals.reverse)
