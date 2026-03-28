@@ -11,6 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Action tooltips are shorter, and RESEQ now has a Shift+R shortcut
 
 ### Fixed
+- Slice numbers no longer drift outside their region when zoomed out with many slices
 - Signal chain background color is now consistent between global and slice tabs
 - Auto Chop transient markers now land at the true onset instead of slightly after
 - Undo now restores the pre-drag value in one step instead of stepping through intermediate values
