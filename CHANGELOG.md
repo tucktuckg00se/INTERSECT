@@ -5,6 +5,11 @@ All notable changes to INTERSECT will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
+### Changed
+- Auto Chop controls (SENS, MIN, DIV) now use drag-to-edit cells with double-click text entry
+- Transient detection uses spectral flux analysis — SENS controls detection threshold (0–100), MIN controls minimum slice length in ms
+- Action tooltips are shorter, and RESEQ now has a Shift+R shortcut
+
 ### Fixed
 - Undo now restores the pre-drag value in one step instead of stepping through intermediate values
 - Global parameter changes (BPM, pitch, filter, etc.) are now undoable
@@ -13,9 +18,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Removed
 - Removed unused SliceControlBar and SettingsPanel source files
-
-### Changed
-- Action tooltips are shorter, and RESEQ now has a Shift+R shortcut.
 
 ## [0.10.0] - 2026-03-20
 ### Added

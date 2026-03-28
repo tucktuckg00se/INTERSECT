@@ -6,35 +6,15 @@
 #include <algorithm>
 
 AutoChopPanel::AutoChopPanel (IntersectProcessor& p, WaveformView& wv)
-    : processor (p), waveformView (wv)
+    : processor (p),
+      waveformView (wv),
+      sensCell { {}, "SENS", 50.0f, 0.0f, 100.0f, 1.0f, "" },
+      minCell  { {}, "MIN",  100.0f, 20.0f, 500.0f, 1.0f, "ms" },
+      divCell  { {}, "DIV",  16.0f, 2.0f, 128.0f, 1.0f, "" }
 {
-    addAndMakeVisible (sensitivitySlider);
-    addAndMakeVisible (divisionsEditor);
     addAndMakeVisible (splitEqualBtn);
     addAndMakeVisible (detectBtn);
     addAndMakeVisible (cancelBtn);
-
-    sensitivitySlider.setRange (0.0, 100.0, 1.0);
-    sensitivitySlider.setValue (50.0, juce::dontSendNotification);
-    sensitivitySlider.setSliderStyle (juce::Slider::LinearHorizontal);
-    sensitivitySlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 32, 20);
-    sensitivitySlider.setColour (juce::Slider::trackColourId, getTheme().accent);
-    sensitivitySlider.setColour (juce::Slider::thumbColourId, getTheme().text2);
-    sensitivitySlider.setColour (juce::Slider::backgroundColourId, getTheme().surface2);
-    sensitivitySlider.setColour (juce::Slider::textBoxTextColourId, getTheme().text2);
-    sensitivitySlider.setColour (juce::Slider::textBoxBackgroundColourId, getTheme().surface2.brighter (0.15f));
-    sensitivitySlider.setColour (juce::Slider::textBoxOutlineColourId, getTheme().surface5);
-    sensitivitySlider.setTooltip ("Sensitivity");
-
-    sensitivitySlider.onValueChange = [this] { updatePreview(); };
-
-    divisionsEditor.setText ("16");
-    divisionsEditor.setColour (juce::TextEditor::backgroundColourId, getTheme().surface2.brighter (0.15f));
-    divisionsEditor.setColour (juce::TextEditor::textColourId, getTheme().text2);
-    divisionsEditor.setColour (juce::TextEditor::outlineColourId, getTheme().surface5);
-    divisionsEditor.setFont (IntersectLookAndFeel::makeFont (13.0f));
-    divisionsEditor.setJustification (juce::Justification::centred);
-    divisionsEditor.setTooltip ("Split count");
 
     for (auto* btn : { &splitEqualBtn, &detectBtn, &cancelBtn })
     {
@@ -48,7 +28,7 @@ AutoChopPanel::AutoChopPanel (IntersectProcessor& p, WaveformView& wv)
     cancelBtn.setTooltip ("Close auto chop");
 
     splitEqualBtn.onClick = [this] {
-        int count = divisionsEditor.getText().getIntValue();
+        int count = (int) divCell.value;
         if (count >= 2 && count <= 128)
         {
             IntersectProcessor::Command cmd;
@@ -68,6 +48,7 @@ AutoChopPanel::AutoChopPanel (IntersectProcessor& p, WaveformView& wv)
         {
             IntersectProcessor::Command cmd;
             cmd.type = IntersectProcessor::CmdTransientChop;
+            cmd.sliceIdx = processor.sliceManager.selectedSlice.load();
             cmd.numPositions = 0;
             for (int pos : waveformView.transientPreviewPositions)
                 if (cmd.numPositions < (int) cmd.positions.size())
@@ -87,12 +68,12 @@ AutoChopPanel::AutoChopPanel (IntersectProcessor& p, WaveformView& wv)
             parent->removeChildComponent (this);
     };
 
-    // Generate initial preview
     updatePreview();
 }
 
 AutoChopPanel::~AutoChopPanel()
 {
+    dismissTextEditor();
     waveformView.transientPreviewPositions.clear();
     waveformView.repaint();
 }
@@ -105,11 +86,32 @@ void AutoChopPanel::paint (juce::Graphics& g)
     g.setColour (getTheme().surface5);
     g.drawRect (getLocalBounds(), 1);
 
-    // Labels drawn inline before their controls
-    g.setFont (IntersectLookAndFeel::makeFont (11.0f));
-    g.setColour (getTheme().text2.withAlpha (0.6f));
-    g.drawText ("SENS", 4, 0, 30, getHeight(), juce::Justification::centredLeft);
-    g.drawText ("DIV", divisionsEditor.getX() - 26, 0, 24, getHeight(), juce::Justification::centredLeft);
+    // Draw each param cell
+    auto drawCell = [&] (const ParamCell& cell)
+    {
+        // Background
+        g.setColour (getTheme().surface3);
+        g.fillRoundedRectangle (cell.bounds.toFloat(), 3.0f);
+
+        auto content = cell.bounds.reduced (4, 0);
+
+        // Label
+        g.setFont (IntersectLookAndFeel::makeFont (9.0f, true));
+        g.setColour (getTheme().text2.withAlpha (0.6f));
+        g.drawText (cell.label, content.getX(), content.getY() + 1,
+                    content.getWidth(), 10, juce::Justification::centredLeft);
+
+        // Value
+        juce::String valueText = juce::String ((int) cell.value) + cell.suffix;
+        g.setFont (IntersectLookAndFeel::makeFont (11.0f));
+        g.setColour (getTheme().text1);
+        g.drawText (valueText, content.getX(), content.getY() + 11,
+                    content.getWidth(), content.getHeight() - 12, juce::Justification::centredLeft);
+    };
+
+    drawCell (sensCell);
+    drawCell (minCell);
+    drawCell (divCell);
 }
 
 void AutoChopPanel::resized()
@@ -119,42 +121,178 @@ void AutoChopPanel::resized()
     int btnH = h - pad * 2;
     int gap = 6;
 
-    // Layout: SENS [===slider===] [SPLIT TRANSIENTS] | DIV [16] [SPLIT EQUAL] | [CANCEL]
-    // Right-to-left: place CANCEL, then work left-to-right for the rest
-
     int cancelW = 60;
     cancelBtn.setBounds (getWidth() - cancelW - pad, pad, cancelW, btnH);
 
-    // Left-to-right
     int x = pad;
 
-    // SENS label (drawn in paint at x=4, 32px wide)
-    x += 34;
+    // SENS cell
+    sensCell.bounds = { x, pad, 52, btnH };
+    x += 52 + gap;
 
-    // Sensitivity slider
-    int sliderW = 200;
-    sensitivitySlider.setBounds (x, pad, sliderW, btnH);
-    x += sliderW + gap;
+    // MIN cell
+    minCell.bounds = { x, pad, 56, btnH };
+    x += 56 + gap;
 
     // SPLIT TRANSIENTS button
     int transBtnW = 148;
     detectBtn.setBounds (x, pad, transBtnW, btnH);
-    x += transBtnW + gap;
+    x += transBtnW + gap + 16;
 
-    // Separator gap between the two sections
-    x += 16;
-
-    // DIV label (drawn in paint, 26px)
-    x += 26;
-
-    // Divisions editor
-    int divW = 38;
-    divisionsEditor.setBounds (x, pad, divW, btnH);
-    x += divW + gap;
+    // DIV cell
+    divCell.bounds = { x, pad, 48, btnH };
+    x += 48 + gap;
 
     // SPLIT EQUAL button
     int equalBtnW = 96;
     splitEqualBtn.setBounds (x, pad, equalBtnW, btnH);
+}
+
+int AutoChopPanel::hitTestCell (juce::Point<int> pos) const
+{
+    if (sensCell.bounds.contains (pos)) return 0;
+    if (minCell.bounds.contains (pos))  return 1;
+    if (divCell.bounds.contains (pos))  return 2;
+    return -1;
+}
+
+void AutoChopPanel::mouseDown (const juce::MouseEvent& e)
+{
+    dismissTextEditor();
+    activeDragCell = -1;
+
+    int idx = hitTestCell (e.getPosition());
+    if (idx < 0)
+        return;
+
+    activeDragCell = idx;
+    dragStartY = e.y;
+
+    ParamCell* cell = (idx == 0) ? &sensCell : (idx == 1) ? &minCell : &divCell;
+    dragStartValue = cell->value;
+}
+
+void AutoChopPanel::mouseDrag (const juce::MouseEvent& e)
+{
+    if (activeDragCell < 0)
+        return;
+
+    ParamCell* cell = (activeDragCell == 0) ? &sensCell
+                    : (activeDragCell == 1) ? &minCell
+                                            : &divCell;
+
+    float deltaY = (float) (dragStartY - e.y);
+    float range = cell->maxVal - cell->minVal;
+    float sensitivity = e.mods.isShiftDown() ? cell->step : (range / 200.0f);
+
+    float newValue = dragStartValue + deltaY * sensitivity;
+    newValue = juce::jlimit (cell->minVal, cell->maxVal, std::round (newValue / cell->step) * cell->step);
+    cell->value = newValue;
+
+    // Live preview for SENS and MIN
+    if (activeDragCell <= 1)
+        updatePreview();
+
+    repaint();
+}
+
+void AutoChopPanel::mouseUp (const juce::MouseEvent&)
+{
+    activeDragCell = -1;
+}
+
+void AutoChopPanel::mouseDoubleClick (const juce::MouseEvent& e)
+{
+    int idx = hitTestCell (e.getPosition());
+    if (idx < 0)
+        return;
+
+    ParamCell* cell = (idx == 0) ? &sensCell : (idx == 1) ? &minCell : &divCell;
+    showTextEditor (*cell);
+}
+
+void AutoChopPanel::showTextEditor (ParamCell& cell)
+{
+    dismissTextEditor();
+    textEditor = std::make_unique<juce::TextEditor>();
+    addAndMakeVisible (*textEditor);
+
+    auto valueBounds = cell.bounds.reduced (4, 0).withTrimmedTop (11).expanded (1, 1);
+    textEditor->setBounds (valueBounds);
+    textEditor->setFont (IntersectLookAndFeel::makeFont (11.0f));
+    textEditor->setColour (juce::TextEditor::backgroundColourId, getTheme().surface2.brighter (0.12f).withAlpha (0.98f));
+    textEditor->setColour (juce::TextEditor::textColourId, getTheme().text1.brighter (0.3f));
+    textEditor->setColour (juce::TextEditor::outlineColourId, getTheme().surface5.withAlpha (0.85f));
+    textEditor->setColour (juce::TextEditor::focusedOutlineColourId, getTheme().accent.withAlpha (0.9f));
+    textEditor->setColour (juce::TextEditor::highlightColourId, getTheme().accent.withAlpha (0.25f));
+    textEditor->setJustification (juce::Justification::centredLeft);
+    textEditor->setBorder (juce::BorderSize<int> (1, 4, 1, 4));
+    textEditor->setIndents (0, 0);
+    textEditor->setEscapeAndReturnKeysConsumed (true);
+    textEditor->setText (juce::String ((int) cell.value), false);
+    textEditor->selectAll();
+    textEditor->grabKeyboardFocus();
+
+    juce::Component::SafePointer<AutoChopPanel> safeThis (this);
+    ParamCell* cellPtr = &cell;
+
+    auto dismissEditorLater = [safeThis]
+    {
+        juce::MessageManager::callAsync ([safeThis]
+        {
+            if (safeThis == nullptr)
+                return;
+            safeThis->dismissTextEditor();
+            safeThis->repaint();
+        });
+    };
+
+    textEditor->onReturnKey = [safeThis, cellPtr]
+    {
+        if (safeThis == nullptr || safeThis->textEditor == nullptr)
+            return;
+
+        float newValue = safeThis->textEditor->getText().getFloatValue();
+        newValue = juce::jlimit (cellPtr->minVal, cellPtr->maxVal,
+                                 std::round (newValue / cellPtr->step) * cellPtr->step);
+
+        juce::MessageManager::callAsync ([safeThis, cellPtr, newValue]
+        {
+            if (safeThis == nullptr)
+                return;
+            safeThis->dismissTextEditor();
+            cellPtr->value = newValue;
+            // Update preview for SENS/MIN cells
+            if (cellPtr == &safeThis->sensCell || cellPtr == &safeThis->minCell)
+                safeThis->updatePreview();
+            safeThis->repaint();
+        });
+    };
+
+    textEditor->onEscapeKey = [safeThis, dismissEditorLater]
+    {
+        if (safeThis == nullptr)
+            return;
+        dismissEditorLater();
+    };
+
+    textEditor->onFocusLost = [safeThis, dismissEditorLater]
+    {
+        if (safeThis == nullptr)
+            return;
+        dismissEditorLater();
+    };
+}
+
+void AutoChopPanel::dismissTextEditor()
+{
+    if (textEditor == nullptr)
+        return;
+
+    textEditor->onReturnKey = nullptr;
+    textEditor->onEscapeKey = nullptr;
+    textEditor->onFocusLost = nullptr;
+    textEditor.reset();
 }
 
 void AutoChopPanel::updatePreview()
@@ -170,18 +308,42 @@ void AutoChopPanel::updatePreview()
     }
 
     const auto& s = ui.slices[(size_t) sel];
-    float sens = (float) sensitivitySlider.getValue() / 100.0f;
+    float sens = sensCell.value * 0.1f;
+    float minMs = minCell.value;
+
     const double sampleRate = sampleSnap->decodedSampleRate > 0.0 ? sampleSnap->decodedSampleRate : 44100.0;
 
     auto positions = AudioAnalysis::detectTransients (
-        sampleSnap->buffer, s.startSample, s.endSample, sens, sampleRate);
+        sampleSnap->buffer, s.startSample, s.endSample, sens, sampleRate, minMs);
 
     if (processor.snapToZeroCrossing.load())
     {
+        int sliceStart = s.startSample;
+        int sliceEnd = s.endSample;
         std::transform (positions.begin(), positions.end(), positions.begin(),
-                        [sampleSnap] (int p) { return AudioAnalysis::findNearestZeroCrossing (
-                            sampleSnap->buffer, p); });
+                        [sampleSnap, sliceStart, sliceEnd] (int p) {
+                            int snapped = AudioAnalysis::findNearestZeroCrossing (
+                                sampleSnap->buffer, p);
+                            return juce::jlimit (sliceStart + 1, sliceEnd - 1, snapped);
+                        });
+
+        std::sort (positions.begin(), positions.end());
+        int minDist = (int) std::round (sampleRate * (double) minMs / 1000.0);
+        std::vector<int> sanitized;
+        int lastPos = sliceStart - minDist;
+        for (int p : positions)
+        {
+            if (p - lastPos >= minDist)
+            {
+                sanitized.push_back (p);
+                lastPos = p;
+            }
+        }
+        positions = std::move (sanitized);
     }
+
+    if (positions.size() > 128)
+        positions.resize (128);
 
     waveformView.transientPreviewPositions = std::move (positions);
     waveformView.repaint();

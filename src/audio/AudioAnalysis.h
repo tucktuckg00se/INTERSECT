@@ -1,9 +1,11 @@
 #pragma once
 #include <juce_audio_basics/juce_audio_basics.h>
+#include <juce_dsp/juce_dsp.h>
 #include <vector>
 #include <cmath>
 #include <algorithm>
 #include <iterator>
+#include <numeric>
 
 namespace AudioAnalysis
 {
@@ -47,7 +49,8 @@ inline int findNearestZeroCrossing (const juce::AudioBuffer<float>& buffer, int 
 inline std::vector<int> detectTransients (const juce::AudioBuffer<float>& buffer,
                                            int start, int end,
                                            float sensitivity = 1.0f,
-                                           double sampleRate = 44100.0)
+                                           double sampleRate = 44100.0,
+                                           float minSliceLenMs = 100.0f)
 {
     std::vector<int> onsets;
 
@@ -58,77 +61,102 @@ inline std::vector<int> detectTransients (const juce::AudioBuffer<float>& buffer
     const float* L = buffer.getReadPointer (0);
     const float* R = buffer.getNumChannels() > 1 ? buffer.getReadPointer (1) : L;
 
-    constexpr int windowSize = 1024;
-    constexpr int hopSize = 256;
-    int minOnsetDist = (int) std::round (sampleRate * 0.1);  // 100ms
-    minOnsetDist = std::max (1, minOnsetDist);
-    constexpr int peakRadius = 3;       // local max must beat 3 neighbours each side
+    // --- STFT parameters ---
+    constexpr int fftOrder = 10;            // 2^10 = 1024
+    constexpr int fftSize = 1 << fftOrder;  // 1024
+    constexpr int hopSize = 256;            // ~5.8ms at 44.1kHz
+    constexpr int numBins = fftSize / 2 + 1; // 513 magnitude bins
+    constexpr int peakRadius = 3;
+    constexpr float delta = 1e-4f;          // noise floor for silence suppression
 
-    // Step 1: Compute RMS energy per window
-    std::vector<float> energy;
-    for (int pos = start; pos + windowSize <= end; pos += hopSize)
+    // Precompute Hann window
+    std::vector<float> hannWindow (fftSize);
+    for (int i = 0; i < fftSize; ++i)
+        hannWindow[(size_t) i] = 0.5f * (1.0f - std::cos (2.0f * juce::MathConstants<float>::pi * (float) i / (float) fftSize));
+
+    juce::dsp::FFT fft (fftOrder);
+
+    // --- Step 1: STFT and spectral flux ODF ---
+    // FFT work buffer: needs 2*fftSize floats for performRealOnlyForwardTransform
+    std::vector<float> fftData (2 * (size_t) fftSize, 0.0f);
+    std::vector<float> prevMag (numBins, 0.0f);
+    std::vector<float> currMag (numBins);
+    std::vector<float> odf;
+
+    for (int pos = start; pos + fftSize <= end; pos += hopSize)
     {
-        float sum = 0.0f;
-        for (int i = 0; i < windowSize; ++i)
+        // Fill FFT buffer with windowed mono signal
+        std::fill (fftData.begin(), fftData.end(), 0.0f);
+        for (int i = 0; i < fftSize; ++i)
         {
             int idx = pos + i;
-            float m = (L[idx] + R[idx]) * 0.5f;
-            sum += m * m;
+            float mono = (L[idx] + R[idx]) * 0.5f;
+            fftData[(size_t) i] = mono * hannWindow[(size_t) i];
         }
-        energy.push_back (std::sqrt (sum / windowSize));
+
+        fft.performRealOnlyForwardTransform (fftData.data());
+
+        // Compute magnitudes from interleaved real/imag pairs
+        for (int k = 0; k < numBins; ++k)
+        {
+            float re = fftData[(size_t) (2 * k)];
+            float im = fftData[(size_t) (2 * k + 1)];
+            currMag[(size_t) k] = std::sqrt (re * re + im * im);
+        }
+
+        // Half-wave rectified spectral flux: sum of positive magnitude increases
+        float flux = 0.0f;
+        for (int k = 0; k < numBins; ++k)
+        {
+            float diff = currMag[(size_t) k] - prevMag[(size_t) k];
+            if (diff > 0.0f)
+                flux += diff;
+        }
+
+        odf.push_back (flux);
+        std::swap (prevMag, currMag);
     }
 
-    if (energy.size() < 5)
+    if (odf.size() < 5)
         return onsets;
 
-    // Step 2: Compute onset detection function — ratio of energy increase
-    // Uses log-ratio: log(energy[i] / energy[i-1]) when energy rises
-    // This normalizes by current level, so a hit in a quiet section
-    // scores the same as a hit in a loud section.
-    std::vector<float> odf;
-    odf.push_back (0.0f);
-    for (size_t i = 1; i < energy.size(); ++i)
+    // --- Step 2: Adaptive threshold — moving median × multiplier ---
+    float lambda = std::max (0.1f, sensitivity);
+    int medianW = 10; // ~58ms lookaround at 256-sample hop / 44.1kHz
+
+    std::vector<float> threshold (odf.size());
+    std::vector<float> window;
+    window.reserve ((size_t) (2 * medianW + 1));
+
+    for (size_t i = 0; i < odf.size(); ++i)
     {
-        float prev = energy[i - 1];
-        float curr = energy[i];
-        if (curr > prev && prev > 1e-8f)
-            odf.push_back (std::log (curr / prev));
-        else if (curr > 1e-8f && prev <= 1e-8f)
-            odf.push_back (10.0f);  // silence-to-sound: strong onset
-        else
-            odf.push_back (0.0f);
+        size_t lo = i > (size_t) medianW ? i - (size_t) medianW : 0;
+        size_t hi = std::min (i + (size_t) medianW, odf.size() - 1);
+
+        window.clear();
+        for (size_t j = lo; j <= hi; ++j)
+            window.push_back (odf[j]);
+
+        size_t mid = window.size() / 2;
+        std::nth_element (window.begin(), window.begin() + (ptrdiff_t) mid, window.end());
+        float median = window[mid];
+
+        threshold[i] = delta + lambda * median;
     }
 
-    // Step 3: Compute global threshold from sorted ODF values
-    // Sensitivity controls which percentile we pick as the cutoff.
-    // sensitivity 1.0 -> low percentile (many detections)
-    // sensitivity 0.0 -> high percentile (only biggest hits)
-    std::vector<float> sorted;
-    std::copy_if (odf.begin(), odf.end(), std::back_inserter (sorted),
-                  [] (float v) { return v > 0.0f; });
-
-    if (sorted.empty())
-        return onsets;
-
-    std::sort (sorted.begin(), sorted.end());
-
-    float s = juce::jlimit (0.0f, 1.0f, sensitivity);
-    // Map sensitivity to percentile: 1.0 -> 50th percentile, 0.0 -> 99.5th
-    float percentile = 0.995f - s * 0.495f;
-    size_t threshIdx = std::min ((size_t) (percentile * (float) sorted.size()),
-                                  sorted.size() - 1);
-    float threshold = sorted[threshIdx];
-
-    // Step 4: Peak-pick — only accept positions where ODF is a local maximum
-    // AND exceeds the threshold AND respects minimum onset distance
-    int lastOnsetSample = start - minOnsetDist;
+    // --- Step 3: Peak-pick — local maxima above adaptive threshold ---
+    struct Onset
+    {
+        int samplePos;
+        float strength;
+    };
+    std::vector<Onset> candidates;
 
     for (size_t i = 1; i < odf.size() - 1; ++i)
     {
-        if (odf[i] <= threshold)
+        if (odf[i] <= threshold[i])
             continue;
 
-        // Check local maximum within peakRadius
         bool isLocalMax = true;
         for (int k = 1; k <= peakRadius && isLocalMax; ++k)
         {
@@ -141,17 +169,39 @@ inline std::vector<int> detectTransients (const juce::AudioBuffer<float>& buffer
         if (! isLocalMax)
             continue;
 
-        // Offset by half window to compensate for analysis latency:
-        // the energy window starting at pos integrates windowSize samples,
-        // so the actual transient sits roughly half a window into it.
-        int samplePos = start + (int) i * hopSize + windowSize / 2;
+        int samplePos = start + (int) i * hopSize + fftSize / 2;
         samplePos = std::min (samplePos, end);
-        if (samplePos - lastOnsetSample >= minOnsetDist && samplePos > start)
-        {
-            onsets.push_back (samplePos);
-            lastOnsetSample = samplePos;
-        }
+        if (samplePos > start)
+            candidates.push_back ({ samplePos, odf[i] });
     }
+
+    // --- Step 4: MIN post-filter — greedy strongest-first, remove close neighbors ---
+    int minOnsetDist = (int) std::round (sampleRate * (double) minSliceLenMs / 1000.0);
+    minOnsetDist = std::max (1, minOnsetDist);
+
+    // Sort by strength descending so strongest onsets survive
+    std::sort (candidates.begin(), candidates.end(),
+               [] (const Onset& a, const Onset& b) { return a.strength > b.strength; });
+
+    std::vector<int> kept;
+    for (const auto& c : candidates)
+    {
+        bool tooClose = false;
+        for (int k : kept)
+        {
+            if (std::abs (c.samplePos - k) < minOnsetDist)
+            {
+                tooClose = true;
+                break;
+            }
+        }
+        if (! tooClose)
+            kept.push_back (c.samplePos);
+    }
+
+    // Sort by position for output
+    std::sort (kept.begin(), kept.end());
+    onsets = std::move (kept);
 
     return onsets;
 }

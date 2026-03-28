@@ -1470,7 +1470,7 @@ void IntersectProcessor::handleCommand (const Command& cmd)
 
         case CmdTransientChop:
         {
-            int sel = sliceManager.selectedSlice;
+            int sel = cmd.sliceIdx >= 0 ? cmd.sliceIdx : sliceManager.selectedSlice.load();
             if (sel >= 0 && sel < sliceManager.getNumSlices() && cmd.numPositions > 0)
             {
                 Slice srcCopy = sliceManager.getSlice (sel);
