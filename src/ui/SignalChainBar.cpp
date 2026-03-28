@@ -1518,7 +1518,7 @@ void SignalChainBar::paint (juce::Graphics& g)
                                 const juce::Rectangle<int>& stripBounds,
                                 bool isSliceStrip)
     {
-        g.setColour (isSliceStrip ? getTheme().surface2.darker (0.06f) : getTheme().surface2);
+        g.setColour (getTheme().surface2.darker (0.06f));
         g.fillRect (stripBounds);
 
         if (expanded)
