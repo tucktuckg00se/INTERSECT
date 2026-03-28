@@ -121,7 +121,7 @@ void SliceLane::paint (juce::Graphics& g)
                 if (labelX < end)
                     labelX = end + 1;
             }
-            if (labelX + labelW < w)
+            if (labelX + labelW <= si.x2 && labelX + labelW < w)
             {
                 g.setColour (si.selected ? getTheme().text2.withAlpha (0.9f) : si.col.withAlpha (0.7f));
                 g.drawText (label, labelX, 0, labelW, h, juce::Justification::centredLeft);
