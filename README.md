@@ -84,8 +84,6 @@ xattr -cr /Applications/INTERSECT.app
 | Area | Function | Notes |
 | --- | --- | --- |
 | Sample name / status | Shows loaded file name and length, or missing-file relink prompt | Click to load a sample; missing-file text opens relink |
-| `SLICES` | Slice count | Read-only |
-| `ROOT` | Root note for new slices | Editable only while there are no slices |
 | `UNDO` / `REDO` | History navigation | Same as `Ctrl/Cmd + Z` and `Ctrl/Cmd + Shift + Z` |
 | `PANIC` | Kills active voices immediately | Also stops lazy chop |
 | `LOAD` | Open file browser | Replaces current sample |
@@ -124,13 +122,15 @@ xattr -cr /Applications/INTERSECT.app
 
 ### Signal Chain Bar
 
-The bottom bar is the main parameter editor. It has `GLOBAL` and `SLICE` tabs plus four modules: `PLAYBACK`, `FILTER`, `AMP`, and `OUTPUT`.
+The bottom bar is the main parameter editor. It has four modules: `TIME/PITCH`, `FILTER`, `AMP`, and `PLAYBACK`.
 
-When a slice is selected, the `SLICE` tab also shows:
-- slice length
-- note name
-- MIDI note number
-- override count
+**Collapsed mode** (default): `GLOBAL` and `SLICE` tabs switch between scopes, with one parameter strip visible at a time.
+
+**Expanded mode**: shows both strips simultaneously — slice on top, global below — with no tabs. Click the chevron toggle on the right edge of the context bar to switch between modes.
+
+**Context bar** (bottom edge):
+- `SLICES` count and `ROOT` note are always visible on the right. `ROOT` is editable only when no slices exist.
+- When a slice is selected: slice sample range, length, note name, MIDI note number, and override count.
 
 General behavior:
 - Drag up/down on a value to edit it.
