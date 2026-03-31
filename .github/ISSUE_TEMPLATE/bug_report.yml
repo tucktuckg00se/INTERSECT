@@ -1,0 +1,72 @@
+name: Bug Report
+description: Report a bug or crash in INTERSECT
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened?
+      placeholder: Describe the bug clearly
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: How can we reproduce the issue?
+      placeholder: |
+        1. Load a sample...
+        2. Create a slice...
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen instead?
+
+  - type: dropdown
+    id: format
+    attributes:
+      label: Plugin Format
+      options:
+        - VST3
+        - AU
+        - Standalone
+    validations:
+      required: false
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System
+      options:
+        - Windows
+        - macOS
+        - Linux
+    validations:
+      required: false
+
+  - type: input
+    id: daw
+    attributes:
+      label: DAW
+      description: Which DAW are you using?
+      placeholder: e.g., Ableton Live, Reaper, FL Studio
+
+  - type: input
+    id: version
+    attributes:
+      label: INTERSECT Version
+      placeholder: e.g., v0.11.0
+
+  - type: textarea
+    id: crash-log
+    attributes:
+      label: Crash Log
+      description: If the plugin crashed, paste any crash log or stack trace here
+      render: shell

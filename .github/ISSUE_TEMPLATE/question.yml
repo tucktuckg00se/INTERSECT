@@ -1,0 +1,17 @@
+name: Question
+description: Ask a question about using INTERSECT
+labels: ["question"]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: What do you need help with?
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Any relevant details (plugin version, OS, DAW, what you were trying to do, etc.)
