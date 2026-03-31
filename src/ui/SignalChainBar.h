@@ -17,10 +17,10 @@ public:
 
     enum class Module
     {
-        Playback = 0,
+        TimePitch = 0,
         Filter,
         Amp,
-        Output,
+        Playback,
     };
 
     void paint (juce::Graphics& g) override;
@@ -65,7 +65,7 @@ private:
     {
         CellKind kind = CellKind::Param;
         TabTarget tabTarget = TabTarget::None;
-        Module module = Module::Playback;
+        Module module = Module::TimePitch;
         juce::Rectangle<int> bounds;
         juce::Rectangle<int> overrideBounds;
         juce::String label;
@@ -98,7 +98,7 @@ private:
 
     struct ModuleLayout
     {
-        Module module = Module::Playback;
+        Module module = Module::TimePitch;
         juce::String name;
         juce::Colour titleColour;
         juce::Rectangle<int> bounds;
@@ -128,18 +128,18 @@ private:
                              const juce::Rectangle<int>& stripBounds,
                              std::array<ModuleLayout, 4>& targetModules);
     void rebuildContextBar (const LayoutInput& input);
-    void rebuildPlaybackModule (const LayoutInput& input,
-                                const std::pair<juce::Rectangle<int>, juce::Rectangle<int>>& rows,
-                                const ModuleLayout& moduleLayout);
+    void rebuildTimePitchModule (const LayoutInput& input,
+                                 const std::pair<juce::Rectangle<int>, juce::Rectangle<int>>& rows,
+                                 const ModuleLayout& moduleLayout);
     void rebuildFilterModule (const LayoutInput& input,
                               const std::pair<juce::Rectangle<int>, juce::Rectangle<int>>& rows,
                               const ModuleLayout& moduleLayout);
     void rebuildAmpModule (const LayoutInput& input,
                            const std::pair<juce::Rectangle<int>, juce::Rectangle<int>>& rows,
                            float referenceWidth);
-    void rebuildOutputModule (const LayoutInput& input,
-                              const std::pair<juce::Rectangle<int>, juce::Rectangle<int>>& rows,
-                              float referenceWidth);
+    void rebuildPlaybackModule (const LayoutInput& input,
+                                const std::pair<juce::Rectangle<int>, juce::Rectangle<int>>& rows,
+                                float referenceWidth);
     void syncScopeFromSelection();
     bool isSliceScopeActive() const;
 

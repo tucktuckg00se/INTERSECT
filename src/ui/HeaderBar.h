@@ -14,7 +14,7 @@ public:
     void mouseDown (const juce::MouseEvent& e) override;
 
 private:
-    void showThemePopup();
+    void showSettingsPopup();
     void adjustScale (float delta);
     void openFileBrowser();
     void openRelinkBrowser();
@@ -24,7 +24,7 @@ private:
     juce::TextButton redoBtn  { "REDO" };
     juce::TextButton panicBtn { "PANIC" };
     juce::TextButton loadBtn  { "LOAD" };
-    juce::TextButton themeBtn { "SET" };
+    juce::TextButton settingsBtn { "SET" };
 
     std::unique_ptr<juce::FileChooser> fileChooser;
 

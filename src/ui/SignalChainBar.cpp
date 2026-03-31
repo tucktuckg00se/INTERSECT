@@ -201,7 +201,7 @@ std::array<uint64_t, 13> getModuleBits (SignalChainBar::Module module)
 {
     switch (module)
     {
-        case SignalChainBar::Module::Playback:
+        case SignalChainBar::Module::TimePitch:
             return { kLockBpm, kLockPitch, kLockCentsDetune, kLockAlgorithm, kLockStretch,
                      kLockTonality, kLockFormant, kLockFormantComp, kLockGrainMode,
                      0ull, 0ull, 0ull, 0ull };
@@ -213,7 +213,7 @@ std::array<uint64_t, 13> getModuleBits (SignalChainBar::Module module)
         case SignalChainBar::Module::Amp:
             return { kLockAttack, kLockDecay, kLockSustain, kLockRelease, kLockReleaseTail,
                      kLockVolume, 0ull, 0ull, 0ull, 0ull, 0ull, 0ull, 0ull };
-        case SignalChainBar::Module::Output:
+        case SignalChainBar::Module::Playback:
             return { kLockReverse, kLockLoop, kLockOneShot, kLockMuteGroup, kLockCrossfade,
                      kLockOutputBus, 0ull, 0ull, 0ull, 0ull, 0ull, 0ull, 0ull };
     }
@@ -357,7 +357,7 @@ int SignalChainBar::countEffectiveModuleOverrides (Module module,
 
     switch (module)
     {
-        case Module::Playback:
+        case Module::TimePitch:
             count += checkFloat (kLockBpm, slice.bpm, globals.bpm);
             count += checkFloat (kLockPitch, slice.pitchSemitones, globals.pitchSemitones);
             count += checkFloat (kLockCentsDetune, slice.centsDetune, globals.centsDetune);
@@ -394,7 +394,7 @@ int SignalChainBar::countEffectiveModuleOverrides (Module module,
             count += checkFloat (kLockVolume, slice.volume, globals.volumeDb);
             break;
 
-        case Module::Output:
+        case Module::Playback:
             count += checkBool (kLockReverse, slice.reverse, globals.reverse);
             count += checkInt (kLockLoop, slice.loopMode, globals.loopMode);
             count += checkBool (kLockOneShot, slice.oneShot, globals.oneShot);
@@ -411,7 +411,7 @@ int SignalChainBar::countEffectiveModuleOverrides (Module module,
 int SignalChainBar::countAllOverrides (uint64_t lockMask) const
 {
     int count = 0;
-    for (auto moduleId : { Module::Playback, Module::Filter, Module::Amp, Module::Output })
+    for (auto moduleId : { Module::TimePitch, Module::Filter, Module::Amp, Module::Playback })
     {
         ModuleLayout module;
         module.module = moduleId;
@@ -424,7 +424,7 @@ int SignalChainBar::countAllEffectiveOverrides (const Slice& slice,
                                                 const GlobalParamSnapshot& globals) const
 {
     int count = 0;
-    for (auto moduleId : { Module::Playback, Module::Filter, Module::Amp, Module::Output })
+    for (auto moduleId : { Module::TimePitch, Module::Filter, Module::Amp, Module::Playback })
         count += countEffectiveModuleOverrides (moduleId, slice, globals);
     return count;
 }
@@ -575,10 +575,10 @@ void SignalChainBar::rebuildLayout()
         LayoutInput globalInput = input;
         globalInput.sliceScope = false;
         rebuildModuleStrip (globalInput, globalStripBounds, modules);
-        rebuildPlaybackModule (globalInput, splitRows (modules[0].bodyBounds), modules[0]);
+        rebuildTimePitchModule (globalInput, splitRows (modules[0].bodyBounds), modules[0]);
         rebuildFilterModule (globalInput, splitRows (modules[1].bodyBounds), modules[1]);
         rebuildAmpModule (globalInput, splitRows (modules[2].bodyBounds), modules[2].referenceWidth);
-        rebuildOutputModule (globalInput, splitRows (modules[3].bodyBounds), modules[3].referenceWidth);
+        rebuildPlaybackModule (globalInput, splitRows (modules[3].bodyBounds), modules[3].referenceWidth);
 
         // Build slice strip
         LayoutInput sliceInput = input;
@@ -588,10 +588,10 @@ void SignalChainBar::rebuildLayout()
         // Tag all cells built so far as global-scope
         const size_t globalCellCount = cells.size();
 
-        rebuildPlaybackModule (sliceInput, splitRows (sliceModules[0].bodyBounds), sliceModules[0]);
+        rebuildTimePitchModule (sliceInput, splitRows (sliceModules[0].bodyBounds), sliceModules[0]);
         rebuildFilterModule (sliceInput, splitRows (sliceModules[1].bodyBounds), sliceModules[1]);
         rebuildAmpModule (sliceInput, splitRows (sliceModules[2].bodyBounds), sliceModules[2].referenceWidth);
-        rebuildOutputModule (sliceInput, splitRows (sliceModules[3].bodyBounds), sliceModules[3].referenceWidth);
+        rebuildPlaybackModule (sliceInput, splitRows (sliceModules[3].bodyBounds), sliceModules[3].referenceWidth);
 
         // Tag slice-strip cells (only when a valid slice exists for interaction)
         if (input.hasValidSlice)
@@ -615,10 +615,10 @@ void SignalChainBar::rebuildLayout()
         rebuildContextBar (input);
         rebuildModuleStrip (input, moduleStripBounds, modules);
 
-        rebuildPlaybackModule (input, splitRows (modules[0].bodyBounds), modules[0]);
+        rebuildTimePitchModule (input, splitRows (modules[0].bodyBounds), modules[0]);
         rebuildFilterModule (input, splitRows (modules[1].bodyBounds), modules[1]);
         rebuildAmpModule (input, splitRows (modules[2].bodyBounds), modules[2].referenceWidth);
-        rebuildOutputModule (input, splitRows (modules[3].bodyBounds), modules[3].referenceWidth);
+        rebuildPlaybackModule (input, splitRows (modules[3].bodyBounds), modules[3].referenceWidth);
     }
 }
 
@@ -686,7 +686,7 @@ void SignalChainBar::rebuildContextBar (const LayoutInput& input)
             contextRootBounds = toIntBounds (contextRow.items[rootItemIndex].currentBounds);
 
             Cell noteCell;
-            noteCell.module = Module::Playback;
+            noteCell.module = Module::TimePitch;
             noteCell.bounds = toIntBounds (contextRow.items[noteItemIndex].currentBounds);
             noteCell.valueText = midiNoteName (input.selectedSlice->midiNote);
             noteCell.isContextInline = true;
@@ -700,7 +700,7 @@ void SignalChainBar::rebuildContextBar (const LayoutInput& input)
             addParamCell (noteCell);
 
             Cell midiCell;
-            midiCell.module = Module::Playback;
+            midiCell.module = Module::TimePitch;
             midiCell.bounds = toIntBounds (contextRow.items[midiItemIndex].currentBounds);
             midiCell.label = "MIDI";
             midiCell.valueText = juce::String (input.selectedSlice->midiNote);
@@ -780,7 +780,7 @@ void SignalChainBar::rebuildContextBar (const LayoutInput& input)
         contextStatusBounds = toIntBounds (contextRow.items[statusItemIndex].currentBounds);
 
         Cell noteCell;
-        noteCell.module = Module::Playback;
+        noteCell.module = Module::TimePitch;
         noteCell.bounds = toIntBounds (contextRow.items[noteItemIndex].currentBounds);
         noteCell.valueText = midiNoteName (input.selectedSlice->midiNote);
         noteCell.isContextInline = true;
@@ -793,7 +793,7 @@ void SignalChainBar::rebuildContextBar (const LayoutInput& input)
         addParamCell (noteCell);
 
         Cell midiCell;
-        midiCell.module = Module::Playback;
+        midiCell.module = Module::TimePitch;
         midiCell.bounds = toIntBounds (contextRow.items[midiItemIndex].currentBounds);
         midiCell.label = "MIDI";
         midiCell.valueText = juce::String (input.selectedSlice->midiNote);
@@ -831,7 +831,7 @@ void SignalChainBar::rebuildContextBar (const LayoutInput& input)
         contextSubtitle = "NO SAMPLE LOADED";
 }
 
-void SignalChainBar::rebuildPlaybackModule (const LayoutInput& input,
+void SignalChainBar::rebuildTimePitchModule (const LayoutInput& input,
                                             const std::pair<juce::Rectangle<int>, juce::Rectangle<int>>& rows,
                                             const ModuleLayout& moduleLayout)
 {
@@ -845,7 +845,7 @@ void SignalChainBar::rebuildPlaybackModule (const LayoutInput& input,
 
     Cell setBpmCell;
     setBpmCell.kind = CellKind::SetBpm;
-    setBpmCell.module = Module::Playback;
+    setBpmCell.module = Module::TimePitch;
     auto nameFont = IntersectLookAndFeel::fitFontToWidth (
         moduleLayout.name, 8.5f, 7.2f, moduleLayout.headerBounds.getWidth() - 6, true);
     const int nameW = (int) std::ceil (measureTextWidth (nameFont, moduleLayout.name));
@@ -896,7 +896,7 @@ void SignalChainBar::rebuildPlaybackModule (const LayoutInput& input,
         : resolvedCents;
 
     Cell cell;
-    cell.module = Module::Playback;
+    cell.module = Module::TimePitch;
     cell.globalParamId = ParamIds::defaultBpm;
     cell.fieldId = IntersectProcessor::FieldBpm;
     cell.lockBit = kLockBpm;
@@ -914,7 +914,7 @@ void SignalChainBar::rebuildPlaybackModule (const LayoutInput& input,
     addParamCell (cell);
 
     cell = {};
-    cell.module = Module::Playback;
+    cell.module = Module::TimePitch;
     cell.globalParamId = ParamIds::defaultPitch;
     cell.fieldId = IntersectProcessor::FieldPitch;
     cell.lockBit = kLockPitch;
@@ -933,7 +933,7 @@ void SignalChainBar::rebuildPlaybackModule (const LayoutInput& input,
     addParamCell (cell);
 
     cell = {};
-    cell.module = Module::Playback;
+    cell.module = Module::TimePitch;
     cell.globalParamId = ParamIds::defaultCentsDetune;
     cell.fieldId = IntersectProcessor::FieldCentsDetune;
     cell.lockBit = kLockCentsDetune;
@@ -952,7 +952,7 @@ void SignalChainBar::rebuildPlaybackModule (const LayoutInput& input,
     addParamCell (cell);
 
     cell = {};
-    cell.module = Module::Playback;
+    cell.module = Module::TimePitch;
     cell.globalParamId = ParamIds::defaultStretchEnabled;
     cell.fieldId = IntersectProcessor::FieldStretchEnabled;
     cell.lockBit = kLockStretch;
@@ -968,7 +968,7 @@ void SignalChainBar::rebuildPlaybackModule (const LayoutInput& input,
     addParamCell (cell);
 
     cell = {};
-    cell.module = Module::Playback;
+    cell.module = Module::TimePitch;
     cell.globalParamId = ParamIds::defaultAlgorithm;
     cell.fieldId = IntersectProcessor::FieldAlgorithm;
     cell.lockBit = kLockAlgorithm;
@@ -998,7 +998,7 @@ void SignalChainBar::rebuildPlaybackModule (const LayoutInput& input,
             : std::pair<bool, bool> { globals.formantComp, false };
 
         cell = {};
-        cell.module = Module::Playback;
+        cell.module = Module::TimePitch;
         cell.globalParamId = ParamIds::defaultTonality;
         cell.fieldId = IntersectProcessor::FieldTonality;
         cell.lockBit = kLockTonality;
@@ -1015,7 +1015,7 @@ void SignalChainBar::rebuildPlaybackModule (const LayoutInput& input,
         addParamCell (cell);
 
         cell = {};
-        cell.module = Module::Playback;
+        cell.module = Module::TimePitch;
         cell.globalParamId = ParamIds::defaultFormant;
         cell.fieldId = IntersectProcessor::FieldFormant;
         cell.lockBit = kLockFormant;
@@ -1033,7 +1033,7 @@ void SignalChainBar::rebuildPlaybackModule (const LayoutInput& input,
         addParamCell (cell);
 
         cell = {};
-        cell.module = Module::Playback;
+        cell.module = Module::TimePitch;
         cell.globalParamId = ParamIds::defaultFormantComp;
         cell.fieldId = IntersectProcessor::FieldFormantComp;
         cell.lockBit = kLockFormantComp;
@@ -1056,7 +1056,7 @@ void SignalChainBar::rebuildPlaybackModule (const LayoutInput& input,
             : std::pair<int, bool> { globals.grainMode, false };
 
         cell = {};
-        cell.module = Module::Playback;
+        cell.module = Module::TimePitch;
         cell.globalParamId = ParamIds::defaultGrainMode;
         cell.fieldId = IntersectProcessor::FieldGrainMode;
         cell.lockBit = kLockGrainMode;
@@ -1353,7 +1353,7 @@ void SignalChainBar::rebuildAmpModule (const LayoutInput& input,
                 gain, -100.0f, 24.0f, 0.1f, 0.3f, 1, gainLocked);
 }
 
-void SignalChainBar::rebuildOutputModule (const LayoutInput& input,
+void SignalChainBar::rebuildPlaybackModule (const LayoutInput& input,
                                           const std::pair<juce::Rectangle<int>, juce::Rectangle<int>>& rows,
                                           float referenceWidth)
 {
@@ -1408,7 +1408,7 @@ void SignalChainBar::rebuildOutputModule (const LayoutInput& input,
                                  bool drawTrailingDivider = false)
     {
         Cell c;
-        c.module = Module::Output;
+        c.module = Module::Playback;
         c.bounds = bounds;
         c.label = label;
         c.valueText = valueText;
@@ -1439,7 +1439,7 @@ void SignalChainBar::rebuildOutputModule (const LayoutInput& input,
 
     {
         Cell fadeCell;
-        fadeCell.module = Module::Output;
+        fadeCell.module = Module::Playback;
         fadeCell.bounds = row1[2];
         fadeCell.label = "FADE";
         fadeCell.valueText = fadeEnabled ? formatPercent (crossfadePct) : "-";

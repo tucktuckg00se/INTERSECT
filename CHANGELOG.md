@@ -11,7 +11,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Fade region overlay and crossfade source cursor in the waveform view
 
 ### Changed
-- Gain control moved from the Output module to the Amp module in the signal chain
+- Gain control moved from the Playback module to the Amp module in the signal chain
+- Renamed internal code to match UI labels: "Time/Pitch" and "Playback" modules, "Settings" button
 
 ## [0.11.0] - 2026-03-31
 ### Added

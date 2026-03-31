@@ -5,7 +5,7 @@
 
 namespace
 {
-enum ThemeMenuItemId
+enum SettingsMenuItemId
 {
     kMenuScaleStatus = 1000,
     kMenuScaleDown,
@@ -43,7 +43,7 @@ juce::String formatNrpnStatus (int channel)
 
 HeaderBar::HeaderBar (IntersectProcessor& p) : processor (p)
 {
-    for (auto* btn : { &undoBtn, &redoBtn, &panicBtn, &loadBtn, &themeBtn })
+    for (auto* btn : { &undoBtn, &redoBtn, &panicBtn, &loadBtn, &settingsBtn })
     {
         addAndMakeVisible (*btn);
         btn->setAlwaysOnTop (true);
@@ -63,7 +63,7 @@ HeaderBar::HeaderBar (IntersectProcessor& p) : processor (p)
     undoBtn.setTooltip ("Undo (Ctrl+Z)");
     redoBtn.setTooltip ("Redo (Ctrl+Shift+Z)");
     loadBtn.setTooltip ("Load sample");
-    themeBtn.setTooltip ("Settings");
+    settingsBtn.setTooltip ("Settings");
 
     undoBtn.onClick = [this]
     {
@@ -80,7 +80,7 @@ HeaderBar::HeaderBar (IntersectProcessor& p) : processor (p)
     };
 
     loadBtn.onClick = [this] { openFileBrowser(); };
-    themeBtn.onClick = [this] { showThemePopup(); };
+    settingsBtn.onClick = [this] { showSettingsPopup(); };
 }
 
 juce::String HeaderBar::getTooltip()
@@ -111,7 +111,7 @@ void HeaderBar::resized()
         return juce::jmax (minWidth, juce::roundToInt (measureTextWidth (buttonFont, text)) + 18);
     };
 
-    const int setW = buttonWidth (themeBtn.getButtonText(), 38);
+    const int setW = buttonWidth (settingsBtn.getButtonText(), 38);
     const int loadW = buttonWidth (loadBtn.getButtonText(), 42);
     const int panicW = buttonWidth (panicBtn.getButtonText(), 50);
     const int redoW = buttonWidth (redoBtn.getButtonText(), 44);
@@ -144,13 +144,13 @@ void HeaderBar::resized()
     buttons.items.add (juce::FlexItem().withWidth ((float) buttonGap).withHeight ((float) buttonHeight));
     buttons.items.add (juce::FlexItem (loadBtn).withWidth ((float) loadW).withHeight ((float) buttonHeight));
     buttons.items.add (juce::FlexItem().withWidth ((float) buttonGap).withHeight ((float) buttonHeight));
-    buttons.items.add (juce::FlexItem (themeBtn).withWidth ((float) setW).withHeight ((float) buttonHeight));
+    buttons.items.add (juce::FlexItem (settingsBtn).withWidth ((float) setW).withHeight ((float) buttonHeight));
     buttons.performLayout (buttonArea.toFloat());
 }
 
 void HeaderBar::paint (juce::Graphics& g)
 {
-    for (auto* btn : { &undoBtn, &redoBtn, &panicBtn, &loadBtn, &themeBtn })
+    for (auto* btn : { &undoBtn, &redoBtn, &panicBtn, &loadBtn, &settingsBtn })
     {
         auto text = getTheme().text2.withAlpha (btn->isMouseOverOrDragging() ? 1.0f : 0.88f);
         btn->setColour (juce::TextButton::buttonColourId,
@@ -218,7 +218,7 @@ void HeaderBar::adjustScale (float delta)
     }
 }
 
-void HeaderBar::showThemePopup()
+void HeaderBar::showSettingsPopup()
 {
     auto* editor = dynamic_cast<IntersectEditor*> (getParentComponent());
     if (editor == nullptr)
@@ -267,7 +267,7 @@ void HeaderBar::showThemePopup()
 
     auto* topLevel = getTopLevelComponent();
     float ms = IntersectLookAndFeel::getMenuScale();
-    auto options = juce::PopupMenu::Options().withTargetComponent (&themeBtn)
+    auto options = juce::PopupMenu::Options().withTargetComponent (&settingsBtn)
                                               .withDeletionCheck (*this)
                                               .withParentComponent (topLevel)
                                               .withMinimumWidth ((int) std::round (220.0f * ms))
