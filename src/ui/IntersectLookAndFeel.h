@@ -9,6 +9,7 @@ class IntersectLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
     IntersectLookAndFeel();
+    ~IntersectLookAndFeel() override;
 
     void drawButtonBackground (juce::Graphics&, juce::Button&, const juce::Colour&,
                                bool isHighlighted, bool isDown) override;

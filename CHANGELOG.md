@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 - "Buy Me a Coffee" sponsor link in the Settings menu
 
+### Fixed
+- Crash when quitting certain DAWs on macOS (e.g. Cubase, Live) caused by typeface cleanup during static destruction
+
 ## [0.11.0] - 2026-03-28
 ### Added
 - Filter drive asymmetry (ASYM) parameter — biases the drive waveshaper to add even-harmonic saturation for more tonal variety

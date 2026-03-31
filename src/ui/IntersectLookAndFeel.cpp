@@ -33,6 +33,18 @@ IntersectLookAndFeel::IntersectLookAndFeel()
     sBoldTypeface = boldTypeface;
 }
 
+IntersectLookAndFeel::~IntersectLookAndFeel()
+{
+    if (sRegularTypeface == regularTypeface)
+        sRegularTypeface = nullptr;
+
+    if (sBoldTypeface == boldTypeface)
+        sBoldTypeface = nullptr;
+
+    regularTypeface = nullptr;
+    boldTypeface = nullptr;
+}
+
 juce::Font IntersectLookAndFeel::makeFont (float pointSize, bool bold)
 {
     auto tf = bold ? sBoldTypeface : sRegularTypeface;
