@@ -5,15 +5,11 @@ All notable changes to INTERSECT will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
-### Added
-- "Buy Me a Coffee" sponsor link in the Settings menu
 
-### Fixed
-- Crash when quitting certain DAWs on macOS (e.g. Cubase, Live) caused by typeface cleanup during static destruction
-
-## [0.11.0] - 2026-03-28
+## [0.11.0] - 2026-03-31
 ### Added
 - Filter drive asymmetry (ASYM) parameter — biases the drive waveshaper to add even-harmonic saturation for more tonal variety
+- "Buy Me a Coffee" sponsor link in the Settings menu
 
 ### Changed
 - Stretch algorithm renamed to "Signalsmith" in the algorithm selector
@@ -23,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Action tooltips are shorter, and RESEQ now has a Shift+R shortcut
 
 ### Fixed
+- Crash when quitting certain DAWs on macOS (e.g. Cubase, Live) caused by typeface cleanup during static destruction
 - Filter row 2 cells no longer drift out of alignment with row 1
 - Filter key tracking now scales musically across the keyboard (previously over-tracked upward and under-tracked downward)
 - Filter resonance response is more evenly distributed across the knob range
