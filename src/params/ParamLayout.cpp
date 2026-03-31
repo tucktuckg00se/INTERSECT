@@ -222,6 +222,15 @@ juce::AudioProcessorValueTreeState::ParameterLayout ParamLayout::createLayout()
         juce::NormalisableRange<float> (-96.0f, 96.0f, 0.1f),
         0.0f));
 
+    // ── Output ─────────────────────────────────────────────────────────────────
+
+    // Sample Crossfade: 0..100%, default 0
+    params.push_back (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { ParamIds::defaultCrossfade, 1 },
+        "Sample Crossfade",
+        juce::NormalisableRange<float> (0.0f, 100.0f, 1.0f),
+        0.0f));
+
     // ── Global utility ─────────────────────────────────────────────────────────
 
     // Max Voices: 1..31 playable voices, preview voice is reserved

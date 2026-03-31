@@ -30,6 +30,7 @@ struct GlobalParamSnapshot
     int grainMode = 1;
 
     float volumeDb = 0.0f;
+    float crossfadePct = 0.0f;
     int maxVoices = 16;
 
     bool filterEnabled = false;
@@ -92,6 +93,7 @@ struct GlobalParamSnapshot
         snapshot.grainMode = loadInt (ParamIds::defaultGrainMode, snapshot.grainMode);
 
         snapshot.volumeDb = loadFloat (ParamIds::masterVolume, snapshot.volumeDb);
+        snapshot.crossfadePct = loadFloat (ParamIds::defaultCrossfade, snapshot.crossfadePct);
         snapshot.maxVoices = loadInt (ParamIds::maxVoices, snapshot.maxVoices);
 
         snapshot.filterEnabled = loadBool (ParamIds::defaultFilterEnabled, snapshot.filterEnabled);

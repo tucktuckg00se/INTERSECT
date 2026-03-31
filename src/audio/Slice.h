@@ -37,8 +37,25 @@ enum LockBit : uint64_t
     kLockFilterEnvSustain = 536870912u,
     kLockFilterEnvRelease = 1073741824u,
     kLockFilterEnvAmount  = 0x80000000u,
-    kLockFilterAsym       = 0x100000000ull
+    kLockFilterAsym       = 0x100000000ull,
+    kLockCrossfade        = 0x200000000ull
 };
+
+inline int getMaxCrossfadeLengthSamples (int sliceLen, bool pingPong)
+{
+    return juce::jmax (0, pingPong ? (sliceLen / 2) : sliceLen);
+}
+
+inline int crossfadePercentToSamples (float crossfadePct, int sliceLen, bool pingPong)
+{
+    const int maxFadeLen = getMaxCrossfadeLengthSamples (sliceLen, pingPong);
+    if (crossfadePct <= 0.0f || maxFadeLen <= 0)
+        return 0;
+
+    const float normalised = juce::jlimit (0.0f, 100.0f, crossfadePct) / 100.0f;
+    return juce::jlimit (1, maxFadeLen,
+                         juce::roundToInt (normalised * (float) maxFadeLen));
+}
 
 struct Slice
 {
@@ -79,6 +96,7 @@ struct Slice
     float    filterEnvSustain    = 1.0f;
     float    filterEnvReleaseSec = 0.0f;
     float    filterEnvAmount     = 0.0f; // semitones bipolar
+    float    crossfadePct       = 0.0f; // 0-100, percentage of the mode-dependent fade range
     uint64_t lockMask      = 0;
     juce::Colour colour    { 0.4f, 0.7f, 0.95f, 1.0f };
 };

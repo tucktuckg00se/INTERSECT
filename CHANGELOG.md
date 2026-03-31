@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Loop crossfade (FADE) parameter — smooths loop and ping-pong seams with equal-power crossfading, adjustable from 0–100% of the slice length
+- Fade region overlay and crossfade source cursor in the waveform view
+
+### Changed
+- Gain control moved from the Output module to the Amp module in the signal chain
+
 ## [0.11.0] - 2026-03-31
 ### Added
 - Filter drive asymmetry (ASYM) parameter — biases the drive waveshaper to add even-harmonic saturation for more tonal variety

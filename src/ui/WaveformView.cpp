@@ -167,6 +167,7 @@ void WaveformView::paint (juce::Graphics& g)
         rebuildCacheIfNeeded();
         drawWaveform (g);
         drawSlices (g);
+        drawFadeRegions (g);
         paintDrawSlicePreview (g);
         paintLazyChopOverlay (g);
         paintTransientMarkers (g);
@@ -451,6 +452,79 @@ void WaveformView::drawSlices (juce::Graphics& g)
     }
 }
 
+void WaveformView::drawFadeRegions (juce::Graphics& g)
+{
+    const auto& ui = processor.getUiSliceSnapshot();
+    const int sel = ui.selectedSlice;
+    if (sel < 0 || sel >= ui.numSlices) return;
+
+    const auto& s = ui.slices[(size_t) sel];
+    if (! s.active) return;
+
+    // Also only show if loop mode is active
+    const auto globals = GlobalParamSnapshot::loadFrom (processor.apvts, ui.rootNote);
+
+    const float resolvedCrossfade = (s.lockMask & kLockCrossfade) ? s.crossfadePct : globals.crossfadePct;
+    if (resolvedCrossfade <= 0.0f) return;
+
+    const int loopMode = (s.lockMask & kLockLoop) ? s.loopMode : globals.loopMode;
+    if (loopMode == 0) return;
+
+    const int sliceLen = s.endSample - s.startSample;
+    if (sliceLen <= 0) return;
+
+    const bool reverse = (s.lockMask & kLockReverse) ? s.reverse : globals.reverse;
+    const bool pingPong = (loopMode == 2);
+    const int bufferEnd = processor.sampleData.getNumFrames();
+
+    int fadeLen = crossfadePercentToSamples (resolvedCrossfade, sliceLen, pingPong);
+    if (! pingPong)
+    {
+        const int preStartAvail = s.startSample;
+        const int postEndAvail  = juce::jmax (0, bufferEnd - s.endSample);
+        fadeLen = reverse ? juce::jmin (fadeLen, postEndAvail)
+                          : juce::jmin (fadeLen, preStartAvail);
+    }
+    if (fadeLen <= 0) return;
+
+    const float h = (float) getHeight();
+    const auto fadeColour = s.colour.withAlpha (0.18f);
+    const auto fillFadeTriangle = [&] (int sampleA, int sampleB, int boundarySample)
+    {
+        const int x1 = sampleToPixel (sampleA);
+        const int x2 = sampleToPixel (sampleB);
+        const int xb = sampleToPixel (boundarySample);
+        if (x2 <= x1 || x2 <= 0 || x1 >= getWidth())
+            return;
+
+        juce::Path triangle;
+        triangle.startNewSubPath ((float) x1, h);
+        triangle.lineTo ((float) x2, h);
+        triangle.lineTo ((float) xb, 0.0f);
+        triangle.closeSubPath();
+
+        g.setColour (fadeColour);
+        g.fillPath (triangle);
+    };
+
+    if (pingPong)
+    {
+        fillFadeTriangle (s.startSample, s.startSample + fadeLen, s.startSample);
+        fillFadeTriangle (s.endSample - fadeLen, s.endSample, s.endSample);
+        return;
+    }
+
+    if (reverse)
+    {
+        fillFadeTriangle (s.startSample, s.startSample + fadeLen, s.startSample);
+        fillFadeTriangle (s.endSample, s.endSample + fadeLen, s.endSample);
+        return;
+    }
+
+    fillFadeTriangle (s.startSample - fadeLen, s.startSample, s.startSample);
+    fillFadeTriangle (s.endSample - fadeLen, s.endSample, s.endSample);
+}
+
 void WaveformView::drawPlaybackCursors (juce::Graphics& g)
 {
     int previewIdx = LazyChopEngine::getPreviewVoiceIndex();
@@ -468,6 +542,31 @@ void WaveformView::drawPlaybackCursors (juce::Graphics& g)
                     g.setColour (getTheme().accent.withAlpha (0.7f));  // yellow
 
                 g.drawVerticalLine (px, 0.0f, (float) getHeight());
+            }
+        }
+    }
+
+    // Draw crossfade source cursor for selected slice voices
+    const auto& ui = processor.getUiSliceSnapshot();
+    const int sel = ui.selectedSlice;
+    if (sel >= 0 && sel < ui.numSlices)
+    {
+        const auto& s = ui.slices[(size_t) sel];
+        if (s.active)
+        {
+            for (int i = 0; i < VoicePool::kMaxVoices; ++i)
+            {
+                if (processor.voicePool.getVoice (i).sliceIdx != sel) continue;
+                float xfPos = processor.voicePool.xfadeSourcePositions[i].load (std::memory_order_relaxed);
+                if (xfPos > 0.0f)
+                {
+                    int px = sampleToPixel ((int) xfPos);
+                    if (px >= 0 && px < getWidth())
+                    {
+                        g.setColour (s.colour);
+                        g.drawVerticalLine (px, 0.0f, (float) getHeight());
+                    }
+                }
             }
         }
     }

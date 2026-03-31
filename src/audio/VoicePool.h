@@ -47,6 +47,7 @@ struct VoiceStartParams
     float globalFilterEnvSustain    = 1.0f;
     float globalFilterEnvReleaseSec = 0.0f;
     float globalFilterEnvAmount     = 0.0f;
+    float globalCrossfadePct        = 0.0f;
     int   rootNote = kDefaultRootNote;
 };
 
@@ -132,6 +133,7 @@ public:
 
     // Atomic voice positions for UI cursor display
     std::array<std::atomic<float>, kMaxVoices> voicePositions;
+    std::array<std::atomic<float>, kMaxVoices> xfadeSourcePositions;
 
     void processVoiceSample (int i, const SampleData& sample, double sampleRate,
                              float& outL, float& outR);

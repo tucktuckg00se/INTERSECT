@@ -58,6 +58,10 @@ struct Voice
     SvfFilter::SvfCoeffs filterCoeffs;
     int          filterCoeffCounter = 0;
 
+    // Crossfade fields
+    float        crossfadePct      = 0.0f;
+    int          crossfadeLenSamples = 0;
+
     // Signalsmith stretch fields
     bool         stretchActive = false;
     std::shared_ptr<signalsmith::stretch::SignalsmithStretch<float, void>> stretcher;
@@ -68,6 +72,7 @@ struct Voice
     double       stretchSrcPos      = 0.0;
     float        stretchTimeRatio   = 1.0f;
     float        stretchPitchSemis  = 0.0f;
+    bool         stretchResetNeeded = false;
 
     // Bungee stretch fields
     bool         bungeeActive       = false;

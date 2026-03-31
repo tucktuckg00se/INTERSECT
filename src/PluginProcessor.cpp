@@ -60,7 +60,7 @@ static constexpr uint64_t kValidLockMask =
     | kLockFilterType | kLockFilterSlope | kLockFilterCutoff | kLockFilterReso
     | kLockFilterDrive | kLockFilterKeyTrack | kLockFilterEnvAttack | kLockFilterEnvDecay
     | kLockFilterEnvSustain | kLockFilterEnvRelease | kLockFilterEnvAmount
-    | kLockFilterAsym;
+    | kLockFilterAsym | kLockCrossfade;
 
 // Copies a global parameter value into a slice field based on the lock bit.
 // Used when locking a parameter to snapshot the current effective value.
@@ -140,11 +140,12 @@ static Slice sanitiseRestoredSlice (Slice s)
     s.filterEnvSustain = juce::jlimit (0.0f, 1.0f, s.filterEnvSustain);
     s.filterEnvReleaseSec = juce::jlimit (0.0f, 10.0f, s.filterEnvReleaseSec);
     s.filterEnvAmount = juce::jlimit (-96.0f, 96.0f, s.filterEnvAmount);
+    s.crossfadePct = juce::jlimit (0.0f, 100.0f, s.crossfadePct);
     s.lockMask &= kValidLockMask;
     return s;
 }
 
-constexpr int kCurrentStateVersion = 23;
+constexpr int kCurrentStateVersion = 24;
 constexpr std::array<double, 6> kLegacyCommonSampleRates { 44100.0, 48000.0, 88200.0,
                                                            96000.0, 176400.0, 192000.0 };
 
@@ -268,6 +269,7 @@ VoiceStartParams makeVoiceStartParams (const GlobalParamSnapshot& globals,
     params.globalFilterEnvSustain = globals.filterEnvSustain;
     params.globalFilterEnvReleaseSec = globals.filterEnvReleaseSec;
     params.globalFilterEnvAmount = globals.filterEnvAmount;
+    params.globalCrossfadePct = globals.crossfadePct;
     params.rootNote = globals.rootNote;
     return params;
 }
@@ -1368,6 +1370,10 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                     case FieldFilterAsym:
                         setFloatField (s.filterAsym, val, globals.filterAsym, kLockFilterAsym);
                         break;
+                    case FieldCrossfade:
+                        s.crossfadePct = juce::jlimit (0.0f, 100.0f, val);
+                        s.lockMask |= kLockCrossfade;
+                        break;
                     case FieldMidiNote:
                         s.midiNote = juce::jlimit (0, kMaxMidiNote, (int) val);
                         sliceManager.rebuildMidiMap();
@@ -2229,6 +2235,8 @@ void IntersectProcessor::getStateInformation (juce::MemoryBlock& destData)
         // v23 fields
         stream.writeFloat (s.filterAsym);
         stream.writeInt ((int)(s.lockMask >> 32));
+        // v24 fields
+        stream.writeFloat (s.crossfadePct);
     }
 
     // v9: store file path only (no PCM)
@@ -2277,7 +2285,7 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
     pendingStateRestoreToken.store (0, std::memory_order_release);
 
     int version = stream.readInt();
-    if (version != 19 && version != 20 && version != 21 && version != 22 && version != kCurrentStateVersion)
+    if (version != 19 && version != 20 && version != 21 && version != 22 && version != 23 && version != kCurrentStateVersion)
     {
         setUiStatusMessage ("Unsupported project state version v" + juce::String (version)
                             + ". This build supports v19-v" + juce::String (kCurrentStateVersion) + ".",
@@ -2367,6 +2375,11 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
         {
             parsed.filterAsym = stream.readFloat();
             parsed.lockMask |= ((uint64_t)(uint32_t) stream.readInt() << 32);
+        }
+
+        if (version >= 24)
+        {
+            parsed.crossfadePct = stream.readFloat();
         }
 
         if (i < validatedNumSlices)

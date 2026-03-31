@@ -121,6 +121,7 @@ public:
         FieldFilterEnvRelease,
         FieldFilterEnvAmount,
         FieldFilterAsym,
+        FieldCrossfade,
     };
 
     enum class MidiEditAction

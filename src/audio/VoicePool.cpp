@@ -31,7 +31,7 @@ enum class VoiceBoundaryAction
 };
 
 // Forward declaration — defined below, used by initStretcher
-static void reseekStretcher (Voice& v, const SampleData& sample);
+static void reseekStretcher (Voice& v, const SampleData& sample, bool consumeSource);
 
 static PlaybackDirection getPlaybackDirection (double step)
 {
@@ -116,29 +116,192 @@ static double reflectPingPongPosition (double pos, int start, int end)
         return lo + (fullCycle - t);
 }
 
+static float readClampedSample (const SampleData& sample, double pos, int channel)
+{
+    const int maxFrame = sample.getNumFrames() - 1;
+    if (maxFrame < 0)
+        return 0.0f;
+
+    return sample.getInterpolatedSample (juce::jlimit (0.0, (double) maxFrame, pos), channel);
+}
+
+static float readBoundedSliceSample (const SampleData& sample, double pos,
+                                     int channel, int start, int end)
+{
+    const int sliceLen = end - start;
+    if (sliceLen <= 0)
+        return 0.0f;
+
+    const auto& buffer = sample.getBuffer();
+    if (channel < 0 || channel >= buffer.getNumChannels())
+        return 0.0f;
+
+    const auto* data = buffer.getReadPointer (channel);
+    if (data == nullptr)
+        return 0.0f;
+
+    const double clampedPos = juce::jlimit ((double) start,
+                                            (double) juce::jmax (start, end - 1),
+                                            pos);
+    const int frame0 = juce::jlimit (start, end - 1, (int) std::floor (clampedPos));
+    const float frac = (float) (clampedPos - std::floor (clampedPos));
+    const int frame1 = juce::jlimit (start, end - 1, frame0 + 1);
+
+    return data[frame0] + (data[frame1] - data[frame0]) * frac;
+}
+
+static float readWrappedLoopSample (const SampleData& sample, double pos,
+                                    int channel, int start, int end)
+{
+    const int loopLen = end - start;
+    if (loopLen <= 0)
+        return 0.0f;
+
+    const auto& buffer = sample.getBuffer();
+    if (channel < 0 || channel >= buffer.getNumChannels())
+        return 0.0f;
+
+    const auto* data = buffer.getReadPointer (channel);
+    if (data == nullptr)
+        return 0.0f;
+
+    const double wrappedPos = wrapLoopPosition (pos, start, end);
+    const int frame0 = juce::jlimit (start, end - 1, (int) std::floor (wrappedPos));
+    const float frac = (float) (wrappedPos - std::floor (wrappedPos));
+    const int frame1 = (frame0 + 1 < end) ? (frame0 + 1) : start;
+
+    return data[frame0] + (data[frame1] - data[frame0]) * frac;
+}
+
 // Reads a sample from the virtual looped source at an arbitrary position.
 // For loop/ping-pong modes, maps the position through the virtual loop.
 // For non-loop modes, clamps to buffer bounds.
 static float readExactLoopSample (const Voice& v, const SampleData& sample,
                                   double pos, int channel)
 {
-    const int maxFrame = sample.getNumFrames() - 1;
-    if (maxFrame < 0)
-        return 0.0f;
-
     if (v.pingPong)
     {
         double mapped = reflectPingPongPosition (pos, v.startSample, v.endSample);
-        return sample.getInterpolatedSample (juce::jlimit (0.0, (double) maxFrame, mapped), channel);
+        return readClampedSample (sample, mapped, channel);
     }
 
     if (v.looping)
     {
-        double mapped = wrapLoopPosition (pos, v.startSample, v.endSample);
-        return sample.getInterpolatedSample (juce::jlimit (0.0, (double) maxFrame, mapped), channel);
+        return readWrappedLoopSample (sample, pos, channel, v.startSample, v.endSample);
     }
 
-    return sample.getInterpolatedSample (juce::jlimit (0.0, (double) maxFrame, pos), channel);
+    return readClampedSample (sample, pos, channel);
+}
+
+// --- Crossfade helpers ---
+
+// Equal-power crossfade gains using a fast cosine approximation.
+// t in [0,1]: 0 = full main, 1 = full crossfade source.
+// Uses the identity: gain_main = cos(t * pi/2), gain_xfade = sin(t * pi/2)
+// Approximated with a polynomial: cos(x) ≈ 1 - x²/2 + x⁴/24 (good to ~0.01% error)
+static inline void equalPowerGains (float t, float& gainMain, float& gainXfade)
+{
+    const float halfPi = juce::MathConstants<float>::halfPi;
+    const float a = t * halfPi;
+    const float b = (1.0f - t) * halfPi;
+    // Use std::cos for correctness; the compiler will typically vectorize this
+    gainMain  = std::cos (a);
+    gainXfade = std::cos (b);
+}
+
+static double mapCrossfadePosition (const Voice& v, double pos)
+{
+    if (v.pingPong)
+        return reflectPingPongPosition (pos, v.startSample, v.endSample);
+
+    if (v.looping)
+        return wrapLoopPosition (pos, v.startSample, v.endSample);
+
+    return pos;
+}
+
+// Returns the distance (in rendered samples) from the current position to the
+// approaching seam. Looping modes use canonical wrapped/reflected positions so
+// long-running phases (notably Bungee) do not get stuck in the fade zone after
+// the first wrap.
+static inline int distanceToBoundary (const Voice& v, double pos, int direction)
+{
+    const double mappedPos = mapCrossfadePosition (v, pos);
+
+    if (direction >= 0)
+    {
+        const double boundary = (double) juce::jmax (v.startSample, v.endSample - 1);
+        const double dist = boundary - mappedPos;
+        return (dist > 0.0) ? (int) std::ceil (dist) : 0;
+    }
+
+    const double dist = mappedPos - (double) v.startSample;
+    return (dist > 0.0) ? (int) std::ceil (dist) : 0;
+}
+
+static double getCrossfadeSourcePos (const Voice& v, int dist, int direction)
+{
+    const double fadeOffset = (double) (v.crossfadeLenSamples - dist);
+
+    if (v.pingPong)
+    {
+        if (direction >= 0)
+            return (double) v.startSample + fadeOffset;
+
+        return (double) v.endSample - fadeOffset;
+    }
+
+    // Normal loop: use dist so source advances in playback direction,
+    // converging to the wrap-destination at the boundary (dist=0)
+    if (direction >= 0)
+        return (double) v.startSample - (double) dist;
+
+    return (double) v.endSample + (double) dist;
+}
+
+static float readCrossfadeMainSample (const Voice& v, const SampleData& sample,
+                                      double pos, int channel)
+{
+    if (v.looping || v.pingPong)
+        return readBoundedSliceSample (sample, mapCrossfadePosition (v, pos),
+                                       channel, v.startSample, v.endSample);
+
+    return readExactLoopSample (v, sample, pos, channel);
+}
+
+// Reads a crossfaded sample at the given position. The secondary source depends on
+// the seam type: normal loops read outside the slice, ping-pong reads the opposite
+// in-slice edge region.
+static float readCrossfadedSample (const Voice& v, const SampleData& sample,
+                                   double pos, int channel, int direction)
+{
+    if (v.crossfadeLenSamples <= 0)
+        return readExactLoopSample (v, sample, pos, channel);
+
+    const int dist = distanceToBoundary (v, pos, direction);
+    if (dist >= v.crossfadeLenSamples)
+        return readExactLoopSample (v, sample, pos, channel);
+
+    // We're in the crossfade zone
+    const float t = 1.0f - (float) dist / (float) v.crossfadeLenSamples;
+    float gainMain, gainXfade;
+    equalPowerGains (t, gainMain, gainXfade);
+
+    const float mainSample = readCrossfadeMainSample (v, sample, pos, channel);
+    const float xfadeSample = readClampedSample (sample, getCrossfadeSourcePos (v, dist, direction), channel);
+
+    return gainMain * mainSample + gainXfade * xfadeSample;
+}
+
+// Computes the crossfade source position for UI cursor display.
+// Returns 0 when the voice is not in the crossfade zone.
+static float computeXfadeSourceForUI (const Voice& v, double pos, PlaybackDirection dir)
+{
+    if (v.crossfadeLenSamples <= 0) return 0.0f;
+    const int direction = (dir == PlaybackDirection::forward) ? 1 : -1;
+    const int dist = distanceToBoundary (v, pos, direction);
+    if (dist >= v.crossfadeLenSamples) return 0.0f;
+    return (float) getCrossfadeSourcePos (v, dist, direction);
 }
 
 // Advances v.stretchSrcPos by v.direction and handles loop/ping-pong wrapping.
@@ -153,19 +316,23 @@ static VoiceBoundaryAction advanceStretchSrcPos (Voice& v)
         {
             v.stretchSrcPos = 2.0 * (v.endSample - 1) - v.stretchSrcPos;
             v.direction = -1;
+            return VoiceBoundaryAction::pingPongTurnaround;
         }
         else if (v.stretchSrcPos < v.startSample)
         {
             v.stretchSrcPos = 2.0 * v.startSample - v.stretchSrcPos;
             v.direction = 1;
+            return VoiceBoundaryAction::pingPongTurnaround;
         }
         return VoiceBoundaryAction::continuePlayback;
     }
 
     if (v.looping)
     {
+        const bool wrapped = v.stretchSrcPos >= v.endSample || v.stretchSrcPos < v.startSample;
         v.stretchSrcPos = wrapLoopPosition (v.stretchSrcPos, v.startSample, v.endSample);
-        return VoiceBoundaryAction::continuePlayback;
+        return wrapped ? VoiceBoundaryAction::loopWrap
+                       : VoiceBoundaryAction::continuePlayback;
     }
 
     // Non-loop: classify boundary for release/releaseTail
@@ -269,6 +436,8 @@ VoicePool::VoicePool()
 {
     for (auto& p : voicePositions)
         p.store (0.0f, std::memory_order_relaxed);
+    for (auto& p : xfadeSourcePositions)
+        p.store (0.0f, std::memory_order_relaxed);
 
     for (auto& v : voices)
     {
@@ -334,6 +503,7 @@ void VoicePool::setMaxActiveVoices (int n)
             if (i == previewIdx) continue;
             voices[i].active = false;
             voicePositions[i].store (0.0f, std::memory_order_relaxed);
+            xfadeSourcePositions[i].store (0.0f, std::memory_order_relaxed);
         }
     }
     maxActive = n;
@@ -370,6 +540,8 @@ void VoicePool::initPreviewVoiceCommon (Voice& v,
     v.filterDriveGain = 0.0f;
     v.satBias = v.satOffset = 0.0f;
     v.satNorm = 1.0f;
+    v.crossfadePct = 0.0f;
+    v.crossfadeLenSamples = 0;
     v.dcBlockerActive = false;
     v.dcPrevInL = v.dcPrevInR = v.dcPrevOutL = v.dcPrevOutR = 0.0f;
     v.dcCoeffR = 0.0f;
@@ -382,9 +554,11 @@ void VoicePool::initPreviewVoiceCommon (Voice& v,
     v.stretchActive = false;
     v.stretchOutReadPos = 0;
     v.stretchOutAvail   = 0;
+    v.stretchResetNeeded = false;
     v.bungeeActive  = false;
     v.bungeeOutReadPos = 0;
     v.bungeeOutAvail   = 0;
+    v.bungeeResetNeeded = false;
 }
 
 void VoicePool::initPreviewVoiceStretch (Voice& v, int sourceStartSample, const PreviewStretchParams& p)
@@ -463,7 +637,7 @@ void VoicePool::initStretcher (Voice& v, float pitchSemis, double sr,
     v.stretchOutAvail = 0;
 
     // Pre-roll from current stretchSrcPos via shared reseek helper
-    reseekStretcher (v, sample);
+    reseekStretcher (v, sample, true);
 }
 
 void VoicePool::initBungee (Voice& v, float pitchSemis, double sr, int grainMode)
@@ -581,6 +755,31 @@ void VoicePool::startVoice (int voiceIdx, const VoiceStartParams& p,
     v.filterEnvAmount = sm.resolveParam (sliceIdx, kLockFilterEnvAmount,
                                          s.filterEnvAmount, p.globalFilterEnvAmount);
     v.bufferEnd = sample.getNumFrames();
+
+    // Resolve crossfade
+    v.crossfadePct = sm.resolveParam (sliceIdx, kLockCrossfade, s.crossfadePct, p.globalCrossfadePct);
+    {
+        const int sliceLen = s.endSample - s.startSample;
+        if (v.crossfadePct > 0.0f && sliceLen > 0 && (v.looping || v.pingPong))
+        {
+            int fadeLen = crossfadePercentToSamples (v.crossfadePct, sliceLen, v.pingPong);
+
+            if (v.looping)
+            {
+                const int preStartAvail = s.startSample;
+                const int postEndAvail  = juce::jmax (0, v.bufferEnd - s.endSample);
+                fadeLen = rev ? juce::jmin (fadeLen, postEndAvail)
+                              : juce::jmin (fadeLen, preStartAvail);
+            }
+
+            v.crossfadeLenSamples = juce::jmax (0, fadeLen);
+        }
+        else
+        {
+            v.crossfadeLenSamples = 0;
+        }
+    }
+
     v.filterL1.reset();
     v.filterR1.reset();
     v.filterL2.reset();
@@ -590,7 +789,9 @@ void VoicePool::startVoice (int voiceIdx, const VoiceStartParams& p,
 
     // Reset stretch state (guard against stale data from stolen voices)
     v.stretchActive  = false;
+    v.stretchResetNeeded = false;
     v.bungeeActive   = false;
+    v.bungeeResetNeeded = false;
 
     if (stretchOn && p.dawBpm > 0.0f && sliceBpm > 0.0f)
     {
@@ -715,7 +916,7 @@ void VoicePool::muteGroup (int group, int exceptVoice)
 
 // Reseek the Signalsmith stretcher from the current stretchSrcPos/direction.
 // Extracted from initStretcher() so it can also be called at loop/ping-pong seams.
-static void reseekStretcher (Voice& v, const SampleData& sample)
+static void reseekStretcher (Voice& v, const SampleData& sample, bool consumeSource)
 {
     if (! v.stretcher || ! sample.isLoaded())
         return;
@@ -737,7 +938,8 @@ static void reseekStretcher (Voice& v, const SampleData& sample)
         }
         float* ptrs[2] = { v.stretchInBufL.data(), v.stretchInBufR.data() };
         v.stretcher->outputSeek (ptrs, seekLen);
-        v.stretchSrcPos += (v.direction > 0) ? seekLen : -seekLen;
+        if (consumeSource)
+            v.stretchSrcPos += (v.direction > 0) ? seekLen : -seekLen;
     }
 
     v.stretchOutReadPos = 0;
@@ -746,6 +948,12 @@ static void reseekStretcher (Voice& v, const SampleData& sample)
 
 static void fillStretchBlock (Voice& v, const SampleData& sample)
 {
+    if (v.stretchResetNeeded)
+    {
+        reseekStretcher (v, sample, false);
+        v.stretchResetNeeded = false;
+    }
+
     int inputSamples = (int) (kStretchBlockSize * v.stretchTimeRatio);
     if (inputSamples < 1) inputSamples = 1;
     const int maxInput = std::min ((int) v.stretchInBufL.size(), (int) v.stretchInBufR.size());
@@ -755,16 +963,24 @@ static void fillStretchBlock (Voice& v, const SampleData& sample)
 
     for (int i = 0; i < inputSamples; ++i)
     {
-        // Read from virtual looped source (handles loop/ping-pong transparently)
-        v.stretchInBufL[(size_t) i] = readExactLoopSample (v, sample, v.stretchSrcPos, 0);
-        v.stretchInBufR[(size_t) i] = readExactLoopSample (v, sample, v.stretchSrcPos, 1);
+        // Read from virtual looped source (with optional crossfade at loop boundaries)
+        v.stretchInBufL[(size_t) i] = readCrossfadedSample (v, sample, v.stretchSrcPos, 0, v.direction);
+        v.stretchInBufR[(size_t) i] = readCrossfadedSample (v, sample, v.stretchSrcPos, 1, v.direction);
 
         // Advance source position (loop/ping-pong wrap handled by advanceStretchSrcPos)
         auto action = advanceStretchSrcPos (v);
+        bool stopAfterThisInput = false;
 
         // For non-loop modes, handle release/releaseTail boundaries
         switch (action)
         {
+            case VoiceBoundaryAction::loopWrap:
+            case VoiceBoundaryAction::pingPongTurnaround:
+                v.stretchResetNeeded = true;
+                inputSamples = i + 1;
+                stopAfterThisInput = true;
+                break;
+
             case VoiceBoundaryAction::releaseTail:
                 v.stretchSrcPos = (v.direction > 0)
                     ? std::min (v.stretchSrcPos, (double) v.bufferEnd - 1)
@@ -790,6 +1006,9 @@ static void fillStretchBlock (Voice& v, const SampleData& sample)
             default:
                 break;
         }
+
+        if (stopAfterThisInput)
+            break;
     }
 
     const int outCapacity = std::min ((int) v.stretchOutBufL.size(), (int) v.stretchOutBufR.size());
@@ -855,11 +1074,13 @@ static void fillBungeeBlock (Voice& v, const SampleData& sample)
     {
         // Virtual loop: map each grain position through the exact loop helpers.
         // The virtual source is always valid, so muteHead/muteTail stay 0.
+        // Use bungeeSpeed sign to determine crossfade direction for Bungee voices.
+        const int bungeeDir = (v.bungeeSpeed >= 0.0) ? 1 : -1;
         for (int i = 0; i < numFrames; ++i)
         {
             double pos = inputChunk.begin + i;
-            v.bungeeInputBuf[(size_t) i]         = readExactLoopSample (v, sample, pos, 0);
-            v.bungeeInputBuf[(size_t)(maxIn + i)] = readExactLoopSample (v, sample, pos, 1);
+            v.bungeeInputBuf[(size_t) i]         = readCrossfadedSample (v, sample, pos, 0, bungeeDir);
+            v.bungeeInputBuf[(size_t)(maxIn + i)] = readCrossfadedSample (v, sample, pos, 1, bungeeDir);
         }
     }
     else
@@ -954,6 +1175,7 @@ void VoicePool::processVoiceSample (int i, const SampleData& sample, double /*sr
         {
             v.active = false;
             voicePositions[i].store (0.0f, std::memory_order_relaxed);
+            xfadeSourcePositions[i].store (0.0f, std::memory_order_relaxed);
             return;
         }
 
@@ -998,6 +1220,9 @@ void VoicePool::processVoiceSample (int i, const SampleData& sample, double /*sr
         }
 
         voicePositions[i].store ((float) v.stretchSrcPos, std::memory_order_relaxed);
+        xfadeSourcePositions[i].store (
+            computeXfadeSourceForUI (v, v.stretchSrcPos, getPlaybackDirection ((double) v.direction)),
+            std::memory_order_relaxed);
     }
     else if (v.bungeeActive)
     {
@@ -1010,6 +1235,7 @@ void VoicePool::processVoiceSample (int i, const SampleData& sample, double /*sr
         {
             v.active = false;
             voicePositions[i].store (0.0f, std::memory_order_relaxed);
+            xfadeSourcePositions[i].store (0.0f, std::memory_order_relaxed);
             return;
         }
 
@@ -1061,6 +1287,10 @@ void VoicePool::processVoiceSample (int i, const SampleData& sample, double /*sr
             voicePositions[i].store ((float) reflectPingPongPosition (v.bungeeSrcPos, v.startSample, v.endSample), std::memory_order_relaxed);
         else
             voicePositions[i].store ((float) v.bungeeSrcPos, std::memory_order_relaxed);
+
+        xfadeSourcePositions[i].store (
+            computeXfadeSourceForUI (v, v.bungeeSrcPos, getPlaybackDirection (v.bungeeSpeed)),
+            std::memory_order_relaxed);
     }
     else
     {
@@ -1073,12 +1303,21 @@ void VoicePool::processVoiceSample (int i, const SampleData& sample, double /*sr
         {
             v.active = false;
             voicePositions[i].store (0.0f, std::memory_order_relaxed);
+            xfadeSourcePositions[i].store (0.0f, std::memory_order_relaxed);
             return;
         }
 
-        // Linear interpolation
-        voiceL = sample.getInterpolatedSample (v.position, 0);
-        voiceR = sample.getInterpolatedSample (v.position, 1);
+        // Linear interpolation (with optional crossfade at loop boundaries)
+        if (v.crossfadeLenSamples > 0)
+        {
+            voiceL = readCrossfadedSample (v, sample, v.position, 0, v.direction);
+            voiceR = readCrossfadedSample (v, sample, v.position, 1, v.direction);
+        }
+        else
+        {
+            voiceL = sample.getInterpolatedSample (v.position, 0);
+            voiceR = sample.getInterpolatedSample (v.position, 1);
+        }
         processVoiceFilter (v, (float) sampleRate, voiceL, voiceR);
         voiceL *= env * v.velocity * v.volume;
         voiceR *= env * v.velocity * v.volume;
@@ -1128,6 +1367,9 @@ void VoicePool::processVoiceSample (int i, const SampleData& sample, double /*sr
 
         v.position = newPos;
         voicePositions[i].store ((float) v.position, std::memory_order_relaxed);
+        xfadeSourcePositions[i].store (
+            computeXfadeSourceForUI (v, v.position, getPlaybackDirection ((double) v.direction)),
+            std::memory_order_relaxed);
     }
 
     outL = voiceL;
@@ -1252,6 +1494,7 @@ void VoicePool::startShiftPreview (int startSample, int bufferSize,
 
     v.envelope.noteOn (0.002f, 0.0f, 1.0f, 0.05f, p.sampleRate);
     voicePositions[i].store ((float) startSample, std::memory_order_relaxed);
+    xfadeSourcePositions[i].store (0.0f, std::memory_order_relaxed);
 }
 
 void VoicePool::stopShiftPreview()

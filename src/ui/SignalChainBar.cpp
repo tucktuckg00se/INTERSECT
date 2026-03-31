@@ -212,9 +212,9 @@ std::array<uint64_t, 13> getModuleBits (SignalChainBar::Module module)
                      kLockFilterEnvRelease, kLockFilterEnvAmount };
         case SignalChainBar::Module::Amp:
             return { kLockAttack, kLockDecay, kLockSustain, kLockRelease, kLockReleaseTail,
-                     0ull, 0ull, 0ull, 0ull, 0ull, 0ull, 0ull, 0ull };
+                     kLockVolume, 0ull, 0ull, 0ull, 0ull, 0ull, 0ull, 0ull };
         case SignalChainBar::Module::Output:
-            return { kLockReverse, kLockLoop, kLockOneShot, kLockMuteGroup, kLockVolume,
+            return { kLockReverse, kLockLoop, kLockOneShot, kLockMuteGroup, kLockCrossfade,
                      kLockOutputBus, 0ull, 0ull, 0ull, 0ull, 0ull, 0ull, 0ull };
     }
 
@@ -391,6 +391,7 @@ int SignalChainBar::countEffectiveModuleOverrides (Module module,
             count += checkFloat (kLockSustain, slice.sustainLevel, globals.sustain);
             count += checkFloat (kLockRelease, slice.releaseSec, globals.releaseSec);
             count += checkBool (kLockReleaseTail, slice.releaseTail, globals.releaseTail);
+            count += checkFloat (kLockVolume, slice.volume, globals.volumeDb);
             break;
 
         case Module::Output:
@@ -398,7 +399,7 @@ int SignalChainBar::countEffectiveModuleOverrides (Module module,
             count += checkInt (kLockLoop, slice.loopMode, globals.loopMode);
             count += checkBool (kLockOneShot, slice.oneShot, globals.oneShot);
             count += checkInt (kLockMuteGroup, slice.muteGroup, globals.muteGroup);
-            count += checkFloat (kLockVolume, slice.volume, globals.volumeDb);
+            count += checkFloat (kLockCrossfade, slice.crossfadePct, globals.crossfadePct);
             if ((slice.lockMask & kLockOutputBus) != 0)
                 ++count; // no global equivalent
             break;
@@ -451,7 +452,7 @@ void SignalChainBar::rebuildModuleStrip (const LayoutInput& input,
     const float filtRow2 = rowNaturalWidth ({ { 1.0f, kCellGap }, { 1.0f, kCellGap }, { 1.0f, kCellGap }, { 1.0f, kCellGap }, { 1.0f, kCellGap }, { 1.0f, 0 } });
 
     const float ampRow1 = rowNaturalWidth ({ { 1.0f, kCellGap }, { 1.0f, kCellGap }, { 1.0f, 0 } });
-    const float ampRow2 = rowNaturalWidth ({ { 1.0f, kCellGap }, { 1.0f, 0 } });
+    const float ampRow2 = rowNaturalWidth ({ { 1.0f, kCellGap }, { 1.0f, kCellGap }, { 1.0f, 0 } });
 
     const float outRow1 = rowNaturalWidth ({ { 1.0f, kCellGap }, { 1.0f, kCellGap }, { 1.0f, 0 } });
     const float outRow2 = rowNaturalWidth ({ { 1.0f, kCellGap }, { 1.0f, kCellGap }, { 1.0f, 0 } });
@@ -1259,7 +1260,7 @@ void SignalChainBar::rebuildAmpModule (const LayoutInput& input,
         { 1.0f, kCellGap }, { 1.0f, kCellGap }, { 1.0f, 0 }
     }, referenceWidth);
     const auto row2 = makeRowCells (rows.second, {
-        { 1.0f, kCellGap }, { 1.0f, 0 }
+        { 1.0f, kCellGap }, { 1.0f, kCellGap }, { 1.0f, 0 }
     }, referenceWidth);
 
     const auto [attackSec, attackLocked] = input.sliceScope
@@ -1277,6 +1278,9 @@ void SignalChainBar::rebuildAmpModule (const LayoutInput& input,
     const auto [tail, tailLocked] = input.sliceScope
         ? resolveLockedValue (selectedSlice, kLockReleaseTail, selectedSlice->releaseTail, globals.releaseTail)
         : std::pair<bool, bool> { globals.releaseTail, false };
+    const auto [gain, gainLocked] = input.sliceScope
+        ? resolveLockedValue (selectedSlice, kLockVolume, selectedSlice->volume, globals.volumeDb)
+        : std::pair<float, bool> { globals.volumeDb, false };
 
     auto addAmpCell = [this] (const juce::Rectangle<int>& bounds,
                               const juce::String& label,
@@ -1344,6 +1348,9 @@ void SignalChainBar::rebuildAmpModule (const LayoutInput& input,
     addAmpCell (row2[1], "TAIL", formatBool (tail),
                 ParamIds::defaultReleaseTail, IntersectProcessor::FieldReleaseTail, kLockReleaseTail,
                 tail ? 1.0f : 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0, tailLocked, true);
+    addAmpCell (row2[2], "GAIN", formatGain (gain),
+                ParamIds::masterVolume, IntersectProcessor::FieldVolume, kLockVolume,
+                gain, -100.0f, 24.0f, 0.1f, 0.3f, 1, gainLocked);
 }
 
 void SignalChainBar::rebuildOutputModule (const LayoutInput& input,
@@ -1372,12 +1379,14 @@ void SignalChainBar::rebuildOutputModule (const LayoutInput& input,
     const auto [muteGroup, muteLocked] = input.sliceScope
         ? resolveLockedValue (selectedSlice, kLockMuteGroup, selectedSlice->muteGroup, globals.muteGroup)
         : std::pair<int, bool> { globals.muteGroup, false };
-    const auto [gain, gainLocked] = input.sliceScope
-        ? resolveLockedValue (selectedSlice, kLockVolume, selectedSlice->volume, globals.volumeDb)
-        : std::pair<float, bool> { globals.volumeDb, false };
     const auto [outputBus, outputLocked] = input.sliceScope
         ? resolveLockedValue (selectedSlice, kLockOutputBus, selectedSlice->outputBus, 0)
         : std::pair<int, bool> { 0, false };
+
+    const auto [crossfadePct, crossfadeLocked] = input.sliceScope
+        ? resolveLockedValue (selectedSlice, kLockCrossfade, selectedSlice ? selectedSlice->crossfadePct : 0.0f, globals.crossfadePct)
+        : std::pair<float, bool> { globals.crossfadePct, false };
+    const bool fadeEnabled = (loopMode != 0); // Only active when loop is not Off
 
     auto addOutputCell = [this] (const juce::Rectangle<int>& bounds,
                                  const juce::String& label,
@@ -1427,16 +1436,33 @@ void SignalChainBar::rebuildOutputModule (const LayoutInput& input,
     addOutputCell (row1[1], "LOOP", getChoiceName (loopMode, loopNames),
                    ParamIds::defaultLoop, IntersectProcessor::FieldLoop, kLockLoop,
                    (float) loopMode, 0.0f, 2.0f, 1.0f, 0.0f, 0, loopLocked, false, true, 3, 0.0f, true);
-    addOutputCell (row1[2], "1SHOT", formatBool (oneShot),
-                   ParamIds::defaultOneShot, IntersectProcessor::FieldOneShot, kLockOneShot,
-                   oneShot ? 1.0f : 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0, oneShotLocked, true);
+
+    {
+        Cell fadeCell;
+        fadeCell.module = Module::Output;
+        fadeCell.bounds = row1[2];
+        fadeCell.label = "FADE";
+        fadeCell.valueText = fadeEnabled ? formatPercent (crossfadePct) : "-";
+        fadeCell.globalParamId = ParamIds::defaultCrossfade;
+        fadeCell.fieldId = IntersectProcessor::FieldCrossfade;
+        fadeCell.lockBit = kLockCrossfade;
+        fadeCell.currentValue = crossfadePct;
+        fadeCell.minVal = 0.0f;
+        fadeCell.maxVal = 100.0f;
+        fadeCell.step = 1.0f;
+        fadeCell.dragPerPixel = 0.5f;
+        fadeCell.textDecimals = 0;
+        fadeCell.isLocked = crossfadeLocked;
+        fadeCell.isEnabled = fadeEnabled;
+        addParamCell (fadeCell);
+    }
 
     addOutputCell (row2[0], "MUTE", juce::String (muteGroup),
                    ParamIds::defaultMuteGroup, IntersectProcessor::FieldMuteGroup, kLockMuteGroup,
                    (float) muteGroup, 0.0f, (float) kMaxMuteGroups, 1.0f, 0.25f, 0, muteLocked, false, false, 0, 0.0f, true);
-    addOutputCell (row2[1], "GAIN", formatGain (gain),
-                   ParamIds::masterVolume, IntersectProcessor::FieldVolume, kLockVolume,
-                   gain, -100.0f, 24.0f, 0.1f, 0.3f, 1, gainLocked, false, false, 0, 0.0f, true);
+    addOutputCell (row2[1], "1SHOT", formatBool (oneShot),
+                   ParamIds::defaultOneShot, IntersectProcessor::FieldOneShot, kLockOneShot,
+                   oneShot ? 1.0f : 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0, oneShotLocked, true, false, 0, 0.0f, true);
 
     if (input.sliceScope)
     {

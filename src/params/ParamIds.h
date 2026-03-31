@@ -35,6 +35,7 @@ namespace ParamIds
     inline const juce::String defaultFilterEnvSustain  { "defaultFilterEnvSustain" };
     inline const juce::String defaultFilterEnvRelease  { "defaultFilterEnvRelease" };
     inline const juce::String defaultFilterEnvAmount   { "defaultFilterEnvAmount" };
+    inline const juce::String defaultCrossfade     { "defaultCrossfade" };
     inline const juce::String maxVoices           { "maxVoices" };
     inline const juce::String uiScale             { "uiScale" };
 }
