@@ -17,6 +17,7 @@ struct VoiceStartParams
     float globalBpm        = 120.0f;
     float globalPitch      = 0.0f;
     int   globalAlgorithm  = 0;
+    int   globalRepitchMode = (int) RepitchMode::Linear;
     float globalAttackSec  = 0.005f;
     float globalDecaySec   = 0.1f;
     float globalSustain    = 1.0f;   // 0-1
@@ -55,6 +56,7 @@ struct PreviewStretchParams
 {
     bool   stretchEnabled = false;
     int    algorithm      = 0;
+    int    repitchMode    = (int) RepitchMode::Linear;
     float  bpm            = 120.0f;
     float  pitch          = 0.0f;
     float  dawBpm         = 120.0f;

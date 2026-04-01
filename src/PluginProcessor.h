@@ -90,6 +90,7 @@ public:
         FieldBpm = 0,
         FieldPitch,
         FieldAlgorithm,
+        FieldRepitchMode,
         FieldAttack,
         FieldDecay,
         FieldSustain,
@@ -440,6 +441,7 @@ private:
     std::atomic<float>* bpmParam        = nullptr;
     std::atomic<float>* pitchParam      = nullptr;
     std::atomic<float>* algoParam       = nullptr;
+    std::atomic<float>* repitchModeParam = nullptr;
     std::atomic<float>* attackParam     = nullptr;
     std::atomic<float>* decayParam      = nullptr;
     std::atomic<float>* sustainParam    = nullptr;

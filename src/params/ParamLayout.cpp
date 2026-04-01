@@ -36,6 +36,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout ParamLayout::createLayout()
         juce::StringArray { "Repitch", "Signalsmith", "Bungee" },
         0));
 
+    // Sample Repitch Mode: 0=Linear, 1=Cubic
+    params.push_back (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { ParamIds::defaultRepitchMode, 1 },
+        "Sample Repitch Mode",
+        juce::StringArray { "Linear", "Cubic" },
+        0));
+
     // Sample Attack: 0..1000 ms, default 5ms
     params.push_back (std::make_unique<juce::AudioParameterFloat> (
         juce::ParameterID { ParamIds::defaultAttack, 1 },

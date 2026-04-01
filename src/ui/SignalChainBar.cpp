@@ -197,25 +197,25 @@ void drawMiniButton (juce::Graphics& g,
     g.drawFittedText (text, bounds, juce::Justification::centred, 1);
 }
 
-std::array<uint64_t, 13> getModuleBits (SignalChainBar::Module module)
+std::array<uint64_t, 14> getModuleBits (SignalChainBar::Module module)
 {
     switch (module)
     {
         case SignalChainBar::Module::TimePitch:
             return { kLockBpm, kLockPitch, kLockCentsDetune, kLockAlgorithm, kLockStretch,
-                     kLockTonality, kLockFormant, kLockFormantComp, kLockGrainMode,
+                     kLockRepitchMode, kLockTonality, kLockFormant, kLockFormantComp, kLockGrainMode,
                      0ull, 0ull, 0ull, 0ull };
         case SignalChainBar::Module::Filter:
             return { kLockFilterEnabled, kLockFilterType, kLockFilterSlope, kLockFilterCutoff,
                      kLockFilterReso, kLockFilterDrive, kLockFilterAsym, kLockFilterKeyTrack,
                      kLockFilterEnvAttack, kLockFilterEnvDecay, kLockFilterEnvSustain,
-                     kLockFilterEnvRelease, kLockFilterEnvAmount };
+                     kLockFilterEnvRelease, kLockFilterEnvAmount, 0ull };
         case SignalChainBar::Module::Amp:
             return { kLockAttack, kLockDecay, kLockSustain, kLockRelease, kLockReleaseTail,
-                     kLockVolume, 0ull, 0ull, 0ull, 0ull, 0ull, 0ull, 0ull };
+                     kLockVolume, 0ull, 0ull, 0ull, 0ull, 0ull, 0ull, 0ull, 0ull };
         case SignalChainBar::Module::Playback:
             return { kLockReverse, kLockLoop, kLockOneShot, kLockMuteGroup, kLockCrossfade,
-                     kLockOutputBus, 0ull, 0ull, 0ull, 0ull, 0ull, 0ull, 0ull };
+                     kLockOutputBus, 0ull, 0ull, 0ull, 0ull, 0ull, 0ull, 0ull, 0ull };
     }
 
     return {};
@@ -363,6 +363,7 @@ int SignalChainBar::countEffectiveModuleOverrides (Module module,
             count += checkFloat (kLockCentsDetune, slice.centsDetune, globals.centsDetune);
             count += checkInt (kLockAlgorithm, slice.algorithm, globals.algorithm);
             count += checkBool (kLockStretch, slice.stretchEnabled, globals.stretchEnabled);
+            count += checkInt (kLockRepitchMode, slice.repitchMode, globals.repitchMode);
             count += checkFloat (kLockTonality, slice.tonalityHz, globals.tonalityHz);
             count += checkFloat (kLockFormant, slice.formantSemitones, globals.formantSemitones);
             count += checkBool (kLockFormantComp, slice.formantComp, globals.formantComp);
@@ -838,6 +839,7 @@ void SignalChainBar::rebuildTimePitchModule (const LayoutInput& input,
     const auto* selectedSlice = input.selectedSlice;
     const auto& globals = input.globals;
     const auto algoNames = juce::StringArray { "Repitch", "Signalsmith", "Bungee" };
+    const auto repitchModeNames = juce::StringArray { "Linear", "Cubic", "Sinc" };
     const auto grainNames = juce::StringArray { "Fast", "Normal", "Smooth" };
     const auto row1 = makeRowCells (rows.first, {
         { 1.0f, kCellGap }, { 1.0f, kCellGap }, { 1.0f, kGroupGap }, { 1.0f, kCellGap }, { 1.0f, 0 }
@@ -872,6 +874,9 @@ void SignalChainBar::rebuildTimePitchModule (const LayoutInput& input,
     const auto [resolvedStretch, stretchLocked] = input.sliceScope
         ? resolveLockedValue (selectedSlice, kLockStretch, selectedSlice->stretchEnabled, globals.stretchEnabled)
         : std::pair<bool, bool> { globals.stretchEnabled, false };
+    const auto [resolvedRepitchMode, repitchModeLocked] = input.sliceScope
+        ? resolveLockedValue (selectedSlice, kLockRepitchMode, selectedSlice->repitchMode, globals.repitchMode)
+        : std::pair<int, bool> { globals.repitchMode, false };
 
     const auto row2 = resolvedAlgo == 1
         ? makeRowCells (rows.second, {
@@ -882,7 +887,7 @@ void SignalChainBar::rebuildTimePitchModule (const LayoutInput& input,
                 { 2.0f, kCellGap }, { 1.0f, 0 }
             }, moduleLayout.referenceWidth)
             : makeRowCells (rows.second, {
-                { 2.0f, 0 }
+                { 2.0f, kCellGap }, { 1.0f, 0 }
             }, moduleLayout.referenceWidth));
 
     const bool repitchStretch = resolvedAlgo == 0 && resolvedStretch;
@@ -985,7 +990,27 @@ void SignalChainBar::rebuildTimePitchModule (const LayoutInput& input,
     cell.drawTrailingDivider = true;
     addParamCell (cell);
 
-    if (resolvedAlgo == 1)
+    if (resolvedAlgo == 0)
+    {
+        cell = {};
+        cell.module = Module::TimePitch;
+        cell.globalParamId = ParamIds::defaultRepitchMode;
+        cell.fieldId = IntersectProcessor::FieldRepitchMode;
+        cell.lockBit = kLockRepitchMode;
+        cell.currentValue = (float) resolvedRepitchMode;
+        cell.minVal = 0.0f;
+        cell.maxVal = 1.0f;
+        cell.step = 1.0f;
+        cell.choiceCount = 2;
+        cell.isChoice = true;
+        cell.isLocked = repitchModeLocked;
+        cell.bounds = row2[1];
+        cell.label = "MODE";
+        cell.valueText = getChoiceName (resolvedRepitchMode, repitchModeNames);
+        cell.drawTrailingDivider = true;
+        addParamCell (cell);
+    }
+    else if (resolvedAlgo == 1)
     {
         const auto [tonality, tonalityLocked] = input.sliceScope
             ? resolveLockedValue (selectedSlice, kLockTonality, selectedSlice->tonalityHz, globals.tonalityHz)

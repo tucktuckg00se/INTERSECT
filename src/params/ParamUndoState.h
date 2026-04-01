@@ -6,6 +6,7 @@ struct ParamUndoState
     float defaultBpm = 120.0f;
     float defaultPitch = 0.0f;
     float defaultAlgorithm = 0.0f;
+    float defaultRepitchMode = 0.0f;
     float defaultAttack = 5.0f;
     float defaultDecay = 100.0f;
     float defaultSustain = 100.0f;

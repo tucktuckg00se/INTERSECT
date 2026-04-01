@@ -173,6 +173,100 @@ static float readWrappedLoopSample (const SampleData& sample, double pos,
     return data[frame0] + (data[frame1] - data[frame0]) * frac;
 }
 
+static RepitchMode getActiveRepitchMode (int storedMode)
+{
+    return storedMode == (int) RepitchMode::Cubic ? RepitchMode::Cubic
+                                                  : RepitchMode::Linear;
+}
+
+template <typename FrameMapper>
+static float readMappedRepitchSample (const SampleData& sample, double pos, int channel,
+                                      RepitchMode mode, FrameMapper&& mapFrame)
+{
+    const double baseFloor = std::floor (pos);
+    const int base = (int) baseFloor;
+    const float frac = (float) (pos - baseFloor);
+
+    const auto sampleAt = [&] (int frame)
+    {
+        return sample.getSampleAtFrame (mapFrame (frame), channel);
+    };
+
+    if (mode == RepitchMode::Cubic)
+    {
+        return SampleData::interpolateCubic (sampleAt (base - 1),
+                                             sampleAt (base),
+                                             sampleAt (base + 1),
+                                             sampleAt (base + 2),
+                                             frac);
+    }
+
+    const float s0 = sampleAt (base);
+    const float s1 = sampleAt (base + 1);
+    return s0 + (s1 - s0) * frac;
+}
+
+static int wrapLoopFrame (int frame, int start, int end)
+{
+    const int len = end - start;
+    if (len <= 0)
+        return start;
+
+    int wrapped = (frame - start) % len;
+    if (wrapped < 0)
+        wrapped += len;
+    return start + wrapped;
+}
+
+static int reflectPingPongFrame (int frame, int start, int end)
+{
+    return juce::roundToInt (reflectPingPongPosition ((double) frame, start, end));
+}
+
+static float readRepitchClampedSample (const SampleData& sample, double pos,
+                                       int channel, RepitchMode mode)
+{
+    const int maxFrame = sample.getNumFrames() - 1;
+    if (maxFrame < 0)
+        return 0.0f;
+
+    return readMappedRepitchSample (sample, pos, channel, mode,
+                                    [maxFrame] (int frame)
+                                    {
+                                        return juce::jlimit (0, maxFrame, frame);
+                                    });
+}
+
+static float readRepitchBoundedSliceSample (const SampleData& sample, double pos,
+                                            int channel, int start, int end,
+                                            RepitchMode mode)
+{
+    const int sliceLen = end - start;
+    if (sliceLen <= 0)
+        return 0.0f;
+
+    return readMappedRepitchSample (sample, pos, channel, mode,
+                                    [start, end] (int frame)
+                                    {
+                                        return juce::jlimit (start, end - 1, frame);
+                                    });
+}
+
+static float readRepitchWrappedLoopSample (const SampleData& sample, double pos,
+                                           int channel, int start, int end,
+                                           RepitchMode mode)
+{
+    const int loopLen = end - start;
+    if (loopLen <= 0)
+        return 0.0f;
+
+    return readMappedRepitchSample (sample, pos, channel, mode,
+                                    [start, end] (int frame)
+                                    {
+                                        return wrapLoopFrame (frame, start, end);
+                                    });
+}
+
 // Reads a sample from the virtual looped source at an arbitrary position.
 // For loop/ping-pong modes, maps the position through the virtual loop.
 // For non-loop modes, clamps to buffer bounds.
@@ -191,6 +285,26 @@ static float readExactLoopSample (const Voice& v, const SampleData& sample,
     }
 
     return readClampedSample (sample, pos, channel);
+}
+
+static float readRepitchExactLoopSample (const Voice& v, const SampleData& sample,
+                                         double pos, int channel)
+{
+    const auto mode = getActiveRepitchMode (v.repitchMode);
+
+    if (v.pingPong)
+    {
+        return readMappedRepitchSample (sample, pos, channel, mode,
+                                        [&v] (int frame)
+                                        {
+                                            return reflectPingPongFrame (frame, v.startSample, v.endSample);
+                                        });
+    }
+
+    if (v.looping)
+        return readRepitchWrappedLoopSample (sample, pos, channel, v.startSample, v.endSample, mode);
+
+    return readRepitchClampedSample (sample, pos, channel, mode);
 }
 
 // --- Crossfade helpers ---
@@ -269,6 +383,20 @@ static float readCrossfadeMainSample (const Voice& v, const SampleData& sample,
     return readExactLoopSample (v, sample, pos, channel);
 }
 
+static float readRepitchCrossfadeMainSample (const Voice& v, const SampleData& sample,
+                                             double pos, int channel)
+{
+    const auto mode = getActiveRepitchMode (v.repitchMode);
+
+    if (v.looping || v.pingPong)
+    {
+        return readRepitchBoundedSliceSample (sample, mapCrossfadePosition (v, pos),
+                                              channel, v.startSample, v.endSample, mode);
+    }
+
+    return readRepitchExactLoopSample (v, sample, pos, channel);
+}
+
 // Reads a crossfaded sample at the given position. The secondary source depends on
 // the seam type: normal loops read outside the slice, ping-pong reads the opposite
 // in-slice edge region.
@@ -289,6 +417,28 @@ static float readCrossfadedSample (const Voice& v, const SampleData& sample,
 
     const float mainSample = readCrossfadeMainSample (v, sample, pos, channel);
     const float xfadeSample = readClampedSample (sample, getCrossfadeSourcePos (v, dist, direction), channel);
+
+    return gainMain * mainSample + gainXfade * xfadeSample;
+}
+
+static float readRepitchCrossfadedSample (const Voice& v, const SampleData& sample,
+                                          double pos, int channel, int direction)
+{
+    if (v.crossfadeLenSamples <= 0)
+        return readRepitchExactLoopSample (v, sample, pos, channel);
+
+    const int dist = distanceToBoundary (v, pos, direction);
+    if (dist >= v.crossfadeLenSamples)
+        return readRepitchExactLoopSample (v, sample, pos, channel);
+
+    const float t = 1.0f - (float) dist / (float) v.crossfadeLenSamples;
+    float gainMain, gainXfade;
+    equalPowerGains (t, gainMain, gainXfade);
+
+    const auto mode = getActiveRepitchMode (v.repitchMode);
+    const float mainSample = readRepitchCrossfadeMainSample (v, sample, pos, channel);
+    const float xfadeSample = readRepitchClampedSample (sample, getCrossfadeSourcePos (v, dist, direction),
+                                                        channel, mode);
 
     return gainMain * mainSample + gainXfade * xfadeSample;
 }
@@ -522,6 +672,7 @@ void VoicePool::initPreviewVoiceCommon (Voice& v,
     v.speed         = 1.0;
     v.direction     = 1;
     v.midiNote      = -1;
+    v.repitchMode   = (int) RepitchMode::Linear;
     v.velocity      = velocity;
     v.startSample   = startSample;
     v.endSample     = endSample;
@@ -563,6 +714,8 @@ void VoicePool::initPreviewVoiceCommon (Voice& v,
 
 void VoicePool::initPreviewVoiceStretch (Voice& v, int sourceStartSample, const PreviewStretchParams& p)
 {
+    v.repitchMode = p.repitchMode;
+
     if (p.stretchEnabled && p.dawBpm > 0.0f && p.bpm > 0.0f)
     {
         const float speedRatio = p.dawBpm / p.bpm;
@@ -691,6 +844,8 @@ void VoicePool::startVoice (int voiceIdx, const VoiceStartParams& p,
     v.outputBus = (int) sm.resolveParam (sliceIdx, kLockOutputBus, (float) s.outputBus, 0.0f);
 
     int algo = (int) sm.resolveParam (sliceIdx, kLockAlgorithm, (float) s.algorithm, (float) p.globalAlgorithm);
+    int repitchMode = (int) sm.resolveParam (sliceIdx, kLockRepitchMode,
+                                             (float) s.repitchMode, (float) p.globalRepitchMode);
 
     float sliceBpm = sm.resolveParam (sliceIdx, kLockBpm,   s.bpm,            p.globalBpm);
     float pitchSt  = sm.resolveParam (sliceIdx, kLockPitch,       s.pitchSemitones, p.globalPitch);
@@ -714,6 +869,7 @@ void VoicePool::startVoice (int voiceIdx, const VoiceStartParams& p,
     int hopAdj = grainMode - 1;
 
     v.volume = dbToLinear (sm.resolveParam (sliceIdx, kLockVolume, s.volume, p.globalVolume));
+    v.repitchMode = juce::jlimit (0, 2, repitchMode);
 
     v.releaseTail = sm.resolveParam (sliceIdx, kLockReleaseTail,
                                       s.releaseTail ? 1.0f : 0.0f,
@@ -1310,13 +1466,13 @@ void VoicePool::processVoiceSample (int i, const SampleData& sample, double /*sr
         // Linear interpolation (with optional crossfade at loop boundaries)
         if (v.crossfadeLenSamples > 0)
         {
-            voiceL = readCrossfadedSample (v, sample, v.position, 0, v.direction);
-            voiceR = readCrossfadedSample (v, sample, v.position, 1, v.direction);
+            voiceL = readRepitchCrossfadedSample (v, sample, v.position, 0, v.direction);
+            voiceR = readRepitchCrossfadedSample (v, sample, v.position, 1, v.direction);
         }
         else
         {
-            voiceL = sample.getInterpolatedSample (v.position, 0);
-            voiceR = sample.getInterpolatedSample (v.position, 1);
+            voiceL = readRepitchExactLoopSample (v, sample, v.position, 0);
+            voiceR = readRepitchExactLoopSample (v, sample, v.position, 1);
         }
         processVoiceFilter (v, (float) sampleRate, voiceL, voiceR);
         voiceL *= env * v.velocity * v.volume;

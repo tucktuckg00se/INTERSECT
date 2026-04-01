@@ -60,7 +60,7 @@ static constexpr uint64_t kValidLockMask =
     | kLockFilterType | kLockFilterSlope | kLockFilterCutoff | kLockFilterReso
     | kLockFilterDrive | kLockFilterKeyTrack | kLockFilterEnvAttack | kLockFilterEnvDecay
     | kLockFilterEnvSustain | kLockFilterEnvRelease | kLockFilterEnvAmount
-    | kLockFilterAsym | kLockCrossfade;
+    | kLockFilterAsym | kLockCrossfade | kLockRepitchMode;
 
 // Copies a global parameter value into a slice field based on the lock bit.
 // Used when locking a parameter to snapshot the current effective value.
@@ -71,6 +71,7 @@ static void copyGlobalToSlice (Slice& s, const GlobalParamSnapshot& g, uint64_t 
         case kLockBpm:              s.bpm = g.bpm;                          break;
         case kLockPitch:            s.pitchSemitones = g.pitchSemitones;    break;
         case kLockAlgorithm:        s.algorithm = g.algorithm;              break;
+        case kLockRepitchMode:      s.repitchMode = g.repitchMode;          break;
         case kLockAttack:           s.attackSec = g.attackSec;              break;
         case kLockDecay:            s.decaySec = g.decaySec;                break;
         case kLockSustain:          s.sustainLevel = g.sustain;             break;
@@ -116,6 +117,7 @@ static Slice sanitiseRestoredSlice (Slice s)
     s.bpm = juce::jlimit (20.0f, 999.0f, s.bpm);
     s.pitchSemitones = juce::jlimit (-48.0f, 48.0f, s.pitchSemitones);
     s.algorithm = juce::jlimit (0, 2, s.algorithm);
+    s.repitchMode = juce::jlimit (0, 2, s.repitchMode);
     s.attackSec = juce::jlimit (0.0f, 1.0f, s.attackSec);
     s.decaySec = juce::jlimit (0.0f, 5.0f, s.decaySec);
     s.sustainLevel = juce::jlimit (0.0f, 1.0f, s.sustainLevel);
@@ -146,6 +148,7 @@ static Slice sanitiseRestoredSlice (Slice s)
 }
 
 constexpr int kCurrentStateVersion = 24;
+constexpr int kStateExtensionMagic = 0x52504D31; // "RPM1"
 constexpr std::array<double, 6> kLegacyCommonSampleRates { 44100.0, 48000.0, 88200.0,
                                                            96000.0, 176400.0, 192000.0 };
 
@@ -216,6 +219,7 @@ PreviewStretchParams makePreviewStretchParams (const GlobalParamSnapshot& global
     PreviewStretchParams params;
     params.stretchEnabled = globals.stretchEnabled;
     params.algorithm = globals.algorithm;
+    params.repitchMode = globals.repitchMode;
     params.bpm = globals.bpm;
     params.pitch = globals.pitchSemitones;
     params.dawBpm = dawBpm;
@@ -239,6 +243,7 @@ VoiceStartParams makeVoiceStartParams (const GlobalParamSnapshot& globals,
     params.globalBpm = globals.bpm;
     params.globalPitch = globals.pitchSemitones;
     params.globalAlgorithm = globals.algorithm;
+    params.globalRepitchMode = globals.repitchMode;
     params.globalAttackSec = globals.attackSec;
     params.globalDecaySec = globals.decaySec;
     params.globalSustain = globals.sustain;
@@ -299,6 +304,7 @@ IntersectProcessor::IntersectProcessor()
     bpmParam       = apvts.getRawParameterValue (ParamIds::defaultBpm);
     pitchParam     = apvts.getRawParameterValue (ParamIds::defaultPitch);
     algoParam      = apvts.getRawParameterValue (ParamIds::defaultAlgorithm);
+    repitchModeParam = apvts.getRawParameterValue (ParamIds::defaultRepitchMode);
     attackParam    = apvts.getRawParameterValue (ParamIds::defaultAttack);
     decayParam     = apvts.getRawParameterValue (ParamIds::defaultDecay);
     sustainParam   = apvts.getRawParameterValue (ParamIds::defaultSustain);
@@ -452,6 +458,7 @@ ParamUndoState IntersectProcessor::captureParamUndoState() const
     state.defaultBpm = load (bpmParam, state.defaultBpm);
     state.defaultPitch = load (pitchParam, state.defaultPitch);
     state.defaultAlgorithm = load (algoParam, state.defaultAlgorithm);
+    state.defaultRepitchMode = load (repitchModeParam, state.defaultRepitchMode);
     state.defaultAttack = load (attackParam, state.defaultAttack);
     state.defaultDecay = load (decayParam, state.defaultDecay);
     state.defaultSustain = load (sustainParam, state.defaultSustain);
@@ -524,6 +531,7 @@ void IntersectProcessor::applyParamUndoState (const ParamUndoState& state)
     apply (ParamIds::defaultBpm, state.defaultBpm);
     apply (ParamIds::defaultPitch, state.defaultPitch);
     apply (ParamIds::defaultAlgorithm, state.defaultAlgorithm);
+    apply (ParamIds::defaultRepitchMode, state.defaultRepitchMode);
     apply (ParamIds::defaultAttack, state.defaultAttack);
     apply (ParamIds::defaultDecay, state.defaultDecay);
     apply (ParamIds::defaultSustain, state.defaultSustain);
@@ -1278,6 +1286,9 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                         break;
                     case FieldAlgorithm:
                         setIntField (s.algorithm, (int) val, globals.algorithm, kLockAlgorithm);
+                        break;
+                    case FieldRepitchMode:
+                        setIntField (s.repitchMode, (int) val, globals.repitchMode, kLockRepitchMode);
                         break;
                     case FieldAttack:
                         setFloatField (s.attackSec, val, globals.attackSec, kLockAttack);
@@ -2277,6 +2288,13 @@ void IntersectProcessor::getStateInformation (juce::MemoryBlock& destData)
     stream.writeBool (midiEditState.enabled.load (std::memory_order_relaxed));
     stream.writeInt  (midiEditState.channel.load (std::memory_order_relaxed));
     stream.writeBool (midiEditState.consumeMidiEditCc.load (std::memory_order_relaxed));
+
+    // Optional v24 extension block for fields added without changing the base version.
+    stream.writeInt (kStateExtensionMagic);
+    stream.writeInt (1);
+    stream.writeInt (numSlices);
+    for (int i = 0; i < numSlices; ++i)
+        stream.writeInt (sliceManager.getSlice (i).repitchMode);
 }
 
 void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
@@ -2433,15 +2451,41 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
         clearPendingSliceTimelineRemap();
     }
 
-    sliceManager.rebuildMidiMap();
-    publishUiSliceSnapshot();
-
     snapToZeroCrossing.store (stream.readBool());
 
     // v19: MIDI edit settings
     midiEditState.enabled.store     (stream.readBool(), std::memory_order_relaxed);
     midiEditState.channel.store     (stream.readInt(),  std::memory_order_relaxed);
     midiEditState.consumeMidiEditCc.store (stream.readBool(), std::memory_order_relaxed);
+
+    const auto bytesRemaining = stream.getTotalLength() - stream.getPosition();
+    if (bytesRemaining >= 12)
+    {
+        const int maybeMagic = stream.readInt();
+        if (maybeMagic == kStateExtensionMagic)
+        {
+            const int extensionVersion = stream.readInt();
+            if (extensionVersion >= 1)
+            {
+                const int storedRepitchModes = juce::jlimit (0, storedNumSlices, stream.readInt());
+                for (int i = 0; i < storedRepitchModes; ++i)
+                {
+                    if (stream.getTotalLength() - stream.getPosition() < 4)
+                        break;
+
+                    const int repitchMode = juce::jlimit (0, 2, stream.readInt());
+                    if (i < validatedNumSlices)
+                    {
+                        auto& slice = sliceManager.getSlice (i);
+                        slice.repitchMode = repitchMode;
+                    }
+                }
+            }
+        }
+    }
+
+    sliceManager.rebuildMidiMap();
+    publishUiSliceSnapshot();
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()

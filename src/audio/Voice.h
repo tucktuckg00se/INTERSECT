@@ -1,4 +1,5 @@
 #pragma once
+#include "../Constants.h"
 #include "AdsrEnvelope.h"
 #include "SvfFilter.h"
 #include <memory>
@@ -22,6 +23,7 @@ struct Voice
     double       speed        = 1.0;
     int          direction    = 1;       // 1=forward, -1=reverse
     int          midiNote     = -1;
+    int          repitchMode  = (int) RepitchMode::Linear;
     float        velocity     = 0.0f;
     AdsrEnvelope envelope;
     int          startSample  = 0;

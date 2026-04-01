@@ -38,7 +38,8 @@ enum LockBit : uint64_t
     kLockFilterEnvRelease = 1073741824u,
     kLockFilterEnvAmount  = 0x80000000u,
     kLockFilterAsym       = 0x100000000ull,
-    kLockCrossfade        = 0x200000000ull
+    kLockCrossfade        = 0x200000000ull,
+    kLockRepitchMode      = 0x400000000ull
 };
 
 inline int getMaxCrossfadeLengthSamples (int sliceLen, bool pingPong)
@@ -66,6 +67,7 @@ struct Slice
     float    bpm           = 120.0f;
     float    pitchSemitones = 0.0f;
     int      algorithm     = 0;       // 0=Repitch, 1=Stretch, 2=Bungee
+    int      repitchMode   = (int) RepitchMode::Linear;
     float    attackSec     = 0.005f;
     float    decaySec      = 0.1f;
     float    sustainLevel  = 1.0f;

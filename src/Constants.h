@@ -9,3 +9,10 @@ constexpr int kMaxMuteGroups = 32;
 
 constexpr float kMinFilterCutoffHz = 20.0f;
 constexpr float kMaxFilterCutoffHz = 20000.0f;
+
+enum class RepitchMode : int
+{
+    Linear = 0,
+    Cubic = 1,
+    Sinc = 2,
+};

@@ -51,8 +51,10 @@ public:
     // Thread-safe snapshot for UI access.
     SnapshotPtr getSnapshot() const;
 
-    // Audio-thread access — reads from the active decoded sample.
+    // Audio-thread access — reads from the active decoded sample using linear interpolation.
     float getInterpolatedSample (double pos, int channel) const;
+    float getSampleAtFrame (int frame, int channel) const;
+    static float interpolateCubic (float y0, float y1, float y2, float y3, float frac);
 
     int getNumFrames() const { return numFrames.load (std::memory_order_acquire); }
     bool isLoaded() const { return loaded.load (std::memory_order_acquire); }

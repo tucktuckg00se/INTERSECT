@@ -37,6 +37,7 @@ int SliceManager::createSlice (int start, int end)
     s.bpm            = 120.0f;
     s.pitchSemitones = 0.0f;
     s.algorithm      = 0;
+    s.repitchMode    = (int) RepitchMode::Linear;
     s.attackSec      = 0.005f;
     s.decaySec       = 0.1f;
     s.sustainLevel   = 1.0f;

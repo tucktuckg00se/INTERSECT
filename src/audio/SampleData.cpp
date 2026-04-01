@@ -189,6 +189,29 @@ const std::array<SampleData::PeakMipmap, SampleData::kNumMipmapLevels>& SampleDa
     return kEmptyMipmaps;
 }
 
+float SampleData::interpolateCubic (float y0, float y1, float y2, float y3, float frac)
+{
+    const float a0 = -0.5f * y0 + 1.5f * y1 - 1.5f * y2 + 0.5f * y3;
+    const float a1 = y0 - 2.5f * y1 + 2.0f * y2 - 0.5f * y3;
+    const float a2 = -0.5f * y0 + 0.5f * y2;
+    const float a3 = y1;
+
+    return ((a0 * frac + a1) * frac + a2) * frac + a3;
+}
+
+float SampleData::getSampleAtFrame (int frame, int channel) const
+{
+    if (! activeDecoded || channel < 0 || channel > 1)
+        return 0.0f;
+
+    const auto& buf = activeDecoded->buffer;
+    if (frame < 0 || frame >= buf.getNumSamples())
+        return 0.0f;
+
+    auto* data = buf.getReadPointer (channel);
+    return data != nullptr ? data[frame] : 0.0f;
+}
+
 float SampleData::getInterpolatedSample (double pos, int channel) const
 {
     if (! activeDecoded || channel < 0 || channel > 1)

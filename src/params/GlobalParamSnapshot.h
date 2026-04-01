@@ -11,6 +11,7 @@ struct GlobalParamSnapshot
     float pitchSemitones = 0.0f;
     float centsDetune = 0.0f;
     int algorithm = 0;
+    int repitchMode = (int) RepitchMode::Linear;
 
     float attackSec = 0.005f;
     float decaySec = 0.1f;
@@ -74,6 +75,7 @@ struct GlobalParamSnapshot
         snapshot.pitchSemitones = loadFloat (ParamIds::defaultPitch, snapshot.pitchSemitones);
         snapshot.centsDetune = loadFloat (ParamIds::defaultCentsDetune, snapshot.centsDetune);
         snapshot.algorithm = loadInt (ParamIds::defaultAlgorithm, snapshot.algorithm);
+        snapshot.repitchMode = loadInt (ParamIds::defaultRepitchMode, snapshot.repitchMode);
 
         snapshot.attackSec = loadFloat (ParamIds::defaultAttack, snapshot.attackSec * 1000.0f) / 1000.0f;
         snapshot.decaySec = loadFloat (ParamIds::defaultDecay, snapshot.decaySec * 1000.0f) / 1000.0f;
