@@ -176,6 +176,28 @@ float measureTextWidth (const juce::Font& font, const juce::String& text)
     return glyphs.getBoundingBox (0, -1, true).getWidth();
 }
 
+bool isLightSurfaceTheme()
+{
+    return getTheme().surface1.getPerceivedBrightness() >= 0.72f;
+}
+
+float getDimmedContentAlpha()
+{
+    return isLightSurfaceTheme() ? 0.62f : 0.4f;
+}
+
+juce::Colour getInactiveBooleanValueColour()
+{
+    return getTheme().text0.interpolatedWith (getTheme().text1,
+                                              isLightSurfaceTheme() ? 0.7f : 0.5f);
+}
+
+juce::Colour getInactiveHeaderButtonOutlineColour()
+{
+    return isLightSurfaceTheme() ? getTheme().surface5.withAlpha (0.92f)
+                                 : getTheme().surface3.withAlpha (0.82f);
+}
+
 void drawMiniButton (juce::Graphics& g,
                      juce::Rectangle<int> bounds,
                      const juce::String& text,
@@ -1727,7 +1749,7 @@ void SignalChainBar::drawSetBpmCell (juce::Graphics& g, const Cell& cell) const
 void SignalChainBar::drawParamCell (juce::Graphics& g, const Cell& cell) const
 {
     const bool hasContent = cell.label.isNotEmpty() || cell.valueText.isNotEmpty();
-    const float dimAlpha = cell.isVisuallyDimmed ? 0.4f : 1.0f;
+    const float dimAlpha = cell.isVisuallyDimmed ? getDimmedContentAlpha() : 1.0f;
     const float enabledAlpha = cell.isEnabled ? 1.0f : 0.35f;
     const float alpha = dimAlpha * enabledAlpha;
 
@@ -1740,10 +1762,10 @@ void SignalChainBar::drawParamCell (juce::Graphics& g, const Cell& cell) const
             : getTheme().surface4).withMultipliedAlpha (alpha);
         const auto outline = (cell.currentValue > 0.5f
             ? getTheme().color2.withAlpha (0.75f)
-            : getTheme().surface3.withAlpha (0.82f)).withMultipliedAlpha (alpha);
+            : getInactiveHeaderButtonOutlineColour()).withMultipliedAlpha (alpha);
         const auto text = (cell.currentValue > 0.5f
             ? getTheme().color2.brighter (0.5f)
-            : getTheme().text0.withAlpha (0.96f)).withMultipliedAlpha (alpha);
+            : getInactiveBooleanValueColour().withAlpha (0.96f)).withMultipliedAlpha (alpha);
 
         drawMiniButton (g, cell.bounds, cell.valueText, fill, outline, text, 7.0f, 6.4f, cell.isEnabled);
         return;
@@ -1797,7 +1819,7 @@ void SignalChainBar::drawParamCell (juce::Graphics& g, const Cell& cell) const
             && ! cell.isHeaderControl && ! cell.isContextInline;
         auto valueColour = getTheme().text1;
         if (! isOverride && cell.isBoolean)
-            valueColour = cell.currentValue > 0.5f ? getTheme().accent : getTheme().surface3.brighter (0.6f);
+            valueColour = cell.currentValue > 0.5f ? getTheme().accent : getInactiveBooleanValueColour();
         if (cell.isReadOnly)
             valueColour = valueColour.withMultipliedAlpha (0.55f);
         valueColour = valueColour.withMultipliedAlpha (alpha);

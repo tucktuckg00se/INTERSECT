@@ -8,6 +8,8 @@ void setTheme (const ThemeData& t);
 class IntersectLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
+    static constexpr const char* outlineOnlyButtonProperty = "intersectOutlineOnlyButton";
+
     IntersectLookAndFeel();
     ~IntersectLookAndFeel() override;
 

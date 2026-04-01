@@ -95,23 +95,33 @@ void IntersectLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button
                                                   bool isHighlighted, bool isDown)
 {
     auto bounds = button.getLocalBounds().toFloat();
+    const bool outlineOnly = static_cast<bool> (button.getProperties()[outlineOnlyButtonProperty]);
     const auto baseFill = button.findColour (juce::TextButton::buttonColourId).isTransparent()
-        ? getTheme().surface4
+        ? (outlineOnly ? juce::Colours::transparentBlack : getTheme().surface4)
         : button.findColour (juce::TextButton::buttonColourId);
     const auto textColour = button.findColour (button.getToggleState()
         ? juce::TextButton::textColourOnId
         : juce::TextButton::textColourOffId);
 
-    auto fill = baseFill;
-    auto outline = juce::Colour (0xFF181C24);
+    auto fill = outlineOnly ? juce::Colours::transparentBlack : baseFill;
+    auto outline = outlineOnly ? baseFill : juce::Colour (0xFF181C24);
 
     if (isHighlighted)
     {
-        fill = fill.brighter (0.08f);
-        outline = juce::Colour (0xFF283040);
+        if (! outlineOnly)
+            fill = fill.brighter (0.08f);
+
+        outline = outlineOnly ? outline.brighter (0.06f)
+                              : juce::Colour (0xFF283040);
     }
     if (isDown)
-        fill = fill.brighter (0.14f);
+    {
+        if (! outlineOnly)
+            fill = fill.brighter (0.14f);
+
+        outline = outlineOnly ? outline.brighter (0.14f)
+                              : outline;
+    }
 
     if (button.getToggleState())
         outline = outline.interpolatedWith (textColour, 0.25f);

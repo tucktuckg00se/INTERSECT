@@ -15,6 +15,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Gain control moved from the Playback module to the Amp module in the signal chain
 - Renamed internal code to match UI labels: "Time/Pitch" and "Playback" modules, "Settings" button
 
+### Fixed
+- Header action buttons now use theme-coloured outlines, and OFF states in light themes are easier to read
+
 ## [0.11.0] - 2026-03-31
 ### Added
 - Filter drive asymmetry (ASYM) parameter — biases the drive waveshaper to add even-harmonic saturation for more tonal variety

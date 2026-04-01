@@ -47,6 +47,7 @@ HeaderBar::HeaderBar (IntersectProcessor& p) : processor (p)
     {
         addAndMakeVisible (*btn);
         btn->setAlwaysOnTop (true);
+        btn->getProperties().set (IntersectLookAndFeel::outlineOnlyButtonProperty, true);
         btn->setColour (juce::TextButton::buttonColourId, getTheme().surface4);
         btn->setColour (juce::TextButton::textColourOnId, getTheme().text2);
         btn->setColour (juce::TextButton::textColourOffId, getTheme().text2);
