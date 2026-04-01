@@ -478,13 +478,11 @@ void WaveformView::drawFadeRegions (juce::Graphics& g)
     const int bufferEnd = processor.sampleData.getNumFrames();
 
     int fadeLen = crossfadePercentToSamples (resolvedCrossfade, sliceLen, pingPong);
-    if (! pingPong)
-    {
-        const int preStartAvail = s.startSample;
-        const int postEndAvail  = juce::jmax (0, bufferEnd - s.endSample);
-        fadeLen = reverse ? juce::jmin (fadeLen, postEndAvail)
-                          : juce::jmin (fadeLen, preStartAvail);
-    }
+    if (pingPong)
+        fadeLen = clampPingPongCrossfadeLengthSamples (fadeLen, s.startSample, s.endSample, bufferEnd);
+    else
+        fadeLen = clampLoopCrossfadeLengthSamples (fadeLen, s.startSample, s.endSample, bufferEnd, reverse);
+
     if (fadeLen <= 0) return;
 
     const float h = (float) getHeight();
@@ -509,8 +507,10 @@ void WaveformView::drawFadeRegions (juce::Graphics& g)
 
     if (pingPong)
     {
+        fillFadeTriangle (s.startSample - fadeLen, s.startSample, s.startSample);
         fillFadeTriangle (s.startSample, s.startSample + fadeLen, s.startSample);
         fillFadeTriangle (s.endSample - fadeLen, s.endSample, s.endSample);
+        fillFadeTriangle (s.endSample, s.endSample + fadeLen, s.endSample);
         return;
     }
 

@@ -355,14 +355,12 @@ static inline int distanceToBoundary (const Voice& v, double pos, int direction)
 
 static double getCrossfadeSourcePos (const Voice& v, int dist, int direction)
 {
-    const double fadeOffset = (double) (v.crossfadeLenSamples - dist);
-
     if (v.pingPong)
     {
         if (direction >= 0)
-            return (double) v.startSample + fadeOffset;
+            return (double) v.endSample + (double) dist;
 
-        return (double) v.endSample - fadeOffset;
+        return (double) v.startSample - (double) dist;
     }
 
     // Normal loop: use dist so source advances in playback direction,
@@ -398,8 +396,8 @@ static float readRepitchCrossfadeMainSample (const Voice& v, const SampleData& s
 }
 
 // Reads a crossfaded sample at the given position. The secondary source depends on
-// the seam type: normal loops read outside the slice, ping-pong reads the opposite
-// in-slice edge region.
+// the seam type: normal loops read outside the slice, ping-pong reads the
+// boundary-adjacent region outside the slice in the opposite travel direction.
 static float readCrossfadedSample (const Voice& v, const SampleData& sample,
                                    double pos, int channel, int direction)
 {
@@ -920,13 +918,10 @@ void VoicePool::startVoice (int voiceIdx, const VoiceStartParams& p,
         {
             int fadeLen = crossfadePercentToSamples (v.crossfadePct, sliceLen, v.pingPong);
 
-            if (v.looping)
-            {
-                const int preStartAvail = s.startSample;
-                const int postEndAvail  = juce::jmax (0, v.bufferEnd - s.endSample);
-                fadeLen = rev ? juce::jmin (fadeLen, postEndAvail)
-                              : juce::jmin (fadeLen, preStartAvail);
-            }
+            if (v.pingPong)
+                fadeLen = clampPingPongCrossfadeLengthSamples (fadeLen, s.startSample, s.endSample, v.bufferEnd);
+            else if (v.looping)
+                fadeLen = clampLoopCrossfadeLengthSamples (fadeLen, s.startSample, s.endSample, v.bufferEnd, rev);
 
             v.crossfadeLenSamples = juce::jmax (0, fadeLen);
         }

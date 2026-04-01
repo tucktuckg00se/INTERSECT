@@ -42,9 +42,9 @@ enum LockBit : uint64_t
     kLockRepitchMode      = 0x400000000ull
 };
 
-inline int getMaxCrossfadeLengthSamples (int sliceLen, bool pingPong)
+inline int getMaxCrossfadeLengthSamples (int sliceLen, bool /*pingPong*/)
 {
-    return juce::jmax (0, pingPong ? (sliceLen / 2) : sliceLen);
+    return juce::jmax (0, sliceLen);
 }
 
 inline int crossfadePercentToSamples (float crossfadePct, int sliceLen, bool pingPong)
@@ -56,6 +56,28 @@ inline int crossfadePercentToSamples (float crossfadePct, int sliceLen, bool pin
     const float normalised = juce::jlimit (0.0f, 100.0f, crossfadePct) / 100.0f;
     return juce::jlimit (1, maxFadeLen,
                          juce::roundToInt (normalised * (float) maxFadeLen));
+}
+
+inline int clampLoopCrossfadeLengthSamples (int fadeLen,
+                                            int startSample,
+                                            int endSample,
+                                            int bufferEnd,
+                                            bool reverse)
+{
+    const int preStartAvail = juce::jmax (0, startSample);
+    const int postEndAvail  = juce::jmax (0, bufferEnd - endSample);
+    return reverse ? juce::jmin (fadeLen, postEndAvail)
+                   : juce::jmin (fadeLen, preStartAvail);
+}
+
+inline int clampPingPongCrossfadeLengthSamples (int fadeLen,
+                                                int startSample,
+                                                int endSample,
+                                                int bufferEnd)
+{
+    const int preStartAvail = juce::jmax (0, startSample);
+    const int postEndAvail  = juce::jmax (0, bufferEnd - endSample);
+    return juce::jmin (fadeLen, juce::jmin (preStartAvail, postEndAvail));
 }
 
 struct Slice
