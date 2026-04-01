@@ -34,6 +34,9 @@ private:
     bool scaleDirty = true;   // forces scale application on first timer tick
     float lastZoom = -1.0f;
     float lastScroll = -1.0f;
+    float lastGlobalFadeCrossfade = -1.0f;
+    int lastGlobalFadeLoopMode = -1;
+    int lastGlobalFadeReverse = -1;
     int timerHz = 30;
     bool lastWaveformAnimating = false;
     bool lastPreviewActive = false;

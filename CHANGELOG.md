@@ -18,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 - Header action buttons now use theme-coloured outlines, and OFF states in light themes are easier to read
 - Bungee algorithm no longer produces loud static when Grain is set to Smooth
+- Fade overlay now updates immediately when changing global crossfade, loop mode, or reverse settings
 
 ## [0.11.0] - 2026-03-31
 ### Added

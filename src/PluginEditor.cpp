@@ -1,5 +1,6 @@
 #include "PluginEditor.h"
 #include <algorithm>
+#include <cmath>
 
 static constexpr int kBaseW        = 800;
 static constexpr int kBaseH        = 400;
@@ -25,6 +26,68 @@ static juce::File getThemesDir()
 {
     return getSettingsDir().getChildFile ("themes");
 }
+
+namespace
+{
+struct FadeOverlayState
+{
+    bool visible = false;
+    bool pingPong = false;
+    bool reverse = false;
+    float crossfadePct = 0.0f;
+
+    bool operator== (const FadeOverlayState& other) const noexcept
+    {
+        if (visible != other.visible)
+            return false;
+
+        if (! visible)
+            return true;
+
+        if (pingPong != other.pingPong)
+            return false;
+
+        if (std::abs (crossfadePct - other.crossfadePct) > 1.0e-4f)
+            return false;
+
+        return pingPong || reverse == other.reverse;
+    }
+};
+
+FadeOverlayState resolveSelectedFadeOverlayState (const IntersectProcessor::UiSliceSnapshot& ui,
+                                                  float globalCrossfadePct,
+                                                  int globalLoopMode,
+                                                  bool globalReverse)
+{
+    const int selectedSlice = ui.selectedSlice;
+    if (selectedSlice < 0 || selectedSlice >= ui.numSlices)
+        return {};
+
+    const auto& slice = ui.slices[(size_t) selectedSlice];
+    if (! slice.active)
+        return {};
+
+    const float resolvedCrossfade = (slice.lockMask & kLockCrossfade) != 0
+        ? slice.crossfadePct
+        : globalCrossfadePct;
+    const int resolvedLoopMode = (slice.lockMask & kLockLoop) != 0
+        ? slice.loopMode
+        : globalLoopMode;
+    const bool resolvedReverse = (slice.lockMask & kLockReverse) != 0
+        ? slice.reverse
+        : globalReverse;
+
+    if (resolvedCrossfade <= 0.0f || resolvedLoopMode == 0)
+        return {};
+
+    FadeOverlayState state;
+    state.visible = true;
+    state.pingPong = (resolvedLoopMode == 2);
+    state.reverse = resolvedReverse;
+    state.crossfadePct = resolvedCrossfade;
+    return state;
+}
+} // namespace
 
 IntersectEditor::IntersectEditor (IntersectProcessor& p)
     : AudioProcessorEditor (p),
@@ -70,6 +133,9 @@ IntersectEditor::IntersectEditor (IntersectProcessor& p)
     setWantsKeyboardFocus (true);
     setSize (kBaseW, kBaseH);
     lastUiSnapshotVersion = processor.getUiSliceSnapshotVersion();
+    lastGlobalFadeCrossfade = processor.apvts.getRawParameterValue (ParamIds::defaultCrossfade)->load();
+    lastGlobalFadeLoopMode = juce::roundToInt (processor.apvts.getRawParameterValue (ParamIds::defaultLoop)->load());
+    lastGlobalFadeReverse = processor.apvts.getRawParameterValue (ParamIds::defaultReverse)->load() >= 0.5f ? 1 : 0;
     timerHz = 30;
     startTimerHz (timerHz);
 }
@@ -250,9 +316,11 @@ void IntersectEditor::timerCallback()
 
     bool uiChanged = false;
     bool viewportChanged = false;
+    bool fadeOverlayChanged = false;
     const bool previewActive = waveformView.hasActiveSlicePreview();
     const bool waveformInteracting = waveformView.isInteracting();
     const bool rulerDragging = scrollZoomBar.isDraggingNow();
+    const auto& ui = processor.getUiSliceSnapshot();
 
     const auto snapshotVersion = processor.getUiSliceSnapshotVersion();
     if (snapshotVersion != lastUiSnapshotVersion)
@@ -282,6 +350,29 @@ void IntersectEditor::timerCallback()
         uiChanged = true;
     }
 
+    const float globalCrossfade = processor.apvts.getRawParameterValue (ParamIds::defaultCrossfade)->load();
+    const int globalLoopMode = juce::roundToInt (processor.apvts.getRawParameterValue (ParamIds::defaultLoop)->load());
+    const int globalReverse = processor.apvts.getRawParameterValue (ParamIds::defaultReverse)->load() >= 0.5f ? 1 : 0;
+    const bool globalFadeParamsChanged = std::abs (globalCrossfade - lastGlobalFadeCrossfade) > 1.0e-4f
+        || globalLoopMode != lastGlobalFadeLoopMode
+        || globalReverse != lastGlobalFadeReverse;
+
+    if (globalFadeParamsChanged)
+    {
+        const auto previousFadeState = resolveSelectedFadeOverlayState (ui,
+                                                                        lastGlobalFadeCrossfade,
+                                                                        lastGlobalFadeLoopMode,
+                                                                        lastGlobalFadeReverse != 0);
+        const auto currentFadeState = resolveSelectedFadeOverlayState (ui,
+                                                                       globalCrossfade,
+                                                                       globalLoopMode,
+                                                                       globalReverse != 0);
+        fadeOverlayChanged = ! (previousFadeState == currentFadeState);
+        lastGlobalFadeCrossfade = globalCrossfade;
+        lastGlobalFadeLoopMode = globalLoopMode;
+        lastGlobalFadeReverse = globalReverse;
+    }
+
     const bool playbackActive = std::any_of (processor.voicePool.voicePositions.begin(),
                                              processor.voicePool.voicePositions.end(),
                                              [] (const std::atomic<float>& pos)
@@ -297,7 +388,8 @@ void IntersectEditor::timerCallback()
     const bool waveformNeedsRepaint = uiChanged
         || viewportChanged
         || waveformAnimating
-        || lastWaveformAnimating;
+        || lastWaveformAnimating
+        || fadeOverlayChanged;
 
     const bool laneNeedsRepaint = uiChanged
         || viewportChanged
