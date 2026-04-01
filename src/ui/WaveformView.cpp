@@ -5,6 +5,65 @@
 #include "../PluginProcessor.h"
 #include "../audio/AudioAnalysis.h"
 
+namespace
+{
+struct LoopDisplayState
+{
+    bool active = false;
+    int mode = 0;
+    int startSample = 0;
+    int endSample = 0;
+};
+
+LoopDisplayState resolveLoopDisplayState (const Slice& slice,
+                                          const GlobalParamSnapshot& globals,
+                                          int sliceStartSample,
+                                          int sliceEndSample,
+                                          bool usePreview = false,
+                                          int previewStartSample = 0,
+                                          int previewEndSample = 0)
+{
+    LoopDisplayState state;
+    const int boundedSliceEnd = juce::jmax (sliceStartSample + 1, sliceEndSample);
+
+    state.mode = (slice.lockMask & kLockLoop) != 0 ? slice.loopMode : globals.loopMode;
+    if (state.mode == 0)
+        return state;
+
+    state.active = true;
+
+    if (usePreview)
+    {
+        state.startSample = juce::jlimit (sliceStartSample, boundedSliceEnd - 1, previewStartSample);
+        state.endSample = juce::jlimit (state.startSample + 1, boundedSliceEnd, previewEndSample);
+        return state;
+    }
+
+    const int loopStartOffset = (slice.lockMask & kLockLoopStart) != 0 ? slice.loopStartOffset : 0;
+    const int loopLength = (slice.lockMask & kLockLoopLength) != 0 ? slice.loopLength : 0;
+
+    state.startSample = juce::jlimit (sliceStartSample, boundedSliceEnd - 1,
+                                      sliceStartSample + loopStartOffset);
+    state.endSample = (loopLength > 0)
+        ? juce::jlimit (state.startSample + 1, boundedSliceEnd, state.startSample + loopLength)
+        : boundedSliceEnd;
+    return state;
+}
+
+juce::Rectangle<float> makeSliceHandleBounds (int x, int componentHeight, bool isLeft, bool highlighted)
+{
+    const float handleHeight = highlighted ? 30.0f : 24.0f;
+    const float handleY = (float) componentHeight - handleHeight;
+    return { (float) x - (isLeft ? 2.0f : 3.0f), handleY, 5.0f, handleHeight };
+}
+
+juce::Rectangle<float> makeLoopHandleBounds (int x, bool isLeft, bool highlighted)
+{
+    const float handleHeight = highlighted ? 22.0f : 18.0f;
+    return { (float) x - (isLeft ? 2.0f : 3.0f), 2.0f, 5.0f, handleHeight };
+}
+} // namespace
+
 WaveformView::WaveformView (IntersectProcessor& p) : processor (p) {}
 
 void WaveformView::setSliceDrawMode (bool active)
@@ -400,6 +459,7 @@ void WaveformView::drawWaveform (juce::Graphics& g)
 void WaveformView::drawSlices (juce::Graphics& g)
 {
     const auto& ui = processor.getUiSliceSnapshot();
+    const auto globals = GlobalParamSnapshot::loadFrom (processor.apvts, ui.rootNote);
     int sel = ui.selectedSlice;
     int num = ui.numSlices;
     int previewIdx = -1;
@@ -434,10 +494,38 @@ void WaveformView::drawSlices (juce::Graphics& g)
             g.drawVerticalLine (x1, 0.0f, (float) getHeight());
             g.drawVerticalLine (x2 - 1, 0.0f, (float) getHeight());
 
-            auto handleHeight = hoveredEdge == HoveredEdge::Left || hoveredEdge == HoveredEdge::Right ? 30.0f : 24.0f;
-            auto handleY = (float) getHeight() - handleHeight;
-            g.fillRoundedRectangle ((float) x1 - 2.0f, handleY, 5.0f, handleHeight, 2.0f);
-            g.fillRoundedRectangle ((float) x2 - 3.0f, handleY, 5.0f, handleHeight, 2.0f);
+            const bool sliceLeftHighlighted = (hoveredHandle == HoveredHandle::SliceLeft)
+                || (dragMode == DragEdgeLeft && dragSliceIdx == i);
+            const bool sliceRightHighlighted = (hoveredHandle == HoveredHandle::SliceRight)
+                || (dragMode == DragEdgeRight && dragSliceIdx == i);
+            g.fillRoundedRectangle (makeSliceHandleBounds (x1, getHeight(), true, sliceLeftHighlighted), 2.0f);
+            g.fillRoundedRectangle (makeSliceHandleBounds (x2, getHeight(), false, sliceRightHighlighted), 2.0f);
+
+            if (i == sel)
+            {
+                const bool useLoopPreview = dragSliceIdx == i
+                    && (dragMode == DragLoopLeft || dragMode == DragLoopRight);
+                const auto loopState = resolveLoopDisplayState (s, globals,
+                                                                drawStartSample, drawEndSample,
+                                                                useLoopPreview,
+                                                                dragLoopPreviewStart, dragLoopPreviewEnd);
+                if (loopState.active)
+                {
+                    const int loopX1 = sampleToPixel (loopState.startSample);
+                    const int loopX2 = sampleToPixel (loopState.endSample);
+
+                    g.setColour (s.colour.withAlpha (0.7f));
+                    g.drawVerticalLine (loopX1, 0.0f, (float) getHeight());
+                    g.drawVerticalLine (loopX2 - 1, 0.0f, (float) getHeight());
+
+                    const bool loopLeftHighlighted = (hoveredHandle == HoveredHandle::LoopLeft)
+                        || (dragMode == DragLoopLeft && dragSliceIdx == i);
+                    const bool loopRightHighlighted = (hoveredHandle == HoveredHandle::LoopRight)
+                        || (dragMode == DragLoopRight && dragSliceIdx == i);
+                    g.fillRoundedRectangle (makeLoopHandleBounds (loopX1, true, loopLeftHighlighted), 2.0f);
+                    g.fillRoundedRectangle (makeLoopHandleBounds (loopX2, false, loopRightHighlighted), 2.0f);
+                }
+            }
 
             g.setColour (s.colour.withAlpha (0.92f));
             g.setFont (IntersectLookAndFeel::makeFont (9.0f, true));
@@ -467,21 +555,26 @@ void WaveformView::drawFadeRegions (juce::Graphics& g)
     const float resolvedCrossfade = (s.lockMask & kLockCrossfade) ? s.crossfadePct : globals.crossfadePct;
     if (resolvedCrossfade <= 0.0f) return;
 
-    const int loopMode = (s.lockMask & kLockLoop) ? s.loopMode : globals.loopMode;
-    if (loopMode == 0) return;
+    const bool useLoopPreview = dragSliceIdx == sel
+        && (dragMode == DragLoopLeft || dragMode == DragLoopRight);
+    const auto loopState = resolveLoopDisplayState (s, globals,
+                                                    s.startSample, s.endSample,
+                                                    useLoopPreview,
+                                                    dragLoopPreviewStart, dragLoopPreviewEnd);
+    if (! loopState.active) return;
 
-    const int sliceLen = s.endSample - s.startSample;
-    if (sliceLen <= 0) return;
+    const int loopLen = loopState.endSample - loopState.startSample;
+    if (loopLen <= 0) return;
 
     const bool reverse = (s.lockMask & kLockReverse) ? s.reverse : globals.reverse;
-    const bool pingPong = (loopMode == 2);
+    const bool pingPong = (loopState.mode == 2);
     const int bufferEnd = processor.sampleData.getNumFrames();
 
-    int fadeLen = crossfadePercentToSamples (resolvedCrossfade, sliceLen, pingPong);
+    int fadeLen = crossfadePercentToSamples (resolvedCrossfade, loopLen, pingPong);
     if (pingPong)
-        fadeLen = clampPingPongCrossfadeLengthSamples (fadeLen, s.startSample, s.endSample, bufferEnd);
+        fadeLen = clampPingPongCrossfadeLengthSamples (fadeLen, loopState.startSample, loopState.endSample, bufferEnd);
     else
-        fadeLen = clampLoopCrossfadeLengthSamples (fadeLen, s.startSample, s.endSample, bufferEnd, reverse);
+        fadeLen = clampLoopCrossfadeLengthSamples (fadeLen, loopState.startSample, loopState.endSample, bufferEnd, reverse);
 
     if (fadeLen <= 0) return;
 
@@ -507,22 +600,22 @@ void WaveformView::drawFadeRegions (juce::Graphics& g)
 
     if (pingPong)
     {
-        fillFadeTriangle (s.startSample - fadeLen, s.startSample, s.startSample);
-        fillFadeTriangle (s.startSample, s.startSample + fadeLen, s.startSample);
-        fillFadeTriangle (s.endSample - fadeLen, s.endSample, s.endSample);
-        fillFadeTriangle (s.endSample, s.endSample + fadeLen, s.endSample);
+        fillFadeTriangle (loopState.startSample - fadeLen, loopState.startSample, loopState.startSample);
+        fillFadeTriangle (loopState.startSample, loopState.startSample + fadeLen, loopState.startSample);
+        fillFadeTriangle (loopState.endSample - fadeLen, loopState.endSample, loopState.endSample);
+        fillFadeTriangle (loopState.endSample, loopState.endSample + fadeLen, loopState.endSample);
         return;
     }
 
     if (reverse)
     {
-        fillFadeTriangle (s.startSample, s.startSample + fadeLen, s.startSample);
-        fillFadeTriangle (s.endSample, s.endSample + fadeLen, s.endSample);
+        fillFadeTriangle (loopState.startSample, loopState.startSample + fadeLen, loopState.startSample);
+        fillFadeTriangle (loopState.endSample, loopState.endSample + fadeLen, loopState.endSample);
         return;
     }
 
-    fillFadeTriangle (s.startSample - fadeLen, s.startSample, s.startSample);
-    fillFadeTriangle (s.endSample - fadeLen, s.endSample, s.endSample);
+    fillFadeTriangle (loopState.startSample - fadeLen, loopState.startSample, loopState.startSample);
+    fillFadeTriangle (loopState.endSample - fadeLen, loopState.endSample, loopState.endSample);
 }
 
 void WaveformView::drawPlaybackCursors (juce::Graphics& g)
@@ -584,7 +677,7 @@ void WaveformView::syncAltStateFromMods (const juce::ModifierKeys& mods)
         return;
 
     altModeActive = alt;
-    hoveredEdge = HoveredEdge::None;
+    hoveredHandle = HoveredHandle::None;
 
     if (alt)
         setMouseCursor (juce::MouseCursor::IBeamCursor);
@@ -601,19 +694,47 @@ void WaveformView::mouseMove (const juce::MouseEvent& e)
     auto sampleSnap = processor.sampleData.getSnapshot();
     if (sampleSnap == nullptr) return;
     const auto& ui = processor.getUiSliceSnapshot();
+    const auto globals = GlobalParamSnapshot::loadFrom (processor.apvts, ui.rootNote);
     int sel = ui.selectedSlice;
     int num = ui.numSlices;
-    HoveredEdge newEdge = HoveredEdge::None;
+    HoveredHandle newHandle = HoveredHandle::None;
 
     if (sel >= 0 && sel < num && ! sliceDrawMode && ! altModeActive)
     {
         const auto& s = ui.slices[(size_t) sel];
         if (s.active)
         {
-            int x1 = sampleToPixel (s.startSample);
-            int x2 = sampleToPixel (s.endSample);
-            if      (std::abs (e.x - x1) < 6) newEdge = HoveredEdge::Left;
-            else if (std::abs (e.x - x2) < 6) newEdge = HoveredEdge::Right;
+            const bool useLoopPreview = dragSliceIdx == sel
+                && (dragMode == DragLoopLeft || dragMode == DragLoopRight);
+            const auto loopState = resolveLoopDisplayState (s, globals,
+                                                            s.startSample, s.endSample,
+                                                            useLoopPreview,
+                                                            dragLoopPreviewStart, dragLoopPreviewEnd);
+            const auto mousePos = e.position;
+
+            if (loopState.active)
+            {
+                const auto loopLeftHit = makeLoopHandleBounds (sampleToPixel (loopState.startSample), true, true)
+                    .expanded (4.0f, 3.0f);
+                const auto loopRightHit = makeLoopHandleBounds (sampleToPixel (loopState.endSample), false, true)
+                    .expanded (4.0f, 3.0f);
+
+                if (loopLeftHit.contains (mousePos))
+                    newHandle = HoveredHandle::LoopLeft;
+                else if (loopRightHit.contains (mousePos))
+                    newHandle = HoveredHandle::LoopRight;
+            }
+
+            if (newHandle == HoveredHandle::None)
+            {
+                const int sliceLeftX = sampleToPixel (s.startSample);
+                const int sliceRightX = sampleToPixel (s.endSample);
+
+                if (std::abs (e.x - sliceLeftX) < 6)
+                    newHandle = HoveredHandle::SliceLeft;
+                else if (std::abs (e.x - sliceRightX) < 6)
+                    newHandle = HoveredHandle::SliceRight;
+            }
         }
     }
     if (altModeActive)
@@ -621,18 +742,18 @@ void WaveformView::mouseMove (const juce::MouseEvent& e)
     else if (sliceDrawMode)
         setMouseCursor (juce::MouseCursor::IBeamCursor);
     else
-        setMouseCursor (newEdge != HoveredEdge::None
+        setMouseCursor (newHandle != HoveredHandle::None
             ? juce::MouseCursor::LeftRightResizeCursor
             : juce::MouseCursor::NormalCursor);
 
-    if (newEdge != hoveredEdge) { hoveredEdge = newEdge; repaint(); }
+    if (newHandle != hoveredHandle) { hoveredHandle = newHandle; repaint(); }
 }
 
 void WaveformView::mouseEnter (const juce::MouseEvent& e) { mouseMove (e); }
 
 void WaveformView::mouseExit (const juce::MouseEvent&)
 {
-    if (hoveredEdge != HoveredEdge::None) { hoveredEdge = HoveredEdge::None; repaint(); }
+    if (hoveredHandle != HoveredHandle::None) { hoveredHandle = HoveredHandle::None; repaint(); }
 }
 
 void WaveformView::modifierKeysChanged (const juce::ModifierKeys& mods)
@@ -690,8 +811,8 @@ void WaveformView::mouseDown (const juce::MouseEvent& e)
         return;
     }
 
-    // Check slice edges (6px hot zone) — only for already-selected slice
     const auto& ui = processor.getUiSliceSnapshot();
+    const auto globals = GlobalParamSnapshot::loadFrom (processor.apvts, ui.rootNote);
     int sel = ui.selectedSlice;
     int num = ui.numSlices;
 
@@ -724,6 +845,39 @@ void WaveformView::mouseDown (const juce::MouseEvent& e)
                 dragPreviewEnd = s.endSample;
                 return true;
             };
+
+            auto beginLoopHandleDrag = [&] (DragMode newMode, const LoopDisplayState& loopState)
+            {
+                IntersectProcessor::Command gestureCmd;
+                gestureCmd.type = IntersectProcessor::CmdBeginGesture;
+                processor.pushCommand (gestureCmd);
+
+                dragMode = newMode;
+                dragSliceIdx = sel;
+                dragLoopPreviewStart = loopState.startSample;
+                dragLoopPreviewEnd = loopState.endSample;
+            };
+
+            const auto loopState = resolveLoopDisplayState (s, globals, s.startSample, s.endSample);
+            const auto mousePos = e.position;
+            if (loopState.active)
+            {
+                const auto loopLeftHit = makeLoopHandleBounds (sampleToPixel (loopState.startSample), true, true)
+                    .expanded (4.0f, 3.0f);
+                const auto loopRightHit = makeLoopHandleBounds (sampleToPixel (loopState.endSample), false, true)
+                    .expanded (4.0f, 3.0f);
+
+                if (loopLeftHit.contains (mousePos))
+                {
+                    beginLoopHandleDrag (DragLoopLeft, loopState);
+                    return;
+                }
+                if (loopRightHit.contains (mousePos))
+                {
+                    beginLoopHandleDrag (DragLoopRight, loopState);
+                    return;
+                }
+            }
 
             int x1 = sampleToPixel (s.startSample);
             int x2 = sampleToPixel (s.endSample);
@@ -820,6 +974,8 @@ void WaveformView::mouseDrag (const juce::MouseEvent& e)
         return;
     }
 
+    const auto& ui = processor.getUiSliceSnapshot();
+
     if (dragMode == DragEdgeLeft && dragSliceIdx >= 0)
     {
         if (processor.snapToZeroCrossing.load())
@@ -831,6 +987,20 @@ void WaveformView::mouseDrag (const juce::MouseEvent& e)
         if (processor.snapToZeroCrossing.load())
             samplePos = AudioAnalysis::findNearestZeroCrossing (sampleSnap->buffer, samplePos);
         dragPreviewEnd = std::max (samplePos, dragPreviewStart + kMinSliceLengthSamples);
+    }
+    else if (dragMode == DragLoopLeft && dragSliceIdx >= 0 && dragSliceIdx < ui.numSlices)
+    {
+        const auto& s = ui.slices[(size_t) dragSliceIdx];
+        if (processor.snapToZeroCrossing.load())
+            samplePos = AudioAnalysis::findNearestZeroCrossing (sampleSnap->buffer, samplePos);
+        dragLoopPreviewStart = juce::jlimit (s.startSample, dragLoopPreviewEnd - 1, samplePos);
+    }
+    else if (dragMode == DragLoopRight && dragSliceIdx >= 0 && dragSliceIdx < ui.numSlices)
+    {
+        const auto& s = ui.slices[(size_t) dragSliceIdx];
+        if (processor.snapToZeroCrossing.load())
+            samplePos = AudioAnalysis::findNearestZeroCrossing (sampleSnap->buffer, samplePos);
+        dragLoopPreviewEnd = juce::jlimit (dragLoopPreviewStart + 1, s.endSample, samplePos);
     }
     else if (dragMode == MoveSlice && dragSliceIdx >= 0)
     {
@@ -875,6 +1045,7 @@ void WaveformView::mouseUp (const juce::MouseEvent& e)
     syncAltStateFromMods (e.mods);
 
     auto sampleSnap = processor.sampleData.getSnapshot();
+    const auto& ui = processor.getUiSliceSnapshot();
 
     // Stop shift preview
     if (shiftPreviewActive)
@@ -929,6 +1100,41 @@ void WaveformView::mouseUp (const juce::MouseEvent& e)
             processor.pushCommand (cmd);
         }
     }
+    else if (dragMode == DragLoopLeft || dragMode == DragLoopRight)
+    {
+        if (dragSliceIdx >= 0 && dragSliceIdx < ui.numSlices)
+        {
+            const auto& s = ui.slices[(size_t) dragSliceIdx];
+            const auto globals = GlobalParamSnapshot::loadFrom (processor.apvts, ui.rootNote);
+            const auto currentLoopState = resolveLoopDisplayState (s, globals, s.startSample, s.endSample);
+
+            if (currentLoopState.startSample != dragLoopPreviewStart
+                || currentLoopState.endSample != dragLoopPreviewEnd)
+            {
+                const int loopStartOffset = juce::jlimit (0, juce::jmax (0, s.endSample - s.startSample - 1),
+                                                          dragLoopPreviewStart - s.startSample);
+                const int loopLength = (dragLoopPreviewEnd >= s.endSample)
+                    ? 0
+                    : juce::jmax (1, dragLoopPreviewEnd - dragLoopPreviewStart);
+
+                IntersectProcessor::Command startCmd;
+                startCmd.type = IntersectProcessor::CmdSetSliceParam;
+                startCmd.intParam1 = IntersectProcessor::FieldLoopStart;
+                startCmd.floatParam1 = (float) loopStartOffset;
+                startCmd.sliceIdx = dragSliceIdx;
+                processor.pushCommand (startCmd);
+
+                IntersectProcessor::Command lengthCmd;
+                lengthCmd.type = IntersectProcessor::CmdSetSliceParam;
+                lengthCmd.intParam1 = IntersectProcessor::FieldLoopLength;
+                lengthCmd.floatParam1 = (float) loopLength;
+                lengthCmd.sliceIdx = dragSliceIdx;
+                processor.pushCommand (lengthCmd);
+            }
+        }
+
+        processor.pendingEndGesture.store (true, std::memory_order_release);
+    }
     else if (dragMode == DuplicateSlice)
     {
         if (sampleSnap != nullptr && processor.snapToZeroCrossing.load())
@@ -954,6 +1160,8 @@ void WaveformView::mouseUp (const juce::MouseEvent& e)
     dragSliceIdx = -1;
     dragPreviewStart = 0;
     dragPreviewEnd = 0;
+    dragLoopPreviewStart = 0;
+    dragLoopPreviewEnd = 0;
     drawStartedFromAlt = false;
 }
 

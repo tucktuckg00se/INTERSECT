@@ -50,10 +50,20 @@ private:
         bool valid = false;
     };
 
-    enum DragMode { None, DragEdgeLeft, DragEdgeRight, DrawSlice, MoveSlice, DuplicateSlice };
+    enum DragMode
+    {
+        None,
+        DragEdgeLeft,
+        DragEdgeRight,
+        DragLoopLeft,
+        DragLoopRight,
+        DrawSlice,
+        MoveSlice,
+        DuplicateSlice
+    };
 
-    enum class HoveredEdge { None, Left, Right };
-    HoveredEdge hoveredEdge = HoveredEdge::None;
+    enum class HoveredHandle { None, SliceLeft, SliceRight, LoopLeft, LoopRight };
+    HoveredHandle hoveredHandle = HoveredHandle::None;
 
     int pixelToSample (int px) const;
     int sampleToPixel (int sample) const;
@@ -94,6 +104,8 @@ private:
     int dragSliceLen = 0;  // for MoveSlice: original slice length
     int dragPreviewStart = 0; // for edge/move drags: preview start sample
     int dragPreviewEnd = 0;   // for edge/move drags: preview end sample
+    int dragLoopPreviewStart = 0;
+    int dragLoopPreviewEnd = 0;
     int ghostStart = 0;    // for DuplicateSlice: ghost overlay start sample
     int ghostEnd   = 0;    // for DuplicateSlice: ghost overlay end sample
 

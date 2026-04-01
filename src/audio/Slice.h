@@ -39,7 +39,9 @@ enum LockBit : uint64_t
     kLockFilterEnvAmount  = 0x80000000u,
     kLockFilterAsym       = 0x100000000ull,
     kLockCrossfade        = 0x200000000ull,
-    kLockRepitchMode      = 0x400000000ull
+    kLockRepitchMode      = 0x400000000ull,
+    kLockLoopStart        = 0x800000000ull,
+    kLockLoopLength       = 0x1000000000ull
 };
 
 inline int getMaxCrossfadeLengthSamples (int sliceLen, bool /*pingPong*/)
@@ -121,6 +123,8 @@ struct Slice
     float    filterEnvReleaseSec = 0.0f;
     float    filterEnvAmount     = 0.0f; // semitones bipolar
     float    crossfadePct       = 0.0f; // 0-100, percentage of the mode-dependent fade range
+    int      loopStartOffset   = 0;    // samples from slice start (0 = slice start)
+    int      loopLength        = 0;    // samples (0 = full slice length)
     uint64_t lockMask      = 0;
     juce::Colour colour    { 0.4f, 0.7f, 0.95f, 1.0f };
 };

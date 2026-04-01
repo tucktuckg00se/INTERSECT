@@ -123,6 +123,8 @@ public:
         FieldFilterEnvAmount,
         FieldFilterAsym,
         FieldCrossfade,
+        FieldLoopStart,
+        FieldLoopLength,
     };
 
     enum class MidiEditAction

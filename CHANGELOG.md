@@ -14,11 +14,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 - Gain control moved from the Playback module to the Amp module in the signal chain
 - Renamed internal code to match UI labels: "Time/Pitch" and "Playback" modules, "Settings" button
+- Loop points now use dedicated waveform handles
 
 ### Fixed
 - Header action buttons now use theme-coloured outlines, and OFF states in light themes are easier to read
 - Bungee algorithm no longer produces loud static when Grain is set to Smooth
 - Fade overlay now updates immediately when changing global crossfade, loop mode, or reverse settings
+- Loop fade cursors now appear on the first loop or ping-pong seam, and saved projects once again restore their linked sample path correctly
 
 ## [0.11.0] - 2026-03-31
 ### Added

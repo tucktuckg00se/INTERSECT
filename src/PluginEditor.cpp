@@ -9,7 +9,7 @@ static constexpr float kSliceLaneH = 20.0f;
 static constexpr float kScrollbarH = 10.0f;
 static constexpr float kActionH    = 22.0f;
 static constexpr float kWaveformMinH = 180.0f;
-static constexpr float kCollapsedSignalChainH = 94.0f;
+static constexpr float kCollapsedSignalChainH = 114.0f;
 
 static juce::File getSettingsDir()
 {

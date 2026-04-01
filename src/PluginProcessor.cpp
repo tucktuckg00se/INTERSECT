@@ -60,7 +60,8 @@ static constexpr uint64_t kValidLockMask =
     | kLockFilterType | kLockFilterSlope | kLockFilterCutoff | kLockFilterReso
     | kLockFilterDrive | kLockFilterKeyTrack | kLockFilterEnvAttack | kLockFilterEnvDecay
     | kLockFilterEnvSustain | kLockFilterEnvRelease | kLockFilterEnvAmount
-    | kLockFilterAsym | kLockCrossfade | kLockRepitchMode;
+    | kLockFilterAsym | kLockCrossfade | kLockRepitchMode
+    | kLockLoopStart | kLockLoopLength;
 
 // Copies a global parameter value into a slice field based on the lock bit.
 // Used when locking a parameter to snapshot the current effective value.
@@ -102,6 +103,7 @@ static void copyGlobalToSlice (Slice& s, const GlobalParamSnapshot& g, uint64_t 
         case kLockFilterEnvAmount:  s.filterEnvAmount = g.filterEnvAmount;          break;
         case kLockFilterAsym:       s.filterAsym = g.filterAsym;                  break;
         // kLockOutputBus: no global default — slice default (0) is correct.
+        // kLockLoopStart / kLockLoopLength: no global default — slice defaults (0) are correct.
         default: break;
     }
 }
@@ -143,6 +145,12 @@ static Slice sanitiseRestoredSlice (Slice s)
     s.filterEnvReleaseSec = juce::jlimit (0.0f, 10.0f, s.filterEnvReleaseSec);
     s.filterEnvAmount = juce::jlimit (-96.0f, 96.0f, s.filterEnvAmount);
     s.crossfadePct = juce::jlimit (0.0f, 100.0f, s.crossfadePct);
+    {
+        const int sliceLen = juce::jmax (0, s.endSample - s.startSample);
+        s.loopStartOffset = juce::jlimit (0, juce::jmax (0, sliceLen - 1), s.loopStartOffset);
+        if (s.loopLength > 0)
+            s.loopLength = juce::jlimit (1, juce::jmax (1, sliceLen - s.loopStartOffset), s.loopLength);
+    }
     s.lockMask &= kValidLockMask;
     return s;
 }
@@ -803,6 +811,10 @@ bool IntersectProcessor::applyPendingSliceTimelineRemap()
         auto& s = sliceManager.getSlice (i);
         s.startSample = juce::jmax (0, (int) std::round ((double) s.startSample * ratio));
         s.endSample = juce::jmax (s.startSample + 1, (int) std::round ((double) s.endSample * ratio));
+        if (s.loopStartOffset > 0)
+            s.loopStartOffset = juce::jmax (0, (int) std::round ((double) s.loopStartOffset * ratio));
+        if (s.loopLength > 0)
+            s.loopLength = juce::jmax (1, (int) std::round ((double) s.loopLength * ratio));
     }
 
     clearPendingSliceTimelineRemap();
@@ -842,6 +854,10 @@ void IntersectProcessor::clampSlicesToSampleBounds()
         s.endSample = juce::jlimit (s.startSample + 1, maxLen, s.endSample);
         if (s.endSample - s.startSample < kMinSliceLengthSamples)
             s.endSample = juce::jmin (maxLen, s.startSample + kMinSliceLengthSamples);
+        const int sLen = s.endSample - s.startSample;
+        s.loopStartOffset = juce::jlimit (0, juce::jmax (0, sLen - 1), s.loopStartOffset);
+        if (s.loopLength > 0)
+            s.loopLength = juce::jlimit (1, juce::jmax (1, sLen - s.loopStartOffset), s.loopLength);
     }
 }
 
@@ -1084,6 +1100,10 @@ void IntersectProcessor::applyLiveDragBoundsToSlice()
                 end = juce::jmin (maxLen, start + kMidiEditMinSliceLength);
             s.startSample = start;
             s.endSample   = end;
+            const int sLen = end - start;
+            s.loopStartOffset = juce::jlimit (0, juce::jmax (0, sLen - 1), s.loopStartOffset);
+            if (s.loopLength > 0)
+                s.loopLength = juce::jlimit (1, juce::jmax (1, sLen - s.loopStartOffset), s.loopLength);
             uiSnapshotDirty.store (true, std::memory_order_release);
         }
     }
@@ -1385,6 +1405,14 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                         s.crossfadePct = juce::jlimit (0.0f, 100.0f, val);
                         s.lockMask |= kLockCrossfade;
                         break;
+                    case FieldLoopStart:
+                        s.loopStartOffset = juce::jmax (0, (int) val);
+                        s.lockMask |= kLockLoopStart;
+                        break;
+                    case FieldLoopLength:
+                        s.loopLength = juce::jmax (0, (int) val);
+                        s.lockMask |= kLockLoopLength;
+                        break;
                     case FieldMidiNote:
                         s.midiNote = juce::jlimit (0, kMaxMidiNote, (int) val);
                         sliceManager.rebuildMidiMap();
@@ -1413,6 +1441,11 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                     end = juce::jmin (maxLen, start + kMinSliceLengthSamples);
                 s.startSample = start;
                 s.endSample = end;
+                // Clamp loop fields to new slice length
+                const int newLen = end - start;
+                s.loopStartOffset = juce::jlimit (0, juce::jmax (0, newLen - 1), s.loopStartOffset);
+                if (s.loopLength > 0)
+                    s.loopLength = juce::jlimit (1, juce::jmax (1, newLen - s.loopStartOffset), s.loopLength);
                 sliceManager.rebuildMidiMap();
             }
             break;
@@ -1435,6 +1468,11 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                     {
                         dst.startSample = cmd.intParam1;
                         dst.endSample   = cmd.intParam2;
+                        // Clamp loop fields to new slice length
+                        const int dLen = dst.endSample - dst.startSample;
+                        dst.loopStartOffset = juce::jlimit (0, juce::jmax (0, dLen - 1), dst.loopStartOffset);
+                        if (dst.loopLength > 0)
+                            dst.loopLength = juce::jlimit (1, juce::jmax (1, dLen - dst.loopStartOffset), dst.loopLength);
                     }
                     // else (intParam1 == -1): inherit src.startSample/endSample as-is
                     sliceManager.selectedSlice = newIdx;
@@ -1484,6 +1522,8 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                         dst.midiNote    = juce::jlimit (0, kMaxMidiNote, baseNote + i);
                         dst.colour      = savedColour;
                         dst.active      = true;
+                        dst.loopStartOffset = 0;
+                        dst.loopLength      = 0;
                     }
                     if (i == 0) firstNew = idx;
                 }
@@ -1533,6 +1573,8 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                         dst.midiNote    = juce::jlimit (0, kMaxMidiNote, baseNote + subIdx);
                         dst.colour      = savedColour;
                         dst.active      = true;
+                        dst.loopStartOffset = 0;
+                        dst.loopLength      = 0;
                     }
                     if (firstNew < 0) firstNew = idx;
                     ++subIdx;
@@ -2291,10 +2333,17 @@ void IntersectProcessor::getStateInformation (juce::MemoryBlock& destData)
 
     // Optional v24 extension block for fields added without changing the base version.
     stream.writeInt (kStateExtensionMagic);
-    stream.writeInt (1);
+    stream.writeInt (2);
     stream.writeInt (numSlices);
     for (int i = 0; i < numSlices; ++i)
         stream.writeInt (sliceManager.getSlice (i).repitchMode);
+    stream.writeInt (numSlices);
+    for (int i = 0; i < numSlices; ++i)
+    {
+        const auto& s = sliceManager.getSlice (i);
+        stream.writeInt (s.loopStartOffset);
+        stream.writeInt (s.loopLength);
+    }
 }
 
 void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
@@ -2341,6 +2390,7 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
     sliceManager.setNumSlices (validatedNumSlices);
     sliceManager.selectedSlice = juce::jlimit (-1, validatedNumSlices - 1, savedSelectedSlice);
 
+    std::vector<Slice> restoredSlices ((size_t) validatedNumSlices);
     for (int i = 0; i < storedNumSlices; ++i)
     {
         Slice parsed;
@@ -2401,27 +2451,201 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
         }
 
         if (i < validatedNumSlices)
-            sliceManager.getSlice (i) = sanitiseRestoredSlice (parsed);
+            restoredSlices[(size_t) i] = parsed;
+    }
+
+    struct PostSliceParseResult
+    {
+        bool valid = false;
+        int score = -1000000;
+        juce::String filePath;
+        juce::String fileName;
+        int savedDecodedNumFrames = 0;
+        double savedDecodedSampleRate = 0.0;
+        int savedSourceNumFrames = 0;
+        double savedSourceSampleRate = 0.0;
+        bool snapToZeroCrossing = false;
+        bool midiEditEnabled = false;
+        int midiEditChannel = 0;
+        bool consumeMidiEditCc = true;
+        std::vector<int> repitchModes;
+        std::vector<int> loopStartOffsets;
+        std::vector<int> loopLengths;
+    };
+
+    const auto postSliceBasePosition = stream.getPosition();
+    auto tryParsePostSliceData = [&] (bool readInlineLoopFields) -> PostSliceParseResult
+    {
+        PostSliceParseResult result;
+        result.repitchModes.assign ((size_t) validatedNumSlices, 0);
+        result.loopStartOffsets.assign ((size_t) validatedNumSlices, 0);
+        result.loopLengths.assign ((size_t) validatedNumSlices, 0);
+
+        juce::MemoryInputStream trialStream (data, (size_t) sizeInBytes, false);
+        if (! trialStream.setPosition (postSliceBasePosition))
+            return result;
+
+        auto bytesRemaining = [&trialStream]() -> int64_t
+        {
+            return trialStream.getTotalLength() - trialStream.getPosition();
+        };
+
+        auto requireBytes = [&bytesRemaining] (int64_t count) -> bool
+        {
+            return bytesRemaining() >= count;
+        };
+
+        if (readInlineLoopFields)
+        {
+            for (int i = 0; i < storedNumSlices; ++i)
+            {
+                if (! requireBytes (8))
+                    return result;
+
+                const int loopStartOffset = trialStream.readInt();
+                const int loopLength = trialStream.readInt();
+                if (i < validatedNumSlices)
+                {
+                    result.loopStartOffsets[(size_t) i] = loopStartOffset;
+                    result.loopLengths[(size_t) i] = loopLength;
+                }
+            }
+        }
+
+        result.filePath = trialStream.readString();
+        result.fileName = trialStream.readString();
+
+        if (version >= 22)
+        {
+            if (! requireBytes (24))
+                return result;
+
+            result.savedDecodedNumFrames = trialStream.readInt();
+            result.savedDecodedSampleRate = trialStream.readDouble();
+            result.savedSourceNumFrames = trialStream.readInt();
+            result.savedSourceSampleRate = trialStream.readDouble();
+        }
+
+        if (! requireBytes (7))
+            return result;
+
+        result.snapToZeroCrossing = trialStream.readBool();
+        result.midiEditEnabled = trialStream.readBool();
+        result.midiEditChannel = trialStream.readInt();
+        result.consumeMidiEditCc = trialStream.readBool();
+
+        bool foundExtension = false;
+        if (bytesRemaining() >= 12)
+        {
+            const int maybeMagic = trialStream.readInt();
+            if (maybeMagic == kStateExtensionMagic)
+            {
+                foundExtension = true;
+                const int extensionVersion = trialStream.readInt();
+                if (extensionVersion >= 1)
+                {
+                    if (! requireBytes (4))
+                        return result;
+
+                    const int storedRepitchModes = juce::jlimit (0, storedNumSlices, trialStream.readInt());
+                    for (int i = 0; i < storedRepitchModes; ++i)
+                    {
+                        if (! requireBytes (4))
+                            return result;
+
+                        const int repitchMode = juce::jlimit (0, 2, trialStream.readInt());
+                        if (i < validatedNumSlices)
+                            result.repitchModes[(size_t) i] = repitchMode;
+                    }
+                }
+
+                if (extensionVersion >= 2)
+                {
+                    if (! requireBytes (4))
+                        return result;
+
+                    const int storedLoopBounds = juce::jlimit (0, storedNumSlices, trialStream.readInt());
+                    for (int i = 0; i < storedLoopBounds; ++i)
+                    {
+                        if (! requireBytes (8))
+                            return result;
+
+                        const int loopStartOffset = trialStream.readInt();
+                        const int loopLength = trialStream.readInt();
+                        if (i < validatedNumSlices)
+                        {
+                            result.loopStartOffsets[(size_t) i] = loopStartOffset;
+                            result.loopLengths[(size_t) i] = loopLength;
+                        }
+                    }
+                }
+            }
+            else
+            {
+                trialStream.setPosition (trialStream.getPosition() - 4);
+            }
+        }
+
+        result.valid = true;
+        result.score = 0;
+        if (foundExtension)
+            result.score += 6;
+        if (result.filePath.isNotEmpty() || result.fileName.isNotEmpty())
+            result.score += 4;
+        if (result.savedDecodedNumFrames >= 0 && result.savedDecodedNumFrames < 200000000)
+            result.score += 1;
+        else
+            result.score -= 2;
+        if (result.savedSourceNumFrames >= 0 && result.savedSourceNumFrames < 200000000)
+            result.score += 1;
+        else
+            result.score -= 2;
+        if (result.midiEditChannel >= 0 && result.midiEditChannel <= 16)
+            result.score += 1;
+        else
+            result.score -= 3;
+        if (bytesRemaining() == 0)
+            result.score += 1;
+        else if (! foundExtension)
+            result.score -= 2;
+
+        return result;
+    };
+
+    const auto baseLayoutResult = tryParsePostSliceData (false);
+    const auto inlineLoopLayoutResult = (version >= 24 && storedNumSlices > 0)
+        ? tryParsePostSliceData (true)
+        : PostSliceParseResult {};
+
+    const auto* postSliceResult = &baseLayoutResult;
+    if (inlineLoopLayoutResult.valid
+        && (! baseLayoutResult.valid || inlineLoopLayoutResult.score > baseLayoutResult.score))
+    {
+        postSliceResult = &inlineLoopLayoutResult;
+    }
+
+    if (! postSliceResult->valid)
+        return;
+
+    for (int i = 0; i < validatedNumSlices; ++i)
+    {
+        auto parsed = restoredSlices[(size_t) i];
+        parsed.repitchMode = postSliceResult->repitchModes[(size_t) i];
+        parsed.loopStartOffset = postSliceResult->loopStartOffsets[(size_t) i];
+        parsed.loopLength = postSliceResult->loopLengths[(size_t) i];
+        sliceManager.getSlice (i) = sanitiseRestoredSlice (parsed);
     }
 
     for (int i = validatedNumSlices; i < SliceManager::kMaxSlices; ++i)
         sliceManager.getSlice (i).active = false;
 
     // Path-based sample restore
-    auto filePath = stream.readString();
-    auto fileName = stream.readString();
-    int savedDecodedNumFrames = 0;
-    double savedDecodedSampleRate = 0.0;
-    int savedSourceNumFrames = 0;
-    double savedSourceSampleRate = 0.0;
-
-    if (version >= 22)
-    {
-        savedDecodedNumFrames = stream.readInt();
-        savedDecodedSampleRate = stream.readDouble();
-        savedSourceNumFrames = stream.readInt();
-        savedSourceSampleRate = stream.readDouble();
-    }
+    auto filePath = postSliceResult->filePath;
+    auto fileName = postSliceResult->fileName;
+    int savedDecodedNumFrames = postSliceResult->savedDecodedNumFrames;
+    double savedDecodedSampleRate = postSliceResult->savedDecodedSampleRate;
+    int savedSourceNumFrames = postSliceResult->savedSourceNumFrames;
+    double savedSourceSampleRate = postSliceResult->savedSourceSampleRate;
 
     clearVoicesBeforeSampleSwap();
     sampleData.clear();
@@ -2451,38 +2675,12 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
         clearPendingSliceTimelineRemap();
     }
 
-    snapToZeroCrossing.store (stream.readBool());
+    snapToZeroCrossing.store (postSliceResult->snapToZeroCrossing);
 
     // v19: MIDI edit settings
-    midiEditState.enabled.store     (stream.readBool(), std::memory_order_relaxed);
-    midiEditState.channel.store     (stream.readInt(),  std::memory_order_relaxed);
-    midiEditState.consumeMidiEditCc.store (stream.readBool(), std::memory_order_relaxed);
-
-    const auto bytesRemaining = stream.getTotalLength() - stream.getPosition();
-    if (bytesRemaining >= 12)
-    {
-        const int maybeMagic = stream.readInt();
-        if (maybeMagic == kStateExtensionMagic)
-        {
-            const int extensionVersion = stream.readInt();
-            if (extensionVersion >= 1)
-            {
-                const int storedRepitchModes = juce::jlimit (0, storedNumSlices, stream.readInt());
-                for (int i = 0; i < storedRepitchModes; ++i)
-                {
-                    if (stream.getTotalLength() - stream.getPosition() < 4)
-                        break;
-
-                    const int repitchMode = juce::jlimit (0, 2, stream.readInt());
-                    if (i < validatedNumSlices)
-                    {
-                        auto& slice = sliceManager.getSlice (i);
-                        slice.repitchMode = repitchMode;
-                    }
-                }
-            }
-        }
-    }
+    midiEditState.enabled.store (postSliceResult->midiEditEnabled, std::memory_order_relaxed);
+    midiEditState.channel.store (juce::jlimit (0, 16, postSliceResult->midiEditChannel), std::memory_order_relaxed);
+    midiEditState.consumeMidiEditCc.store (postSliceResult->consumeMidiEditCc, std::memory_order_relaxed);
 
     sliceManager.rebuildMidiMap();
     publishUiSliceSnapshot();

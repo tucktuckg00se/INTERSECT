@@ -237,7 +237,8 @@ std::array<uint64_t, 14> getModuleBits (SignalChainBar::Module module)
                      kLockVolume, 0ull, 0ull, 0ull, 0ull, 0ull, 0ull, 0ull, 0ull };
         case SignalChainBar::Module::Playback:
             return { kLockReverse, kLockLoop, kLockOneShot, kLockMuteGroup, kLockCrossfade,
-                     kLockOutputBus, 0ull, 0ull, 0ull, 0ull, 0ull, 0ull, 0ull, 0ull };
+                     kLockOutputBus, kLockLoopStart, kLockLoopLength,
+                     0ull, 0ull, 0ull, 0ull, 0ull, 0ull };
     }
 
     return {};
@@ -423,6 +424,10 @@ int SignalChainBar::countEffectiveModuleOverrides (Module module,
             count += checkBool (kLockOneShot, slice.oneShot, globals.oneShot);
             count += checkInt (kLockMuteGroup, slice.muteGroup, globals.muteGroup);
             count += checkFloat (kLockCrossfade, slice.crossfadePct, globals.crossfadePct);
+            if ((slice.lockMask & kLockLoopStart) != 0 && slice.loopStartOffset != 0)
+                ++count; // default is slice start
+            if ((slice.lockMask & kLockLoopLength) != 0 && slice.loopLength != 0)
+                ++count; // default is full slice length
             if ((slice.lockMask & kLockOutputBus) != 0)
                 ++count; // no global equivalent
             break;

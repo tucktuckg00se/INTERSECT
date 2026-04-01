@@ -47,15 +47,53 @@ static void releaseVoiceIfNeeded (Voice& v)
     }
 }
 
-static VoiceBoundaryAction classifyBoundaryAction (const Voice& v,
+static VoiceBoundaryAction classifyBoundaryAction (Voice& v,
                                                    double position,
                                                    PlaybackDirection direction,
                                                    bool reverseBoundaryInclusive)
 {
+    const bool isLooping = v.looping || v.pingPong;
+
+    if (isLooping && ! v.inLoopRegion)
+    {
+        // Pre-loop lead-in phase: check if we've reached the loop region
+        const bool enteredLoop = direction == PlaybackDirection::forward
+            ? (position >= v.loopEndSample)
+            : (reverseBoundaryInclusive ? (position <= v.loopStartSample)
+                                        : (position < v.loopStartSample));
+        if (enteredLoop)
+        {
+            v.inLoopRegion = true;
+            if (v.pingPong)
+                return VoiceBoundaryAction::pingPongTurnaround;
+            return VoiceBoundaryAction::loopWrap;
+        }
+
+        // Still in lead-in — check slice boundaries for end-of-sample
+        const bool pastSlice = direction == PlaybackDirection::forward
+            ? (position >= v.endSample)
+            : (reverseBoundaryInclusive ? (position <= v.startSample)
+                                        : (position < v.startSample));
+        if (pastSlice)
+        {
+            // Hit slice edge before loop region — enter loop anyway
+            v.inLoopRegion = true;
+            if (v.pingPong)
+                return VoiceBoundaryAction::pingPongTurnaround;
+            return VoiceBoundaryAction::loopWrap;
+        }
+
+        return VoiceBoundaryAction::continuePlayback;
+    }
+
+    // Use loop bounds when in loop region, slice bounds otherwise
+    const int boundStart = isLooping ? v.loopStartSample : v.startSample;
+    const int boundEnd   = isLooping ? v.loopEndSample   : v.endSample;
+
     const bool pastBoundary = direction == PlaybackDirection::forward
-        ? (position >= v.endSample)
-        : (reverseBoundaryInclusive ? (position <= v.startSample)
-                                    : (position < v.startSample));
+        ? (position >= boundEnd)
+        : (reverseBoundaryInclusive ? (position <= boundStart)
+                                    : (position < boundStart));
     if (! pastBoundary)
         return VoiceBoundaryAction::continuePlayback;
 
@@ -273,15 +311,15 @@ static float readRepitchWrappedLoopSample (const SampleData& sample, double pos,
 static float readExactLoopSample (const Voice& v, const SampleData& sample,
                                   double pos, int channel)
 {
-    if (v.pingPong)
+    if (v.pingPong && v.inLoopRegion)
     {
-        double mapped = reflectPingPongPosition (pos, v.startSample, v.endSample);
+        double mapped = reflectPingPongPosition (pos, v.loopStartSample, v.loopEndSample);
         return readClampedSample (sample, mapped, channel);
     }
 
-    if (v.looping)
+    if (v.looping && v.inLoopRegion)
     {
-        return readWrappedLoopSample (sample, pos, channel, v.startSample, v.endSample);
+        return readWrappedLoopSample (sample, pos, channel, v.loopStartSample, v.loopEndSample);
     }
 
     return readClampedSample (sample, pos, channel);
@@ -292,17 +330,17 @@ static float readRepitchExactLoopSample (const Voice& v, const SampleData& sampl
 {
     const auto mode = getActiveRepitchMode (v.repitchMode);
 
-    if (v.pingPong)
+    if (v.pingPong && v.inLoopRegion)
     {
         return readMappedRepitchSample (sample, pos, channel, mode,
                                         [&v] (int frame)
                                         {
-                                            return reflectPingPongFrame (frame, v.startSample, v.endSample);
+                                            return reflectPingPongFrame (frame, v.loopStartSample, v.loopEndSample);
                                         });
     }
 
-    if (v.looping)
-        return readRepitchWrappedLoopSample (sample, pos, channel, v.startSample, v.endSample, mode);
+    if (v.looping && v.inLoopRegion)
+        return readRepitchWrappedLoopSample (sample, pos, channel, v.loopStartSample, v.loopEndSample, mode);
 
     return readRepitchClampedSample (sample, pos, channel, mode);
 }
@@ -325,11 +363,11 @@ static inline void equalPowerGains (float t, float& gainMain, float& gainXfade)
 
 static double mapCrossfadePosition (const Voice& v, double pos)
 {
-    if (v.pingPong)
-        return reflectPingPongPosition (pos, v.startSample, v.endSample);
+    if (v.pingPong && v.inLoopRegion)
+        return reflectPingPongPosition (pos, v.loopStartSample, v.loopEndSample);
 
-    if (v.looping)
-        return wrapLoopPosition (pos, v.startSample, v.endSample);
+    if (v.looping && v.inLoopRegion)
+        return wrapLoopPosition (pos, v.loopStartSample, v.loopEndSample);
 
     return pos;
 }
@@ -341,34 +379,41 @@ static double mapCrossfadePosition (const Voice& v, double pos)
 static inline int distanceToBoundary (const Voice& v, double pos, int direction)
 {
     const double mappedPos = mapCrossfadePosition (v, pos);
+    const bool useLoopBounds = v.looping || v.pingPong;
+    const int bStart = useLoopBounds ? v.loopStartSample : v.startSample;
+    const int bEnd   = useLoopBounds ? v.loopEndSample   : v.endSample;
 
     if (direction >= 0)
     {
-        const double boundary = (double) juce::jmax (v.startSample, v.endSample - 1);
+        const double boundary = (double) juce::jmax (bStart, bEnd - 1);
         const double dist = boundary - mappedPos;
         return (dist > 0.0) ? (int) std::ceil (dist) : 0;
     }
 
-    const double dist = mappedPos - (double) v.startSample;
+    const double dist = mappedPos - (double) bStart;
     return (dist > 0.0) ? (int) std::ceil (dist) : 0;
 }
 
 static double getCrossfadeSourcePos (const Voice& v, int dist, int direction)
 {
+    const bool useLoopBounds = v.looping || v.pingPong;
+    const int bStart = useLoopBounds ? v.loopStartSample : v.startSample;
+    const int bEnd   = useLoopBounds ? v.loopEndSample   : v.endSample;
+
     if (v.pingPong)
     {
         if (direction >= 0)
-            return (double) v.endSample + (double) dist;
+            return (double) bEnd + (double) dist;
 
-        return (double) v.startSample - (double) dist;
+        return (double) bStart - (double) dist;
     }
 
     // Normal loop: use dist so source advances in playback direction,
     // converging to the wrap-destination at the boundary (dist=0)
     if (direction >= 0)
-        return (double) v.startSample - (double) dist;
+        return (double) bStart - (double) dist;
 
-    return (double) v.endSample + (double) dist;
+    return (double) bEnd + (double) dist;
 }
 
 static float readCrossfadeMainSample (const Voice& v, const SampleData& sample,
@@ -376,7 +421,7 @@ static float readCrossfadeMainSample (const Voice& v, const SampleData& sample,
 {
     if (v.looping || v.pingPong)
         return readBoundedSliceSample (sample, mapCrossfadePosition (v, pos),
-                                       channel, v.startSample, v.endSample);
+                                       channel, v.loopStartSample, v.loopEndSample);
 
     return readExactLoopSample (v, sample, pos, channel);
 }
@@ -389,7 +434,7 @@ static float readRepitchCrossfadeMainSample (const Voice& v, const SampleData& s
     if (v.looping || v.pingPong)
     {
         return readRepitchBoundedSliceSample (sample, mapCrossfadePosition (v, pos),
-                                              channel, v.startSample, v.endSample, mode);
+                                              channel, v.loopStartSample, v.loopEndSample, mode);
     }
 
     return readRepitchExactLoopSample (v, sample, pos, channel);
@@ -458,29 +503,51 @@ static VoiceBoundaryAction advanceStretchSrcPos (Voice& v)
 {
     v.stretchSrcPos += (double) v.direction;
 
-    if (v.pingPong)
+    if (v.pingPong && v.inLoopRegion)
     {
-        if (v.stretchSrcPos >= v.endSample)
+        if (v.stretchSrcPos >= v.loopEndSample)
         {
-            v.stretchSrcPos = 2.0 * (v.endSample - 1) - v.stretchSrcPos;
+            v.stretchSrcPos = 2.0 * (v.loopEndSample - 1) - v.stretchSrcPos;
             v.direction = -1;
             return VoiceBoundaryAction::pingPongTurnaround;
         }
-        else if (v.stretchSrcPos < v.startSample)
+        else if (v.stretchSrcPos < v.loopStartSample)
         {
-            v.stretchSrcPos = 2.0 * v.startSample - v.stretchSrcPos;
+            v.stretchSrcPos = 2.0 * v.loopStartSample - v.stretchSrcPos;
             v.direction = 1;
             return VoiceBoundaryAction::pingPongTurnaround;
         }
         return VoiceBoundaryAction::continuePlayback;
     }
 
-    if (v.looping)
+    if (v.looping && v.inLoopRegion)
     {
-        const bool wrapped = v.stretchSrcPos >= v.endSample || v.stretchSrcPos < v.startSample;
-        v.stretchSrcPos = wrapLoopPosition (v.stretchSrcPos, v.startSample, v.endSample);
+        const bool wrapped = v.stretchSrcPos >= v.loopEndSample || v.stretchSrcPos < v.loopStartSample;
+        v.stretchSrcPos = wrapLoopPosition (v.stretchSrcPos, v.loopStartSample, v.loopEndSample);
         return wrapped ? VoiceBoundaryAction::loopWrap
                        : VoiceBoundaryAction::continuePlayback;
+    }
+
+    // Pre-loop lead-in or non-loop: check if we've entered the loop region
+    if ((v.looping || v.pingPong) && ! v.inLoopRegion)
+    {
+        bool entered = (v.direction >= 0)
+            ? (v.stretchSrcPos >= v.loopEndSample)
+            : (v.stretchSrcPos < v.loopStartSample);
+        if (entered || v.stretchSrcPos >= v.endSample || v.stretchSrcPos < v.startSample)
+        {
+            v.inLoopRegion = true;
+            if (v.pingPong)
+            {
+                v.stretchSrcPos = juce::jlimit ((double) v.loopStartSample,
+                                                 (double) (v.loopEndSample - 1), v.stretchSrcPos);
+                v.direction = (v.direction >= 0) ? -1 : 1;
+                return VoiceBoundaryAction::pingPongTurnaround;
+            }
+            v.stretchSrcPos = wrapLoopPosition (v.stretchSrcPos, v.loopStartSample, v.loopEndSample);
+            return VoiceBoundaryAction::loopWrap;
+        }
+        return VoiceBoundaryAction::continuePlayback;
     }
 
     // Non-loop: classify boundary for release/releaseTail
@@ -674,6 +741,9 @@ void VoicePool::initPreviewVoiceCommon (Voice& v,
     v.velocity      = velocity;
     v.startSample   = startSample;
     v.endSample     = endSample;
+    v.loopStartSample = startSample;
+    v.loopEndSample   = endSample;
+    v.inLoopRegion    = true;
     v.bufferEnd     = endSample;
     v.pingPong      = false;
     v.muteGroup     = 0;
@@ -910,18 +980,36 @@ void VoicePool::startVoice (int voiceIdx, const VoiceStartParams& p,
                                          s.filterEnvAmount, p.globalFilterEnvAmount);
     v.bufferEnd = sample.getNumFrames();
 
-    // Resolve crossfade
+    // Resolve loop bounds (independent of slice bounds)
+    {
+        int loopOff = (int) sm.resolveParam (sliceIdx, kLockLoopStart,
+                                              (float) s.loopStartOffset, 0.0f);
+        int loopLen = (int) sm.resolveParam (sliceIdx, kLockLoopLength,
+                                              (float) s.loopLength, 0.0f);
+        const int sliceLen = s.endSample - s.startSample;
+        loopOff = juce::jlimit (0, juce::jmax (0, sliceLen - 1), loopOff);
+
+        v.loopStartSample = s.startSample + loopOff;
+        v.loopEndSample   = (loopLen > 0)
+            ? juce::jlimit (v.loopStartSample, s.endSample, v.loopStartSample + loopLen)
+            : s.endSample;
+
+        // Voice starts outside the loop region unless loop bounds equal slice bounds
+        v.inLoopRegion = (v.loopStartSample == s.startSample && v.loopEndSample == s.endSample);
+    }
+
+    // Resolve crossfade (relative to loop bounds, not slice bounds)
     v.crossfadePct = sm.resolveParam (sliceIdx, kLockCrossfade, s.crossfadePct, p.globalCrossfadePct);
     {
-        const int sliceLen = s.endSample - s.startSample;
-        if (v.crossfadePct > 0.0f && sliceLen > 0 && (v.looping || v.pingPong))
+        const int loopLen = v.loopEndSample - v.loopStartSample;
+        if (v.crossfadePct > 0.0f && loopLen > 0 && (v.looping || v.pingPong))
         {
-            int fadeLen = crossfadePercentToSamples (v.crossfadePct, sliceLen, v.pingPong);
+            int fadeLen = crossfadePercentToSamples (v.crossfadePct, loopLen, v.pingPong);
 
             if (v.pingPong)
-                fadeLen = clampPingPongCrossfadeLengthSamples (fadeLen, s.startSample, s.endSample, v.bufferEnd);
+                fadeLen = clampPingPongCrossfadeLengthSamples (fadeLen, v.loopStartSample, v.loopEndSample, v.bufferEnd);
             else if (v.looping)
-                fadeLen = clampLoopCrossfadeLengthSamples (fadeLen, s.startSample, s.endSample, v.bufferEnd, rev);
+                fadeLen = clampLoopCrossfadeLengthSamples (fadeLen, v.loopStartSample, v.loopEndSample, v.bufferEnd, rev);
 
             v.crossfadeLenSamples = juce::jmax (0, fadeLen);
         }
@@ -1074,7 +1162,9 @@ static void reseekStretcher (Voice& v, const SampleData& sample, bool consumeSou
 
     float playbackRate = v.stretchTimeRatio;
     int seekLen = v.stretcher->outputSeekLength (playbackRate);
-    seekLen = std::min (seekLen, v.endSample - v.startSample);
+    const int activeLen = v.inLoopRegion ? (v.loopEndSample - v.loopStartSample)
+                                         : (v.endSample - v.startSample);
+    seekLen = std::min (seekLen, activeLen);
     seekLen = juce::jlimit (0, (int) v.stretchInBufL.size(), seekLen);
 
     if (seekLen > 0 && sample.getNumFrames() > 0)
@@ -1295,11 +1385,33 @@ static void fillBungeeBlock (Voice& v, const SampleData& sample)
     // This keeps Bungee's overlap-add state coherent across loop boundaries.
     if (v.pingPong)
     {
-        // Flip speed only when crossing a boundary in the current travel direction
-        if (v.bungeeSpeed > 0.0 && v.bungeeSrcPos >= (double) v.endSample)
-            v.bungeeSpeed = -std::abs (v.bungeeSpeed);
-        else if (v.bungeeSpeed < 0.0 && v.bungeeSrcPos < (double) v.startSample)
-            v.bungeeSpeed = std::abs (v.bungeeSpeed);
+        if (! v.inLoopRegion)
+        {
+            bool entered = (v.bungeeSpeed > 0.0 && v.bungeeSrcPos >= (double) v.loopEndSample)
+                        || (v.bungeeSpeed < 0.0 && v.bungeeSrcPos < (double) v.loopStartSample)
+                        || v.bungeeSrcPos >= (double) v.endSample
+                        || v.bungeeSrcPos < (double) v.startSample;
+            if (entered)
+                v.inLoopRegion = true;
+        }
+
+        if (v.inLoopRegion)
+        {
+            // Flip speed only when crossing a boundary in the current travel direction
+            if (v.bungeeSpeed > 0.0 && v.bungeeSrcPos >= (double) v.loopEndSample)
+                v.bungeeSpeed = -std::abs (v.bungeeSpeed);
+            else if (v.bungeeSpeed < 0.0 && v.bungeeSrcPos < (double) v.loopStartSample)
+                v.bungeeSpeed = std::abs (v.bungeeSpeed);
+        }
+    }
+    else if (v.looping && ! v.inLoopRegion)
+    {
+        bool entered = (v.bungeeSpeed > 0.0 && v.bungeeSrcPos >= (double) v.loopEndSample)
+                    || (v.bungeeSpeed < 0.0 && v.bungeeSrcPos < (double) v.loopStartSample)
+                    || v.bungeeSrcPos >= (double) v.endSample
+                    || v.bungeeSrcPos < (double) v.startSample;
+        if (entered)
+            v.inLoopRegion = true;
     }
 }
 
@@ -1432,10 +1544,10 @@ void VoicePool::processVoiceSample (int i, const SampleData& sample, double /*sr
         }
 
         // Wrap unbounded Bungee phase for UI cursor display only
-        if (v.looping)
-            voicePositions[i].store ((float) wrapLoopPosition (v.bungeeSrcPos, v.startSample, v.endSample), std::memory_order_relaxed);
-        else if (v.pingPong)
-            voicePositions[i].store ((float) reflectPingPongPosition (v.bungeeSrcPos, v.startSample, v.endSample), std::memory_order_relaxed);
+        if (v.looping && v.inLoopRegion)
+            voicePositions[i].store ((float) wrapLoopPosition (v.bungeeSrcPos, v.loopStartSample, v.loopEndSample), std::memory_order_relaxed);
+        else if (v.pingPong && v.inLoopRegion)
+            voicePositions[i].store ((float) reflectPingPongPosition (v.bungeeSrcPos, v.loopStartSample, v.loopEndSample), std::memory_order_relaxed);
         else
             voicePositions[i].store ((float) v.bungeeSrcPos, std::memory_order_relaxed);
 
@@ -1484,23 +1596,23 @@ void VoicePool::processVoiceSample (int i, const SampleData& sample, double /*sr
             case VoiceBoundaryAction::pingPongTurnaround:
                 if (v.direction > 0)
                 {
-                    newPos = v.endSample - 1;
+                    newPos = v.loopEndSample - 1;
                     v.direction = -1;
                 }
                 else
                 {
-                    newPos = v.startSample;
+                    newPos = v.loopStartSample;
                     v.direction = 1;
                 }
                 break;
 
             case VoiceBoundaryAction::loopWrap:
             {
-                const double len = (double) (v.endSample - v.startSample);
+                const double len = (double) (v.loopEndSample - v.loopStartSample);
                 if (len > 0)
                 {
-                    newPos = v.startSample + std::fmod (newPos - v.startSample, len);
-                    if (newPos < v.startSample)
+                    newPos = v.loopStartSample + std::fmod (newPos - v.loopStartSample, len);
+                    if (newPos < v.loopStartSample)
                         newPos += len;
                 }
                 break;
