@@ -797,7 +797,7 @@ void VoicePool::initBungee (Voice& v, float pitchSemis, double sr, int grainMode
     rates.input  = (int) sr;
     rates.output = (int) sr;
 
-    int hopAdj = juce::jlimit (-1, 1, grainMode);
+    int hopAdj = juce::jlimit (-1, 0, grainMode);
     v.bungeeStretcher = std::make_shared<Bungee::Stretcher<Bungee::Basic>> (rates, 2, hopAdj);
 
     v.bungeePitch = std::pow (2.0, (double) pitchSemis / 12.0);
