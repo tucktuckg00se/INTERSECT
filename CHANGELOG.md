@@ -9,6 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 - Empty sample states now use clearer loading instructions, and Linux Wayland/XWayland sessions no longer suggest drag-and-drop when it is unavailable
 
+### Fixed
+- Linux builds now load MP3 files through INTERSECT's sample browser
+
 ## [0.12.0] - 2026-04-01
 
 ### Added

@@ -125,6 +125,10 @@ target_compile_definitions(Intersect PUBLIC
     JUCE_DISPLAY_SPLASH_SCREEN=0
 )
 
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_compile_definitions(Intersect PUBLIC JUCE_USE_MP3AUDIOFORMAT=1)
+endif()
+
 target_link_libraries(Intersect
     PRIVATE
         juce::juce_audio_utils
