@@ -41,7 +41,9 @@ enum LockBit : uint64_t
     kLockCrossfade        = 0x200000000ull,
     kLockRepitchMode      = 0x400000000ull,
     kLockLoopStart        = 0x800000000ull,
-    kLockLoopLength       = 0x1000000000ull
+    kLockLoopLength       = 0x1000000000ull,
+    kLockHighNote         = 0x2000000000ull,   // bit 37
+    kLockSliceRootNote    = 0x4000000000ull    // bit 38
 };
 
 inline int getMaxCrossfadeLengthSamples (int sliceLen, bool /*pingPong*/)
@@ -88,6 +90,8 @@ struct Slice
     int      startSample   = 0;
     int      endSample     = 0;
     int      midiNote      = kDefaultRootNote;
+    int      highNote      = kDefaultRootNote;    // high end of note range
+    int      sliceRootNote = kDefaultRootNote;    // root note for pitch transpose
     float    bpm           = 120.0f;
     float    pitchSemitones = 0.0f;
     int      algorithm     = 0;       // 0=Repitch, 1=Stretch, 2=Bungee

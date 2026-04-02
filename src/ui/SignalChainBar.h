@@ -46,6 +46,7 @@ private:
         Param,
         Tab,
         SetBpm,
+        NoteRangeToggle,
     };
 
     enum class DragMapping
@@ -160,6 +161,7 @@ private:
 
     void drawTabCell (juce::Graphics& g, const Cell& cell) const;
     void drawSetBpmCell (juce::Graphics& g, const Cell& cell) const;
+    void drawNoteRangeToggleCell (juce::Graphics& g, const Cell& cell) const;
     void drawParamCell (juce::Graphics& g, const Cell& cell) const;
 
     void toggleBooleanCell (const Cell& cell);
@@ -193,8 +195,7 @@ private:
     juce::Rectangle<int> contextBounds;
     juce::Rectangle<int> contextInfoBounds;
     juce::Rectangle<int> contextStatusBounds;
-    juce::Rectangle<int> contextDot1Bounds;
-    juce::Rectangle<int> contextDot2Bounds;
+
     juce::Rectangle<int> contextSlicesBounds;
     juce::Rectangle<int> contextRootBounds;
     juce::Rectangle<int> moduleStripBounds;

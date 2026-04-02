@@ -125,6 +125,8 @@ public:
         FieldCrossfade,
         FieldLoopStart,
         FieldLoopLength,
+        FieldHighNote,
+        FieldSliceRootNote,
     };
 
     enum class MidiEditAction

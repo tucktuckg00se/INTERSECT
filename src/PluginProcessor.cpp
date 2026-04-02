@@ -61,7 +61,8 @@ static constexpr uint64_t kValidLockMask =
     | kLockFilterDrive | kLockFilterKeyTrack | kLockFilterEnvAttack | kLockFilterEnvDecay
     | kLockFilterEnvSustain | kLockFilterEnvRelease | kLockFilterEnvAmount
     | kLockFilterAsym | kLockCrossfade | kLockRepitchMode
-    | kLockLoopStart | kLockLoopLength;
+    | kLockLoopStart | kLockLoopLength
+    | kLockHighNote | kLockSliceRootNote;
 
 // Copies a global parameter value into a slice field based on the lock bit.
 // Used when locking a parameter to snapshot the current effective value.
@@ -116,6 +117,11 @@ static Slice sanitiseRestoredSlice (Slice s)
         s.endSample = s.startSample + kMinSliceLengthSamples;
 
     s.midiNote = juce::jlimit (0, kMaxMidiNote, s.midiNote);
+    s.highNote = juce::jlimit (0, kMaxMidiNote, s.highNote);
+    s.sliceRootNote = juce::jlimit (0, kMaxMidiNote, s.sliceRootNote);
+    if (s.highNote < s.midiNote)
+        s.highNote = s.midiNote;
+    s.sliceRootNote = juce::jlimit (s.midiNote, s.highNote, s.sliceRootNote);
     s.bpm = juce::jlimit (20.0f, 999.0f, s.bpm);
     s.pitchSemitones = juce::jlimit (-48.0f, 48.0f, s.pitchSemitones);
     s.algorithm = juce::jlimit (0, 2, s.algorithm);
@@ -1414,8 +1420,34 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                         s.lockMask |= kLockLoopLength;
                         break;
                     case FieldMidiNote:
+                    {
+                        const bool wasSingleNote = (s.highNote == s.midiNote);
                         s.midiNote = juce::jlimit (0, kMaxMidiNote, (int) val);
+
+                        if (wasSingleNote)
+                        {
+                            s.highNote = s.midiNote;
+                            s.sliceRootNote = s.midiNote;
+                        }
+                        else
+                        {
+                            if (s.highNote < s.midiNote)
+                                s.highNote = s.midiNote;
+                            s.sliceRootNote = juce::jlimit (s.midiNote, s.highNote, s.sliceRootNote);
+                        }
+
                         sliceManager.rebuildMidiMap();
+                        break;
+                    }
+                    case FieldHighNote:
+                    {
+                        s.highNote = juce::jlimit (s.midiNote, kMaxMidiNote, (int) val);
+                        s.sliceRootNote = juce::jlimit (s.midiNote, s.highNote, s.sliceRootNote);
+                        sliceManager.rebuildMidiMap();
+                        break;
+                    }
+                    case FieldSliceRootNote:
+                        s.sliceRootNote = juce::jlimit (s.midiNote, s.highNote, (int) val);
                         break;
                 }
             }
@@ -1463,7 +1495,9 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                     auto& dst = sliceManager.getSlice (newIdx);
                     int savedNote = dst.midiNote;  // assigned by createSlice
                     dst = src;                     // copy all params, lockMask, colour
-                    dst.midiNote = savedNote;      // restore unique MIDI note
+                    dst.midiNote      = savedNote; // restore unique MIDI note
+                    dst.highNote      = savedNote; // reset to single-note
+                    dst.sliceRootNote = savedNote;
                     if (cmd.intParam1 >= 0)        // ctrl-drag: use explicit position
                     {
                         dst.startSample = cmd.intParam1;
@@ -1519,7 +1553,9 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                         dst = srcCopy;
                         dst.startSample = s;
                         dst.endSample   = e;
-                        dst.midiNote    = juce::jlimit (0, kMaxMidiNote, baseNote + i);
+                        dst.midiNote      = juce::jlimit (0, kMaxMidiNote, baseNote + i);
+                        dst.highNote      = dst.midiNote;
+                        dst.sliceRootNote = dst.midiNote;
                         dst.colour      = savedColour;
                         dst.active      = true;
                         dst.loopStartOffset = 0;
@@ -1570,7 +1606,9 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                         dst = srcCopy;
                         dst.startSample = s;
                         dst.endSample   = e;
-                        dst.midiNote    = juce::jlimit (0, kMaxMidiNote, baseNote + subIdx);
+                        dst.midiNote      = juce::jlimit (0, kMaxMidiNote, baseNote + subIdx);
+                        dst.highNote      = dst.midiNote;
+                        dst.sliceRootNote = dst.midiNote;
                         dst.colour      = savedColour;
                         dst.active      = true;
                         dst.loopStartOffset = 0;
@@ -1960,6 +1998,7 @@ void IntersectProcessor::processMidi (juce::MidiBuffer& midi)
                     voicePool.muteGroup (mg, voiceIdx);
 
                     p.sliceIdx = sliceIdx;
+                    p.sliceRootNote = s.sliceRootNote;
                     voicePool.startVoice (voiceIdx, p, sliceManager, sampleData);
                 }
             }
@@ -2333,7 +2372,7 @@ void IntersectProcessor::getStateInformation (juce::MemoryBlock& destData)
 
     // Optional v24 extension block for fields added without changing the base version.
     stream.writeInt (kStateExtensionMagic);
-    stream.writeInt (2);
+    stream.writeInt (3);
     stream.writeInt (numSlices);
     for (int i = 0; i < numSlices; ++i)
         stream.writeInt (sliceManager.getSlice (i).repitchMode);
@@ -2343,6 +2382,14 @@ void IntersectProcessor::getStateInformation (juce::MemoryBlock& destData)
         const auto& s = sliceManager.getSlice (i);
         stream.writeInt (s.loopStartOffset);
         stream.writeInt (s.loopLength);
+    }
+    // Extension v3: per-slice note ranges
+    stream.writeInt (numSlices);
+    for (int i = 0; i < numSlices; ++i)
+    {
+        const auto& s = sliceManager.getSlice (i);
+        stream.writeInt (s.highNote);
+        stream.writeInt (s.sliceRootNote);
     }
 }
 
@@ -2471,6 +2518,8 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
         std::vector<int> repitchModes;
         std::vector<int> loopStartOffsets;
         std::vector<int> loopLengths;
+        std::vector<int> highNotes;
+        std::vector<int> sliceRootNotes;
     };
 
     const auto postSliceBasePosition = stream.getPosition();
@@ -2480,6 +2529,8 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
         result.repitchModes.assign ((size_t) validatedNumSlices, 0);
         result.loopStartOffsets.assign ((size_t) validatedNumSlices, 0);
         result.loopLengths.assign ((size_t) validatedNumSlices, 0);
+        result.highNotes.assign ((size_t) validatedNumSlices, -1);
+        result.sliceRootNotes.assign ((size_t) validatedNumSlices, -1);
 
         juce::MemoryInputStream trialStream (data, (size_t) sizeInBytes, false);
         if (! trialStream.setPosition (postSliceBasePosition))
@@ -2579,6 +2630,27 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
                         }
                     }
                 }
+
+                if (extensionVersion >= 3)
+                {
+                    if (! requireBytes (4))
+                        return result;
+
+                    const int storedNoteRanges = juce::jlimit (0, storedNumSlices, trialStream.readInt());
+                    for (int i = 0; i < storedNoteRanges; ++i)
+                    {
+                        if (! requireBytes (8))
+                            return result;
+
+                        const int highNote = trialStream.readInt();
+                        const int sliceRootNote = trialStream.readInt();
+                        if (i < validatedNumSlices)
+                        {
+                            result.highNotes[(size_t) i] = highNote;
+                            result.sliceRootNotes[(size_t) i] = sliceRootNote;
+                        }
+                    }
+                }
             }
             else
             {
@@ -2633,6 +2705,20 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
         parsed.repitchMode = postSliceResult->repitchModes[(size_t) i];
         parsed.loopStartOffset = postSliceResult->loopStartOffsets[(size_t) i];
         parsed.loopLength = postSliceResult->loopLengths[(size_t) i];
+
+        if (postSliceResult->highNotes[(size_t) i] >= 0)
+        {
+            parsed.highNote      = postSliceResult->highNotes[(size_t) i];
+            parsed.sliceRootNote = postSliceResult->sliceRootNotes[(size_t) i];
+        }
+        else
+        {
+            // Legacy: no range data — single-note trigger, root = global rootNote
+            // to preserve existing filter key-track sound
+            parsed.highNote      = parsed.midiNote;
+            parsed.sliceRootNote = sliceManager.rootNote.load();
+        }
+
         sliceManager.getSlice (i) = sanitiseRestoredSlice (parsed);
     }
 

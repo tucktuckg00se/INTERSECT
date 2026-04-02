@@ -574,8 +574,7 @@ void SignalChainBar::rebuildLayout()
     contextSubtitle.clear();
     contextStatus.clear();
     contextStatusBounds = {};
-    contextDot1Bounds = {};
-    contextDot2Bounds = {};
+
     contextSlicesBounds = {};
     contextRootBounds = {};
     globalStripBounds = {};
@@ -653,6 +652,9 @@ void SignalChainBar::rebuildLayout()
 void SignalChainBar::rebuildContextBar (const LayoutInput& input)
 {
     constexpr int kExpandToggleWidth = 22;
+    constexpr float kContextNoteValueWidth = 54.0f;
+    constexpr float kContextNoteNameWidth = 50.0f;
+    constexpr float kContextRangeNoteNameWidth = 62.0f;
     const int globalTabWidth = 56;
     const juce::String sliceTabText = input.hasValidSlice
         ? "SLICE " + juce::String (input.selectedSliceIndex + 1)
@@ -667,6 +669,55 @@ void SignalChainBar::rebuildContextBar (const LayoutInput& input)
     contextRow.flexDirection = juce::FlexBox::Direction::row;
     contextRow.flexWrap = juce::FlexBox::Wrap::noWrap;
     contextRow.alignItems = juce::FlexBox::AlignItems::stretch;
+
+    auto addNoteRangeToggleCell = [this] (const juce::Rectangle<int>& bounds, bool hasRange)
+    {
+        Cell toggleCell;
+        toggleCell.kind = CellKind::NoteRangeToggle;
+        toggleCell.module = Module::TimePitch;
+        toggleCell.bounds = bounds;
+        toggleCell.valueText = hasRange ? "RANGE" : "NOTE";
+        toggleCell.currentValue = hasRange ? 1.0f : 0.0f;
+        toggleCell.isSliceScopeCell = true;
+        toggleCell.isEnabled = true;
+        cells.push_back (toggleCell);
+    };
+
+    auto addContextNoteValueCell = [this] (const juce::Rectangle<int>& bounds,
+                                           const juce::String& label,
+                                           int value,
+                                           int fieldId,
+                                           int minValue,
+                                           int maxValue)
+    {
+        Cell cell;
+        cell.module = Module::TimePitch;
+        cell.bounds = bounds;
+        cell.label = label;
+        cell.valueText = juce::String (value);
+        cell.isContextInline = true;
+        cell.isSliceScopeCell = true;
+        cell.fieldId = fieldId;
+        cell.currentValue = (float) value;
+        cell.minVal = (float) minValue;
+        cell.maxVal = (float) maxValue;
+        cell.step = 1.0f;
+        cell.dragPerPixel = 0.25f;
+        addParamCell (cell);
+    };
+
+    auto addContextNoteNameCell = [this] (const juce::Rectangle<int>& bounds,
+                                          const juce::String& valueText)
+    {
+        Cell cell;
+        cell.module = Module::TimePitch;
+        cell.bounds = bounds;
+        cell.valueText = valueText;
+        cell.isContextInline = true;
+        cell.isSliceScopeCell = true;
+        cell.isReadOnly = true;
+        addParamCell (cell);
+    };
 
     if (expanded)
     {
@@ -686,14 +737,37 @@ void SignalChainBar::rebuildContextBar (const LayoutInput& input)
             contextRow.items.add (juce::FlexItem().withWidth (8.0f)); // left pad
             const int timeItemIndex = contextRow.items.size();
             contextRow.items.add (juce::FlexItem().withWidth (titleW));
-            const int dot1ItemIndex = contextRow.items.size();
-            contextRow.items.add (juce::FlexItem().withWidth (10.0f));
-            const int noteItemIndex = contextRow.items.size();
-            contextRow.items.add (juce::FlexItem().withWidth (24.0f));
-            const int dot2ItemIndex = contextRow.items.size();
-            contextRow.items.add (juce::FlexItem().withWidth (10.0f));
-            const int midiItemIndex = contextRow.items.size();
-            contextRow.items.add (juce::FlexItem().withWidth (50.0f));
+            contextRow.items.add (juce::FlexItem().withWidth (6.0f)); // gap
+            const bool hasRange = input.selectedSlice->highNote != input.selectedSlice->midiNote;
+
+            const int toggleItemIndex = contextRow.items.size();
+            contextRow.items.add (juce::FlexItem().withWidth (hasRange ? 42.0f : 38.0f));
+
+            int lowItemIndex = -1, highItemIndex = -1, sliceRootItemIndex = -1, noteValueItemIndex = -1;
+            if (hasRange)
+            {
+                contextRow.items.add (juce::FlexItem().withWidth (4.0f));
+                lowItemIndex = contextRow.items.size();
+                contextRow.items.add (juce::FlexItem().withWidth (kContextNoteValueWidth));
+                contextRow.items.add (juce::FlexItem().withWidth (4.0f));
+                highItemIndex = contextRow.items.size();
+                contextRow.items.add (juce::FlexItem().withWidth (kContextNoteValueWidth));
+                contextRow.items.add (juce::FlexItem().withWidth (4.0f));
+                sliceRootItemIndex = contextRow.items.size();
+                contextRow.items.add (juce::FlexItem().withWidth (kContextNoteValueWidth));
+            }
+            else
+            {
+                contextRow.items.add (juce::FlexItem().withWidth (4.0f));
+                noteValueItemIndex = contextRow.items.size();
+                contextRow.items.add (juce::FlexItem().withWidth (kContextNoteValueWidth));
+            }
+
+            contextRow.items.add (juce::FlexItem().withWidth (4.0f)); // gap before note
+            const int noteNameItemIndex = contextRow.items.size();
+            contextRow.items.add (juce::FlexItem().withWidth (hasRange ? kContextRangeNoteNameWidth
+                                                                        : kContextNoteNameWidth));
+
             contextRow.items.add (juce::FlexItem().withFlex (1.0f));
             const int statusItemIndex = contextRow.items.size();
             contextRow.items.add (juce::FlexItem().withWidth (90.0f));
@@ -707,40 +781,48 @@ void SignalChainBar::rebuildContextBar (const LayoutInput& input)
             contextRow.performLayout (contextArea.toFloat());
 
             contextInfoBounds = toIntBounds (contextRow.items[timeItemIndex].currentBounds);
-            contextDot1Bounds = toIntBounds (contextRow.items[dot1ItemIndex].currentBounds);
-            contextDot2Bounds = toIntBounds (contextRow.items[dot2ItemIndex].currentBounds);
             contextStatusBounds = toIntBounds (contextRow.items[statusItemIndex].currentBounds);
             contextSlicesBounds = toIntBounds (contextRow.items[slicesItemIndex].currentBounds);
             contextRootBounds = toIntBounds (contextRow.items[rootItemIndex].currentBounds);
 
-            Cell noteCell;
-            noteCell.module = Module::TimePitch;
-            noteCell.bounds = toIntBounds (contextRow.items[noteItemIndex].currentBounds);
-            noteCell.valueText = midiNoteName (input.selectedSlice->midiNote);
-            noteCell.isContextInline = true;
-            noteCell.isSliceScopeCell = true;
-            noteCell.fieldId = IntersectProcessor::FieldMidiNote;
-            noteCell.currentValue = (float) input.selectedSlice->midiNote;
-            noteCell.minVal = 0.0f;
-            noteCell.maxVal = (float) kMaxMidiNote;
-            noteCell.step = 1.0f;
-            noteCell.dragPerPixel = 0.25f;
-            addParamCell (noteCell);
+            addNoteRangeToggleCell (toIntBounds (contextRow.items[toggleItemIndex].currentBounds), hasRange);
 
-            Cell midiCell;
-            midiCell.module = Module::TimePitch;
-            midiCell.bounds = toIntBounds (contextRow.items[midiItemIndex].currentBounds);
-            midiCell.label = "MIDI";
-            midiCell.valueText = juce::String (input.selectedSlice->midiNote);
-            midiCell.isContextInline = true;
-            midiCell.isSliceScopeCell = true;
-            midiCell.fieldId = IntersectProcessor::FieldMidiNote;
-            midiCell.currentValue = (float) input.selectedSlice->midiNote;
-            midiCell.minVal = 0.0f;
-            midiCell.maxVal = (float) kMaxMidiNote;
-            midiCell.step = 1.0f;
-            midiCell.dragPerPixel = 0.25f;
-            addParamCell (midiCell);
+            if (hasRange)
+            {
+                addContextNoteValueCell (toIntBounds (contextRow.items[lowItemIndex].currentBounds),
+                                         "LOW",
+                                         input.selectedSlice->midiNote,
+                                         IntersectProcessor::FieldMidiNote,
+                                         0,
+                                         kMaxMidiNote);
+                addContextNoteValueCell (toIntBounds (contextRow.items[highItemIndex].currentBounds),
+                                         "HIGH",
+                                         input.selectedSlice->highNote,
+                                         IntersectProcessor::FieldHighNote,
+                                         input.selectedSlice->midiNote,
+                                         kMaxMidiNote);
+                addContextNoteValueCell (toIntBounds (contextRow.items[sliceRootItemIndex].currentBounds),
+                                         "ROOT",
+                                         input.selectedSlice->sliceRootNote,
+                                         IntersectProcessor::FieldSliceRootNote,
+                                         input.selectedSlice->midiNote,
+                                         input.selectedSlice->highNote);
+            }
+            else
+            {
+                addContextNoteValueCell (toIntBounds (contextRow.items[noteValueItemIndex].currentBounds),
+                                         "NOTE",
+                                         input.selectedSlice->midiNote,
+                                         IntersectProcessor::FieldMidiNote,
+                                         0,
+                                         kMaxMidiNote);
+            }
+
+            addContextNoteNameCell (toIntBounds (contextRow.items[noteNameItemIndex].currentBounds),
+                                    hasRange
+                                        ? midiNoteName (input.selectedSlice->midiNote) + "-"
+                                              + midiNoteName (input.selectedSlice->highNote)
+                                        : midiNoteName (input.selectedSlice->midiNote));
         }
         else
         {
@@ -785,14 +867,37 @@ void SignalChainBar::rebuildContextBar (const LayoutInput& input)
 
         const int timeItemIndex = contextRow.items.size();
         contextRow.items.add (juce::FlexItem().withWidth (titleW));
-        const int dot1ItemIndex = contextRow.items.size();
-        contextRow.items.add (juce::FlexItem().withWidth (10.0f));
-        const int noteItemIndex = contextRow.items.size();
-        contextRow.items.add (juce::FlexItem().withWidth (24.0f));
-        const int dot2ItemIndex = contextRow.items.size();
-        contextRow.items.add (juce::FlexItem().withWidth (10.0f));
-        const int midiItemIndex = contextRow.items.size();
-        contextRow.items.add (juce::FlexItem().withWidth (50.0f));
+        contextRow.items.add (juce::FlexItem().withWidth (6.0f)); // gap
+        const bool hasRange = input.selectedSlice->highNote != input.selectedSlice->midiNote;
+
+        const int toggleItemIndex = contextRow.items.size();
+        contextRow.items.add (juce::FlexItem().withWidth (hasRange ? 42.0f : 38.0f));
+
+        int lowItemIndex = -1, highItemIndex = -1, sliceRootItemIndex = -1, noteValueItemIndex = -1;
+        if (hasRange)
+        {
+            contextRow.items.add (juce::FlexItem().withWidth (4.0f));
+            lowItemIndex = contextRow.items.size();
+            contextRow.items.add (juce::FlexItem().withWidth (kContextNoteValueWidth));
+            contextRow.items.add (juce::FlexItem().withWidth (4.0f));
+            highItemIndex = contextRow.items.size();
+            contextRow.items.add (juce::FlexItem().withWidth (kContextNoteValueWidth));
+            contextRow.items.add (juce::FlexItem().withWidth (4.0f));
+            sliceRootItemIndex = contextRow.items.size();
+            contextRow.items.add (juce::FlexItem().withWidth (kContextNoteValueWidth));
+        }
+        else
+        {
+            contextRow.items.add (juce::FlexItem().withWidth (4.0f));
+            noteValueItemIndex = contextRow.items.size();
+            contextRow.items.add (juce::FlexItem().withWidth (kContextNoteValueWidth));
+        }
+
+        contextRow.items.add (juce::FlexItem().withWidth (4.0f)); // gap before note
+        const int noteNameItemIndex = contextRow.items.size();
+        contextRow.items.add (juce::FlexItem().withWidth (hasRange ? kContextRangeNoteNameWidth
+                                                                    : kContextNoteNameWidth));
+
         contextRow.items.add (juce::FlexItem().withFlex (1.0f));
         const int statusItemIndex = contextRow.items.size();
         contextRow.items.add (juce::FlexItem().withWidth (90.0f));
@@ -803,36 +908,46 @@ void SignalChainBar::rebuildContextBar (const LayoutInput& input)
         addTabCell (toIntBounds (contextRow.items[2].currentBounds), sliceTabText, TabTarget::Slice, input.sliceScope, input.hasValidSlice);
 
         contextInfoBounds = toIntBounds (contextRow.items[timeItemIndex].currentBounds);
-        contextDot1Bounds = toIntBounds (contextRow.items[dot1ItemIndex].currentBounds);
-        contextDot2Bounds = toIntBounds (contextRow.items[dot2ItemIndex].currentBounds);
         contextStatusBounds = toIntBounds (contextRow.items[statusItemIndex].currentBounds);
 
-        Cell noteCell;
-        noteCell.module = Module::TimePitch;
-        noteCell.bounds = toIntBounds (contextRow.items[noteItemIndex].currentBounds);
-        noteCell.valueText = midiNoteName (input.selectedSlice->midiNote);
-        noteCell.isContextInline = true;
-        noteCell.fieldId = IntersectProcessor::FieldMidiNote;
-        noteCell.currentValue = (float) input.selectedSlice->midiNote;
-        noteCell.minVal = 0.0f;
-        noteCell.maxVal = (float) kMaxMidiNote;
-        noteCell.step = 1.0f;
-        noteCell.dragPerPixel = 0.25f;
-        addParamCell (noteCell);
+        addNoteRangeToggleCell (toIntBounds (contextRow.items[toggleItemIndex].currentBounds), hasRange);
 
-        Cell midiCell;
-        midiCell.module = Module::TimePitch;
-        midiCell.bounds = toIntBounds (contextRow.items[midiItemIndex].currentBounds);
-        midiCell.label = "MIDI";
-        midiCell.valueText = juce::String (input.selectedSlice->midiNote);
-        midiCell.isContextInline = true;
-        midiCell.fieldId = IntersectProcessor::FieldMidiNote;
-        midiCell.currentValue = (float) input.selectedSlice->midiNote;
-        midiCell.minVal = 0.0f;
-        midiCell.maxVal = (float) kMaxMidiNote;
-        midiCell.step = 1.0f;
-        midiCell.dragPerPixel = 0.25f;
-        addParamCell (midiCell);
+        if (hasRange)
+        {
+            addContextNoteValueCell (toIntBounds (contextRow.items[lowItemIndex].currentBounds),
+                                     "LOW",
+                                     input.selectedSlice->midiNote,
+                                     IntersectProcessor::FieldMidiNote,
+                                     0,
+                                     kMaxMidiNote);
+            addContextNoteValueCell (toIntBounds (contextRow.items[highItemIndex].currentBounds),
+                                     "HIGH",
+                                     input.selectedSlice->highNote,
+                                     IntersectProcessor::FieldHighNote,
+                                     input.selectedSlice->midiNote,
+                                     kMaxMidiNote);
+            addContextNoteValueCell (toIntBounds (contextRow.items[sliceRootItemIndex].currentBounds),
+                                     "ROOT",
+                                     input.selectedSlice->sliceRootNote,
+                                     IntersectProcessor::FieldSliceRootNote,
+                                     input.selectedSlice->midiNote,
+                                     input.selectedSlice->highNote);
+        }
+        else
+        {
+            addContextNoteValueCell (toIntBounds (contextRow.items[noteValueItemIndex].currentBounds),
+                                     "NOTE",
+                                     input.selectedSlice->midiNote,
+                                     IntersectProcessor::FieldMidiNote,
+                                     0,
+                                     kMaxMidiNote);
+        }
+
+        addContextNoteNameCell (toIntBounds (contextRow.items[noteNameItemIndex].currentBounds),
+                                hasRange
+                                    ? midiNoteName (input.selectedSlice->midiNote) + "-"
+                                          + midiNoteName (input.selectedSlice->highNote)
+                                    : midiNoteName (input.selectedSlice->midiNote));
         return;
     }
 
@@ -1563,19 +1678,6 @@ void SignalChainBar::paint (juce::Graphics& g)
         infoX += titleWidth + 8;
     }
 
-    if (contextDot1Bounds.getWidth() > 0)
-    {
-        g.setFont (IntersectLookAndFeel::makeFont (13.0f, true));
-        g.setColour (getTheme().text0);
-        g.drawText (juce::String::charToString (0x00B7), contextDot1Bounds, juce::Justification::centred);
-    }
-
-    if (contextDot2Bounds.getWidth() > 0)
-    {
-        g.setFont (IntersectLookAndFeel::makeFont (13.0f, true));
-        g.setColour (getTheme().text0);
-        g.drawText (juce::String::charToString (0x00B7), contextDot2Bounds, juce::Justification::centred);
-    }
 
     if (contextSubtitle.isNotEmpty() && infoX < infoBounds.getRight())
     {
@@ -1709,9 +1811,10 @@ void SignalChainBar::paint (juce::Graphics& g)
     {
         switch (cell.kind)
         {
-            case CellKind::Tab:    drawTabCell (g, cell);    break;
-            case CellKind::SetBpm: drawSetBpmCell (g, cell); break;
-            case CellKind::Param:  drawParamCell (g, cell);  break;
+            case CellKind::Tab:              drawTabCell (g, cell);             break;
+            case CellKind::SetBpm:           drawSetBpmCell (g, cell);          break;
+            case CellKind::NoteRangeToggle:  drawNoteRangeToggleCell (g, cell); break;
+            case CellKind::Param:            drawParamCell (g, cell);           break;
         }
     }
 }
@@ -1749,6 +1852,22 @@ void SignalChainBar::drawSetBpmCell (juce::Graphics& g, const Cell& cell) const
                     getTheme().accent,
                     7.0f, 6.4f,
                     cell.isEnabled);
+}
+
+void SignalChainBar::drawNoteRangeToggleCell (juce::Graphics& g, const Cell& cell) const
+{
+    const bool rangeOn = cell.currentValue > 0.5f;
+    const auto fill = (rangeOn
+        ? getTheme().surface5.interpolatedWith (getTheme().color2, 0.18f)
+        : getTheme().surface4).withAlpha (0.96f);
+    const auto outline = (rangeOn
+        ? getTheme().color2.withAlpha (0.75f)
+        : getTheme().surface3.withAlpha (0.72f));
+    const auto text = rangeOn
+        ? getTheme().color2.brighter (0.5f)
+        : getTheme().accent;
+    auto buttonBounds = cell.bounds.reduced (0, 4);
+    drawMiniButton (g, buttonBounds, cell.valueText, fill, outline, text, 7.0f, 6.4f, cell.isEnabled);
 }
 
 void SignalChainBar::drawParamCell (juce::Graphics& g, const Cell& cell) const
@@ -1798,7 +1917,10 @@ void SignalChainBar::drawParamCell (juce::Graphics& g, const Cell& cell) const
         }
 
         g.setFont (valueFont);
-        g.setColour ((cell.isLocked ? getTheme().text1 : getTheme().text2).withAlpha (alpha));
+        auto valueColour = (cell.isLocked ? getTheme().text1 : getTheme().text2).withAlpha (alpha);
+        if (cell.isReadOnly)
+            valueColour = valueColour.withMultipliedAlpha (0.65f);
+        g.setColour (valueColour);
         g.drawFittedText (cell.valueText, contentBounds.getX() + labelWidth + labelGap, contentBounds.getY(),
                           contentBounds.getWidth() - labelWidth - labelGap, contentBounds.getHeight(),
                           juce::Justification::centredLeft, 1);
@@ -2223,6 +2345,57 @@ void SignalChainBar::mouseDown (const juce::MouseEvent& e)
                 const bool bpmSlice = expanded ? cell.isSliceScopeCell : isSliceScopeActive();
                 showSetBpmPopup (bpmSlice);
             }
+            return;
+        }
+
+        if (cell.kind == CellKind::NoteRangeToggle)
+        {
+            int sel = processor.sliceManager.selectedSlice.load();
+            if (sel < 0) return;
+
+            const bool rangeOn = cell.currentValue > 0.5f;
+
+            // Undo snapshot
+            processor.enqueueUiUndoSnapshot();
+
+            if (rangeOn)
+            {
+                // Disable range: collapse high and root to match low note
+                IntersectProcessor::Command cmdHigh;
+                cmdHigh.type = IntersectProcessor::CmdSetSliceParam;
+                cmdHigh.intParam1 = IntersectProcessor::FieldHighNote;
+                cmdHigh.floatParam1 = (float) processor.sliceManager.getSlice (sel).midiNote;
+                cmdHigh.sliceIdx = sel;
+                processor.pushCommand (cmdHigh);
+
+                IntersectProcessor::Command cmdRoot;
+                cmdRoot.type = IntersectProcessor::CmdSetSliceParam;
+                cmdRoot.intParam1 = IntersectProcessor::FieldSliceRootNote;
+                cmdRoot.floatParam1 = (float) processor.sliceManager.getSlice (sel).midiNote;
+                cmdRoot.sliceIdx = sel;
+                processor.pushCommand (cmdRoot);
+            }
+            else
+            {
+                // Enable range: set high note one octave up, root = low note
+                int midiNote = processor.sliceManager.getSlice (sel).midiNote;
+                IntersectProcessor::Command cmdHigh;
+                cmdHigh.type = IntersectProcessor::CmdSetSliceParam;
+                cmdHigh.intParam1 = IntersectProcessor::FieldHighNote;
+                cmdHigh.floatParam1 = (float) juce::jmin (midiNote + 12, kMaxMidiNote);
+                cmdHigh.sliceIdx = sel;
+                processor.pushCommand (cmdHigh);
+
+                IntersectProcessor::Command cmdRoot;
+                cmdRoot.type = IntersectProcessor::CmdSetSliceParam;
+                cmdRoot.intParam1 = IntersectProcessor::FieldSliceRootNote;
+                cmdRoot.floatParam1 = (float) midiNote;
+                cmdRoot.sliceIdx = sel;
+                processor.pushCommand (cmdRoot);
+            }
+
+            layoutDirty = true;
+            repaint();
             return;
         }
 

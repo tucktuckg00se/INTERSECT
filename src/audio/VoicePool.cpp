@@ -919,11 +919,20 @@ void VoicePool::startVoice (int voiceIdx, const VoiceStartParams& p,
     float pitchSt  = sm.resolveParam (sliceIdx, kLockPitch,       s.pitchSemitones, p.globalPitch);
     float cents    = sm.resolveParam (sliceIdx, kLockCentsDetune, s.centsDetune,    p.globalCentsDetune);
     float pitch    = pitchSt + cents / 100.0f;
-    float pitchRatio = std::pow (2.0f, pitch / 12.0f);
 
     bool stretchOn = sm.resolveParam (sliceIdx, kLockStretch,
                                        s.stretchEnabled ? 1.0f : 0.0f,
                                        p.globalStretch ? 1.0f : 0.0f) > 0.5f;
+
+    // Range transpose: chromatic offset from slice root note.
+    // Ignored for Repitch+stretch where pitch is tied to BPM-locked speed.
+    const float rangeTranspose = (float) (p.note - p.sliceRootNote);
+    const bool repitchWithStretch = (algo == 0 && stretchOn
+                                     && p.dawBpm > 0.0f && sliceBpm > 0.0f);
+    if (! repitchWithStretch)
+        pitch += rangeTranspose;
+
+    float pitchRatio = std::pow (2.0f, pitch / 12.0f);
 
     float tonality = sm.resolveParam (sliceIdx, kLockTonality,    s.tonalityHz,       p.globalTonality);
     float formant  = sm.resolveParam (sliceIdx, kLockFormant,     s.formantSemitones, p.globalFormant);
@@ -966,7 +975,7 @@ void VoicePool::startVoice (int voiceIdx, const VoiceStartParams& p,
     const float keyTrackPercent = sm.resolveParam (sliceIdx, kLockFilterKeyTrack,
                                                    s.filterKeyTrack, p.globalFilterKeyTrack);
     const float keyTrackNorm = juce::jlimit (0.0f, 1.0f, keyTrackPercent / 100.0f);
-    const float noteRatio = std::pow (2.0f, ((float) p.note - (float) p.rootNote) / 12.0f);
+    const float noteRatio = std::pow (2.0f, ((float) p.note - (float) p.sliceRootNote) / 12.0f);
     v.filterKeyTrackRatio = std::pow (noteRatio, keyTrackNorm);
     const float filterEnvAttack = sm.resolveParam (sliceIdx, kLockFilterEnvAttack,
                                                    s.filterEnvAttackSec, p.globalFilterEnvAttackSec);

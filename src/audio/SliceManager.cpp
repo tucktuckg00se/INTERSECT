@@ -30,7 +30,9 @@ int SliceManager::createSlice (int start, int end)
     s.active      = true;
     s.startSample = start;
     s.endSample   = end;
-    s.midiNote    = nextMidiNote();
+    s.midiNote      = nextMidiNote();
+    s.highNote      = s.midiNote;
+    s.sliceRootNote = s.midiNote;
     s.lockMask    = 0;
 
     // Default override values
@@ -107,8 +109,9 @@ void SliceManager::rebuildMidiMap()
     {
         if (slices[i].active)
         {
-            int note = slices[i].midiNote;
-            if (note >= 0 && note < kMidiNoteCount)
+            int lo = juce::jlimit (0, kMaxMidiNote, slices[i].midiNote);
+            int hi = juce::jlimit (lo, kMaxMidiNote, slices[i].highNote);
+            for (int note = lo; note <= hi; ++note)
             {
                 if (midiMap[note] < 0)
                     midiMap[note] = i;
@@ -145,8 +148,14 @@ int SliceManager::nextMidiNote() const
 {
     int highest = rootNote.load() - 1;
     for (int i = 0; i < numSlices; ++i)
-        if (slices[i].active && slices[i].midiNote > highest)
-            highest = slices[i].midiNote;
+    {
+        if (slices[i].active)
+        {
+            int top = juce::jmax (slices[i].midiNote, slices[i].highNote);
+            if (top > highest)
+                highest = top;
+        }
+    }
     return std::min (highest + 1, kMaxMidiNote);
 }
 
@@ -182,6 +191,11 @@ void SliceManager::repackMidiNotes (bool sortByPosition)
 
     int root = rootNote.load();
     for (int i = 0; i < numSlices; ++i)
-        slices[i].midiNote = std::min (root + i, kMaxMidiNote);
+    {
+        int note = std::min (root + i, kMaxMidiNote);
+        slices[i].midiNote      = note;
+        slices[i].highNote      = note;
+        slices[i].sliceRootNote = note;
+    }
     rebuildMidiMap();
 }

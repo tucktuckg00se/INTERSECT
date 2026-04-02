@@ -50,6 +50,7 @@ struct VoiceStartParams
     float globalFilterEnvAmount     = 0.0f;
     float globalCrossfadePct        = 0.0f;
     int   rootNote = kDefaultRootNote;
+    int   sliceRootNote = kDefaultRootNote;  // per-slice root for range transpose
 };
 
 struct PreviewStretchParams

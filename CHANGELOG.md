@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Loop crossfade (FADE) parameter — smooths loop and ping-pong seams with equal-power crossfading, adjustable from 0–100% of the slice length
 - Fade region overlay and crossfade source cursor in the waveform view
 - Repitch MODE parameter with Linear and Cubic options for higher-quality Repitch playback
+- Slice note ranges with `NOTE`/`RANGE` switching plus per-slice `LOW`, `HIGH`, and `ROOT` note controls for chromatic trigger zones and transposition
 
 ### Changed
 - Gain control moved from the Playback module to the Amp module in the signal chain
@@ -21,6 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Bungee algorithm no longer produces loud static when Grain is set to Smooth
 - Fade overlay now updates immediately when changing global crossfade, loop mode, or reverse settings
 - Loop fade cursors now appear on the first loop or ping-pong seam, and saved projects once again restore their linked sample path correctly
+- Context-bar note editing no longer flips single-note slices into range mode while dragging, and note names now stay read-only beside the numeric controls
 
 ## [0.11.0] - 2026-03-31
 ### Added
