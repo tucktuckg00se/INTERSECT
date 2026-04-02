@@ -1,6 +1,6 @@
 # INTERSECT
 
-INTERSECT is a sample slicer instrument plugin (VST3/AU/Standalone) with per-slice locking, multiple time/pitch algorithms, and MIDI-triggered slice playback.
+INTERSECT is a sample slicer instrument plugin (VST3/AU/Standalone) with per-slice locking, slice note ranges, multiple time/pitch algorithms, and MIDI-triggered slice playback.
 
 ![INTERSECT screenshot](.github/assets/screenshot.png)
 *Theme shown: Open Color (`oc.intersectstyle`)*
@@ -61,21 +61,22 @@ xattr -cr /Applications/INTERSECT.app
 2. **Current editor layout:** header bar, slice lane, waveform, time/zoom bar, action bar, and bottom signal-chain editor.
 3. **Slice creation:** draw slices manually, chop live with **LAZY**, or split a selected slice via **AUTO**.
 4. **Inheritance model:** `GLOBAL` in the Signal Chain edits sample defaults. `SLICE` edits the selected slice and locks fields that diverge from the global value.
-5. **Playback model:** MIDI triggers slices by note mapping; mute groups can choke voices in the same group.
+5. **Playback model:** MIDI triggers slices by note mapping. A slice can respond to one note or a `LOW`-to-`HIGH` range, with `ROOT` defining the transposition center for that slice. Mute groups can choke voices in the same group.
 6. **Algorithms:**
-   - `Repitch`: pitch and speed are linked.
+   - `Repitch`: pitch and speed are linked. `MODE` switches the playback interpolation between `Linear` and `Cubic`.
    - `Signalsmith`: independent time/pitch via Signalsmith Stretch (`TONAL`, `FMNT`, `FMNT C`).
    - `Bungee`: granular stretch mode with `GRAIN` choices (`Fast`, `Normal`, `Smooth`).
 7. **Repitch + Stretch interaction:** when `ALGO=Repitch` and `STRETCH=ON`, `PITCH` and `TUNE` become BPM-driven read-only displays.
-8. **SET BPM:** available in the Playback module for both `GLOBAL` and `SLICE`; it calculates BPM from musical duration.
+8. **SET BPM:** available in the Time/Pitch module for both `GLOBAL` and `SLICE`; it calculates BPM from musical duration.
 9. **Filter model:** the filter is per-voice and resolves its settings at note-on. Cutoff changes affect newly triggered notes immediately, but do not retarget voices that are already playing.
 10. **Filter envelope amount:** `AMT` is measured in semitones, so `+12 st` means the envelope can push cutoff up by one octave and `-12 st` means one octave down. This stays consistent across low and high base cutoff values.
-11. **Key tracking:** `KEY` is a percentage of note tracking. `0%` ignores note pitch, `100%` makes cutoff follow pitch at full keyboard scaling, and intermediate values blend between them.
+11. **Key tracking:** `KEY` is a percentage of note tracking. `0%` ignores note pitch, `100%` makes cutoff follow pitch at full keyboard scaling, and intermediate values blend between them. In slice range mode, tracking follows the slice `ROOT` note.
 12. **Drive:** `DRIVE` is pre-filter saturation. It adds harmonics before the filter rather than simply turning the signal up.
 13. **Drive asymmetry:** `ASYM` biases the drive waveshaper to produce even-harmonic saturation, adding a warmer, tube-like character. A DC blocker engages automatically when asymmetry is above zero.
-14. **Load behavior:** file decoding/loading is asynchronous (off the audio thread).
-15. **Undo/redo:** snapshot-based history for slice and parameter edits.
-16. **MIDI host stop handling:** responds to `All Notes Off (CC 123)` and `All Sound Off (CC 120)`.
+14. **Loop crossfade:** `FADE` smooths loop and ping-pong seams with equal-power crossfading. It is active only when `LOOP` is not `OFF`.
+15. **Load behavior:** file decoding/loading is asynchronous (off the audio thread).
+16. **Undo/redo:** snapshot-based history for slice and parameter edits.
+17. **MIDI host stop handling:** responds to `All Notes Off (CC 123)` and `All Sound Off (CC 120)`.
 
 ## Interface Layout
 
@@ -129,8 +130,8 @@ The bottom bar is the main parameter editor. It has four modules: `TIME/PITCH`, 
 **Expanded mode**: shows both strips simultaneously — slice on top, global below — with no tabs. Click the chevron toggle on the right edge of the context bar to switch between modes.
 
 **Context bar** (bottom edge):
-- `SLICES` count and `ROOT` note are always visible on the right. `ROOT` is editable only when no slices exist.
-- When a slice is selected: slice sample range, length, note name, MIDI note number, and override count.
+- `SLICES` count and the global `ROOT` note are always visible on the right. The global `ROOT` is editable only when no slices exist.
+- When a slice is selected: slice sample range, length, a `NOTE`/`RANGE` toggle, numeric note controls, read-only note names, and override count.
 
 General behavior:
 - Drag up/down on a value to edit it.
@@ -145,8 +146,6 @@ General behavior:
 | Control | Function | Notes |
 | --- | --- | --- |
 | Sample info text | Load / relink sample | Click the text area |
-| `SLICES` | Slice count | Read-only |
-| `ROOT` | Root note for new slices | Editable only before any slices exist |
 | `UNDO / REDO` | History navigation | Buttons in the header |
 | `PANIC` | Kill active voices immediately | Also stops lazy chop |
 | `LOAD` | Open file chooser | Replaces current sample |
@@ -154,7 +153,14 @@ General behavior:
 
 ### Signal Chain Bar
 
-#### Playback Module
+#### Context Bar
+
+| Control | Function | Notes |
+| --- | --- | --- |
+| `SLICES` | Slice count | Always visible on the right side of the context bar |
+| Global `ROOT` | Root note for new slices | Always visible on the right side of the context bar; editable only before any slices exist |
+
+#### Time/Pitch Module
 
 | Control | Function | Notes |
 | --- | --- | --- |
@@ -163,16 +169,27 @@ General behavior:
 | `PITCH` | Semitone shift | `-48` to `+48 st` |
 | `TUNE` | Fine detune | `-100` to `+100 ct` |
 | `ALGO` | Playback algorithm | `Repitch`, `Signalsmith`, `Bungee` |
+| `MODE` | Repitch interpolation mode | `Repitch` only: `Linear` or `Cubic` |
 | `TONAL` | Tonality limit | Signalsmith only |
 | `FMNT` | Formant shift | Signalsmith only |
 | `FMNT C` | Formant compensation | Signalsmith only |
 | `GRAIN` | Grain mode | Bungee only: `Fast`, `Normal`, `Smooth` |
 | `STRETCH` | Tempo-sync stretch toggle | Works with the selected algorithm |
-| `1SHOT` | One-shot playback | Ignores note-off until the slice ends |
 
-Playback notes:
+Time/Pitch notes:
 - When `ALGO=Repitch` and `STRETCH=ON`, `PITCH` and `TUNE` become BPM-derived read-only displays.
-- In `SLICE` mode, the context row also exposes the selected slice's note name and MIDI note number.
+- In `SLICE` mode, the context row also exposes the selected slice's `NOTE`/`RANGE` mapping.
+
+#### Slice Context Row
+
+| Control | Function | Notes |
+| --- | --- | --- |
+| `NOTE / RANGE` | Switch between single-note and note-range triggering | Slice-only, shown in the context bar |
+| `NOTE` | Single trigger note | Shown only in note mode; drag to edit |
+| `LOW` | Lowest note in the trigger range | Shown only in range mode |
+| `HIGH` | Highest note in the trigger range | Shown only in range mode |
+| `ROOT` | Transposition and filter key-track reference note for the slice | Shown only in range mode |
+| Note name text | Read-only pitch name display | Appears after the numeric field(s) and is not draggable |
 
 #### Filter Module
 
@@ -192,7 +209,7 @@ Playback notes:
 Filter notes:
 - Start with `ON`, `TYPE=LP`, modest `RESO`, and a lower `CUT` to hear the filter clearly.
 - Raise `DRIVE` if you want a dirtier or more aggressive tone before the filter stage. Add `ASYM` to bias the saturation toward even harmonics for a warmer, tube-like character.
-- Use `KEY` when you want higher MIDI notes to sound brighter and lower notes darker.
+- Use `KEY` when you want higher MIDI notes to sound brighter and lower notes darker. In slice range mode, the filter tracks from that slice's `ROOT` note.
 - Use positive `AMT` for a classic opening filter envelope and negative `AMT` for an inverted sweep.
 - `AMT` is in semitones because it controls octave-style movement of cutoff. `+12 st` doubles the cutoff, `-12 st` halves it.
 - Filter settings resolve at note-on, so changing cutoff while a note is already playing affects the next note rather than re-tuning the current voice.
@@ -203,15 +220,17 @@ Filter notes:
 | --- | --- | --- |
 | `ATK / DEC / SUS / REL` | Amp envelope | Standard ADSR for voice level |
 | `TAIL` | Release-tail toggle | Allows playback to continue past slice boundary during release |
+| `GAIN` | Output gain | `-100` to `+24 dB` |
 
-#### Output Module
+#### Playback Module
 
 | Control | Function | Notes |
 | --- | --- | --- |
 | `REV` | Reverse playback | Toggle |
 | `LOOP` | Loop mode | `OFF`, `LOOP`, `PP` |
+| `FADE` | Loop crossfade amount | Active when `LOOP` is `LOOP` or `PP` |
 | `MUTE` | Mute group | Voices in the same group choke each other |
-| `GAIN` | Gain | `-100` to `+24 dB` |
+| `1SHOT` | One-shot playback | Ignores note-off until the slice ends |
 | `OUT` | Output bus | `SLICE` mode only, `1` to `16` |
 | `VOICES` | Max playable voices | `GLOBAL` mode only, `1` to `31` |
 
