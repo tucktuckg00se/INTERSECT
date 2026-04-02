@@ -189,7 +189,7 @@ void HeaderBar::paint (juce::Graphics& g)
     }
     else
     {
-        fileText = "load or drop a sample";
+        fileText = "INTERSECT";
         g.setColour (getTheme().text2.withAlpha (0.52f));
     }
 

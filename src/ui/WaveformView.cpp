@@ -1,6 +1,7 @@
 #include "WaveformView.h"
 #include "UIHelpers.h"
 #include "IntersectLookAndFeel.h"
+#include "LinuxDesktopSupport.h"
 #include "../Constants.h"
 #include "../PluginProcessor.h"
 #include "../audio/AudioAnalysis.h"
@@ -61,6 +62,42 @@ juce::Rectangle<float> makeLoopHandleBounds (int x, bool isLeft, bool highlighte
 {
     const float handleHeight = highlighted ? 22.0f : 18.0f;
     return { (float) x - (isLeft ? 2.0f : 3.0f), 2.0f, 5.0f, handleHeight };
+}
+
+juce::String getEmptyWaveformPrompt()
+{
+    return Intersect::LinuxDesktopSupport::shouldUseWaylandDndFallbackMessaging()
+        ? "CLICK LOAD TO OPEN AUDIO FILE"
+        : "DROP AUDIO FILE OR CLICK LOAD";
+}
+
+juce::String getWaylandEmptyStateHint()
+{
+    return "Wayland/XWayland session: drag-and-drop is unavailable";
+}
+
+void paintHintBanner (juce::Graphics& g, const juce::String& text, int componentWidth, int componentHeight)
+{
+    if (text.isEmpty())
+        return;
+
+    g.setFont (IntersectLookAndFeel::makeFont (12.0f));
+    juce::GlyphArrangement ga;
+    ga.addLineOfText (g.getCurrentFont(), text, 0.0f, 0.0f);
+    const int textW = juce::roundToInt (ga.getBoundingBox (0, -1, true).getWidth()) + 24;
+    const int maxW = juce::jmax (120, componentWidth - 16);
+    const int bannerW = juce::jlimit (120, maxW, textW);
+    const int bannerH = 24;
+    const int bannerX = juce::jmax (4, (componentWidth - bannerW) / 2);
+    const int bannerY = juce::jmax (4, componentHeight - bannerH - 6);
+    auto banner = juce::Rectangle<float> ((float) bannerX, (float) bannerY, (float) bannerW, (float) bannerH);
+
+    g.setColour (getTheme().surface2.withAlpha (0.94f));
+    g.fillRoundedRectangle (banner, 4.0f);
+    g.setColour (getTheme().surface5.withAlpha (0.85f));
+    g.drawRoundedRectangle (banner.reduced (0.5f), 4.0f, 1.0f);
+    g.setColour (getTheme().text2.withAlpha (0.9f));
+    g.drawFittedText (text, banner.toNearestInt().reduced (8, 2), juce::Justification::centred, 1);
 }
 } // namespace
 
@@ -237,8 +274,12 @@ void WaveformView::paint (juce::Graphics& g)
     {
         paintViewStateActive = false;
         g.setColour (getTheme().text2.withAlpha (0.25f));
-        g.setFont (IntersectLookAndFeel::makeFont (22.0f));
-        g.drawText ("DROP AUDIO FILE", getLocalBounds(), juce::Justification::centred);
+        const auto prompt = getEmptyWaveformPrompt();
+        g.setFont (IntersectLookAndFeel::fitFontToWidth (prompt, 22.0f, 12.0f, getWidth() - 24, true));
+        g.drawFittedText (prompt, getLocalBounds().reduced (12, 0), juce::Justification::centred, 1);
+
+        if (overlayHintText.isEmpty() && Intersect::LinuxDesktopSupport::shouldUseWaylandDndFallbackMessaging())
+            paintHintBanner (g, getWaylandEmptyStateHint(), getWidth(), getHeight());
     }
 
     paintOverlayHint (g);
@@ -334,23 +375,7 @@ void WaveformView::paintOverlayHint (juce::Graphics& g)
     if (overlayHintText.isEmpty())
         return;
 
-    g.setFont (IntersectLookAndFeel::makeFont (12.0f));
-    juce::GlyphArrangement ga;
-    ga.addLineOfText (g.getCurrentFont(), overlayHintText, 0.0f, 0.0f);
-    const int textW = juce::roundToInt (ga.getBoundingBox (0, -1, true).getWidth()) + 24;
-    const int maxW = juce::jmax (120, getWidth() - 16);
-    const int bannerW = juce::jlimit (120, maxW, textW);
-    const int bannerH = 24;
-    const int bannerX = juce::jmax (4, (getWidth() - bannerW) / 2);
-    const int bannerY = juce::jmax (4, getHeight() - bannerH - 6);
-    auto banner = juce::Rectangle<float> ((float) bannerX, (float) bannerY, (float) bannerW, (float) bannerH);
-
-    g.setColour (getTheme().surface2.withAlpha (0.94f));
-    g.fillRoundedRectangle (banner, 4.0f);
-    g.setColour (getTheme().surface5.withAlpha (0.85f));
-    g.drawRoundedRectangle (banner.reduced (0.5f), 4.0f, 1.0f);
-    g.setColour (getTheme().text2.withAlpha (0.9f));
-    g.drawFittedText (overlayHintText, banner.toNearestInt().reduced (8, 2), juce::Justification::centred, 1);
+    paintHintBanner (g, overlayHintText, getWidth(), getHeight());
 }
 
 void WaveformView::drawWaveform (juce::Graphics& g)
