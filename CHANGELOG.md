@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-04-01
+
 ### Added
 - Loop crossfade (FADE) parameter — smooths loop and ping-pong seams with equal-power crossfading, adjustable from 0–100% of the slice length
 - Fade region overlay and crossfade source cursor in the waveform view
