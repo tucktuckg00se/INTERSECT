@@ -47,7 +47,7 @@ public:
         const auto* p = palette.load (std::memory_order_relaxed);
         if (! p) return;
         for (int i = 0; i < numSlices; ++i)
-            slices[i].colour = p[i % 16];
+            slices[(size_t) i].colour = p[(size_t) (i % 16)];
     }
 
 private:

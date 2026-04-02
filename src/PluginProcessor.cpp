@@ -176,6 +176,19 @@ static bool isCriticalCommand (IntersectProcessor::CommandType type)
 {
     switch (type)
     {
+        case IntersectProcessor::CmdNone:
+        case IntersectProcessor::CmdLazyChopStart:
+        case IntersectProcessor::CmdLazyChopStop:
+        case IntersectProcessor::CmdStretch:
+        case IntersectProcessor::CmdToggleLock:
+        case IntersectProcessor::CmdSetSliceParam:
+        case IntersectProcessor::CmdSetSliceBounds:
+        case IntersectProcessor::CmdRepackMidi:
+        case IntersectProcessor::CmdFileLoadCompleted:
+        case IntersectProcessor::CmdFileLoadFailed:
+        case IntersectProcessor::CmdBeginGesture:
+            return false;
+
         case IntersectProcessor::CmdLoadFile:
         case IntersectProcessor::CmdCreateSlice:
         case IntersectProcessor::CmdDeleteSlice:
@@ -189,9 +202,9 @@ static bool isCriticalCommand (IntersectProcessor::CommandType type)
         case IntersectProcessor::CmdSelectSlice:
         case IntersectProcessor::CmdSetRootNote:
             return true;
-        default:
-            return false;
     }
+
+    return false;
 }
 
 constexpr int kNrpnCcMsb  = 99;   // NRPN MSB address byte
@@ -838,8 +851,9 @@ void IntersectProcessor::clearVoicesBeforeSampleSwap()
     for (int vi = 0; vi < VoicePool::kMaxVoices; ++vi)
     {
         auto& v = voicePool.getVoice (vi);
+        const auto voiceIndex = static_cast<size_t> (vi);
         v.active = false;
-        voicePool.voicePositions[vi].store (0.0f,
+        voicePool.voicePositions[voiceIndex].store (0.0f,
             vi == VoicePool::kPreviewVoiceIndex
                 ? std::memory_order_release
                 : std::memory_order_relaxed);
@@ -1167,6 +1181,20 @@ void IntersectProcessor::handleCommand (const Command& cmd)
 {
     switch (cmd.type)
     {
+        case CmdNone:
+        case CmdLoadFile:
+        case CmdLazyChopStart:
+        case CmdLazyChopStop:
+        case CmdRelinkFile:
+        case CmdFileLoadCompleted:
+        case CmdFileLoadFailed:
+        case CmdUndo:
+        case CmdRedo:
+        case CmdPanic:
+        case CmdSelectSlice:
+            gestureSnapshotCaptured = false;
+            break;
+
         case CmdBeginGesture:
             captureSnapshot();
             gestureSnapshotCaptured = true;
@@ -1194,10 +1222,6 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                 captureSnapshot();
             gestureSnapshotCaptured = false;
             blocksSinceGestureActivity = 0;
-            break;
-
-        default:
-            gestureSnapshotCaptured = false;
             break;
     }
 
@@ -1633,6 +1657,10 @@ void IntersectProcessor::handleCommand (const Command& cmd)
             relinkFileAsync (cmd.fileParam);
             break;
 
+        case CmdFileLoadCompleted:
+            jassertfalse; // Legacy path no longer used; completions arrive via completedLoadSuccess.
+            break;
+
         case CmdFileLoadFailed:
             jassertfalse; // Legacy path no longer used; failures arrive via completedLoadFailure.
             break;
@@ -1967,9 +1995,10 @@ void IntersectProcessor::processMidi (juce::MidiBuffer& midi)
                     uiSnapshotDirty.store (true, std::memory_order_release);
                 }
             }
-            else
-            {
-                heldNotes[note] = true;
+        else
+        {
+                const auto noteIndex = static_cast<size_t> (note);
+                heldNotes[noteIndex] = true;
 
                 // Build params once; all param loads happen here, not inside the slice loop.
                 const auto globals = loadGlobalParamSnapshot();
@@ -2006,9 +2035,10 @@ void IntersectProcessor::processMidi (juce::MidiBuffer& midi)
         else if (msg.isNoteOff())
         {
             int note = msg.getNoteNumber();
-            if (heldNotes[note])
+            const auto noteIndex = static_cast<size_t> (note);
+            if (heldNotes[noteIndex])
             {
-                heldNotes[note] = false;
+                heldNotes[noteIndex] = false;
                 voicePool.releaseNote (note);           // normal: respects oneShot
             }
             else
@@ -2198,11 +2228,12 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         auto* bus = getBus (false, b);
         if (bus != nullptr && bus->isEnabled())
         {
+            const auto busIndex = static_cast<size_t> (b);
             int chOff = getChannelIndexInProcessBlockBuffer (false, b, 0);
             if (chOff < buffer.getNumChannels())
             {
-                busL[b] = buffer.getWritePointer (chOff);
-                busR[b] = (chOff + 1 < buffer.getNumChannels())
+                busL[busIndex] = buffer.getWritePointer (chOff);
+                busR[busIndex] = (chOff + 1 < buffer.getNumChannels())
                               ? buffer.getWritePointer (chOff + 1) : nullptr;
                 if (b + 1 > numActiveBuses) numActiveBuses = b + 1;
             }
@@ -2234,12 +2265,13 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         // Clamp / NaN-guard every active bus after accumulation
         for (int b = 0; b < numActiveBuses; ++b)
         {
-            if (busL[b])
+            const auto busIndex = static_cast<size_t> (b);
+            if (busL[busIndex])
                 for (int i = 0; i < numSamples; ++i)
-                    busL[b][i] = sanitiseSample (busL[b][i]);
-            if (busR[b])
+                    busL[busIndex][i] = sanitiseSample (busL[busIndex][i]);
+            if (busR[busIndex])
                 for (int i = 0; i < numSamples; ++i)
-                    busR[b][i] = sanitiseSample (busR[b][i]);
+                    busR[busIndex][i] = sanitiseSample (busR[busIndex][i]);
         }
     }
 

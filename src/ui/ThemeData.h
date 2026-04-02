@@ -101,7 +101,8 @@ struct ThemeData
 
     static juce::Colour parseHex (const juce::String& hex)
     {
-        return juce::Colour ((juce::uint32) (0xFF000000 | hex.getHexValue32()));
+        const auto rgb = static_cast<juce::uint32> (hex.getHexValue32()) & 0x00ffffffu;
+        return juce::Colour (0xFF000000u | rgb);
     }
 
     static ThemeData fromThemeFile (const juce::String& text)

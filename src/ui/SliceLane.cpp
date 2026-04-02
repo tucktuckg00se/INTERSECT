@@ -4,6 +4,17 @@
 #include "../PluginProcessor.h"
 #include <algorithm>
 #include <array>
+#include <cmath>
+
+namespace
+{
+float measureTextWidth (const juce::Font& font, const juce::String& text)
+{
+    juce::GlyphArrangement glyphs;
+    glyphs.addLineOfText (font, text, 0.0f, 0.0f);
+    return glyphs.getBoundingBox (0, -1, true).getWidth();
+}
+}
 
 SliceLane::SliceLane (IntersectProcessor& p) : processor (p) {}
 
@@ -113,7 +124,7 @@ void SliceLane::paint (juce::Graphics& g)
         {
             juce::String label = juce::String (si.idx + 1);
             g.setFont (IntersectLookAndFeel::makeFont (12.0f, true));
-            int labelW = g.getCurrentFont().getStringWidth (label) + 6;
+            int labelW = juce::roundToInt (std::ceil (measureTextWidth (g.getCurrentFont(), label))) + 6;
             int labelX = si.x1 + 3;
             for (int li = 0; li < labelEndCount; ++li)
             {

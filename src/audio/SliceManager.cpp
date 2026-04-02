@@ -61,7 +61,7 @@ int SliceManager::createSlice (int start, int end)
 
     // Assign colour from palette
     const auto* p = palette.load (std::memory_order_relaxed);
-    s.colour = p ? p[idx % 16] : juce::Colour (0xFF4D8C99);
+    s.colour = p ? p[(size_t) (idx % 16)] : juce::Colour (0xFF4D8C99);
 
     numSlices++;
     rebuildMidiMap();
@@ -75,10 +75,10 @@ void SliceManager::deleteSlice (int idx)
 
     // Shift all slices after idx down by one, preserving each slice's MIDI note
     for (int i = idx; i < numSlices - 1; ++i)
-        slices[i] = slices[i + 1];
+        slices[(size_t) i] = slices[(size_t) (i + 1)];
 
     // Deactivate last
-    slices[numSlices - 1].active = false;
+    slices[(size_t) (numSlices - 1)].active = false;
     numSlices--;
 
     // Fix selected slice
@@ -107,15 +107,17 @@ void SliceManager::rebuildMidiMap()
 
     for (int i = 0; i < numSlices; ++i)
     {
-        if (slices[i].active)
+        const auto sliceIndex = (size_t) i;
+        if (slices[sliceIndex].active)
         {
-            int lo = juce::jlimit (0, kMaxMidiNote, slices[i].midiNote);
-            int hi = juce::jlimit (lo, kMaxMidiNote, slices[i].highNote);
+            int lo = juce::jlimit (0, kMaxMidiNote, slices[sliceIndex].midiNote);
+            int hi = juce::jlimit (lo, kMaxMidiNote, slices[sliceIndex].highNote);
             for (int note = lo; note <= hi; ++note)
             {
-                if (midiMap[note] < 0)
-                    midiMap[note] = i;
-                midiMapMulti[note].push_back (i);
+                const auto noteIndex = (size_t) note;
+                if (midiMap[noteIndex] < 0)
+                    midiMap[noteIndex] = i;
+                midiMapMulti[noteIndex].push_back (i);
             }
         }
     }
@@ -125,7 +127,7 @@ int SliceManager::midiNoteToSlice (int note) const
 {
     if (note < 0 || note >= kMidiNoteCount)
         return -1;
-    return midiMap[note];
+    return midiMap[(size_t) note];
 }
 
 const std::vector<int>& SliceManager::midiNoteToSlices (int note) const
@@ -133,7 +135,7 @@ const std::vector<int>& SliceManager::midiNoteToSlices (int note) const
     static const std::vector<int> empty;
     if (note < 0 || note >= kMidiNoteCount)
         return empty;
-    return midiMapMulti[note];
+    return midiMapMulti[(size_t) note];
 }
 
 float SliceManager::resolveParam (int sliceIdx, LockBit lockBit, float sliceValue, float globalDefault) const
@@ -141,7 +143,7 @@ float SliceManager::resolveParam (int sliceIdx, LockBit lockBit, float sliceValu
     if (sliceIdx < 0 || sliceIdx >= numSlices)
         return globalDefault;
 
-    return (slices[sliceIdx].lockMask & lockBit) ? sliceValue : globalDefault;
+    return (slices[(size_t) sliceIdx].lockMask & lockBit) ? sliceValue : globalDefault;
 }
 
 int SliceManager::nextMidiNote() const
@@ -149,9 +151,10 @@ int SliceManager::nextMidiNote() const
     int highest = rootNote.load() - 1;
     for (int i = 0; i < numSlices; ++i)
     {
-        if (slices[i].active)
+        const auto sliceIndex = (size_t) i;
+        if (slices[sliceIndex].active)
         {
-            int top = juce::jmax (slices[i].midiNote, slices[i].highNote);
+            int top = juce::jmax (slices[sliceIndex].midiNote, slices[sliceIndex].highNote);
             if (top > highest)
                 highest = top;
         }
@@ -168,8 +171,8 @@ void SliceManager::repackMidiNotes (bool sortByPosition)
         int sel = selectedSlice.load();
         if (sel >= 0 && sel < numSlices)
         {
-            selStart = slices[sel].startSample;
-            selEnd   = slices[sel].endSample;
+            selStart = slices[(size_t) sel].startSample;
+            selEnd   = slices[(size_t) sel].endSample;
         }
 
         std::sort (slices.begin(), slices.begin() + numSlices,
@@ -180,7 +183,8 @@ void SliceManager::repackMidiNotes (bool sortByPosition)
         {
             for (int i = 0; i < numSlices; ++i)
             {
-                if (slices[i].startSample == selStart && slices[i].endSample == selEnd)
+                const auto sliceIndex = (size_t) i;
+                if (slices[sliceIndex].startSample == selStart && slices[sliceIndex].endSample == selEnd)
                 {
                     selectedSlice = i;
                     break;
@@ -193,9 +197,10 @@ void SliceManager::repackMidiNotes (bool sortByPosition)
     for (int i = 0; i < numSlices; ++i)
     {
         int note = std::min (root + i, kMaxMidiNote);
-        slices[i].midiNote      = note;
-        slices[i].highNote      = note;
-        slices[i].sliceRootNote = note;
+        const auto sliceIndex = (size_t) i;
+        slices[sliceIndex].midiNote      = note;
+        slices[sliceIndex].highNote      = note;
+        slices[sliceIndex].sliceRootNote = note;
     }
     rebuildMidiMap();
 }

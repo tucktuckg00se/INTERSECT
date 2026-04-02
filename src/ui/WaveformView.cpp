@@ -330,7 +330,8 @@ void WaveformView::paintLazyChopOverlay (juce::Graphics& g)
         return;
 
     int previewIdx = LazyChopEngine::getPreviewVoiceIndex();
-    float playhead = processor.voicePool.voicePositions[previewIdx].load (std::memory_order_relaxed);
+    const auto previewIndex = static_cast<size_t> (previewIdx);
+    float playhead = processor.voicePool.voicePositions[previewIndex].load (std::memory_order_relaxed);
     if (playhead <= 0.0f)
         return;
 
@@ -648,7 +649,8 @@ void WaveformView::drawPlaybackCursors (juce::Graphics& g)
     int previewIdx = LazyChopEngine::getPreviewVoiceIndex();
     for (int i = 0; i < VoicePool::kMaxVoices; ++i)
     {
-        float pos = processor.voicePool.voicePositions[i].load (std::memory_order_relaxed);
+        const auto voiceIndex = static_cast<size_t> (i);
+        float pos = processor.voicePool.voicePositions[voiceIndex].load (std::memory_order_relaxed);
         if (pos > 0.0f)
         {
             int px = sampleToPixel ((int) pos);
@@ -675,7 +677,8 @@ void WaveformView::drawPlaybackCursors (juce::Graphics& g)
             for (int i = 0; i < VoicePool::kMaxVoices; ++i)
             {
                 if (processor.voicePool.getVoice (i).sliceIdx != sel) continue;
-                float xfPos = processor.voicePool.xfadeSourcePositions[i].load (std::memory_order_relaxed);
+                const auto voiceIndex = static_cast<size_t> (i);
+                float xfPos = processor.voicePool.xfadeSourcePositions[voiceIndex].load (std::memory_order_relaxed);
                 if (xfPos > 0.0f)
                 {
                     int px = sampleToPixel ((int) xfPos);
@@ -1192,7 +1195,8 @@ void WaveformView::mouseUp (const juce::MouseEvent& e)
 
 void WaveformView::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w)
 {
-    if (w.deltaX != 0.0f)
+    constexpr float kHorizontalWheelEpsilon = 1.0e-6f;
+    if (w.deltaX > kHorizontalWheelEpsilon || w.deltaX < -kHorizontalWheelEpsilon)
     {
         float sc = processor.scroll.load();
         sc -= w.deltaX * 0.05f;

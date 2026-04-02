@@ -732,7 +732,7 @@ void SignalChainBar::rebuildContextBar (const LayoutInput& input)
             contextStatus = overrideCount > 0 ? juce::String (overrideCount) + " overrides" : juce::String();
 
             const auto titleFont = IntersectLookAndFeel::makeFont (10.0f, false);
-            const float titleW = std::ceil (titleFont.getStringWidthFloat (contextTitle)) + 4.0f;
+            const float titleW = std::ceil (measureTextWidth (titleFont, contextTitle)) + 4.0f;
 
             contextRow.items.add (juce::FlexItem().withWidth (8.0f)); // left pad
             const int timeItemIndex = contextRow.items.size();
@@ -863,7 +863,7 @@ void SignalChainBar::rebuildContextBar (const LayoutInput& input)
         contextStatus = overrideCount > 0 ? juce::String (overrideCount) + " overrides" : juce::String();
 
         const auto titleFont = IntersectLookAndFeel::makeFont (10.0f, false);
-        const float titleW = std::ceil (titleFont.getStringWidthFloat (contextTitle)) + 4.0f;
+        const float titleW = std::ceil (measureTextWidth (titleFont, contextTitle)) + 4.0f;
 
         const int timeItemIndex = contextRow.items.size();
         contextRow.items.add (juce::FlexItem().withWidth (titleW));
