@@ -2125,28 +2125,44 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         {
             std::unique_ptr<SampleData::DecodedSample> decoded (rawDecoded);
             const int currentToken = latestLoadToken.load (std::memory_order_acquire);
+            const auto currentLoadKind = (LoadKind) latestLoadKind.load (std::memory_order_acquire);
             const bool isStateRestoreLoad = pendingStateRestoreToken.load (std::memory_order_acquire) == currentToken;
-            clearVoicesBeforeSampleSwap();
-            sampleData.applyDecodedSample (std::move (decoded));
-            sampleMissing.store (false);
-            clearMissingFileInfo();
-            sampleAvailability.store ((int) SampleStateLoaded, std::memory_order_relaxed);
 
-            if (! isStateRestoreLoad
-                && latestLoadKind.load (std::memory_order_acquire) == (int) LoadKindReplace)
-                sliceManager.clearAll();
+            const bool needsSampleRateRetry = decoded->filePath.isNotEmpty()
+                && currentSampleRate > 0.0
+                && decoded->decodedSampleRate > 0.0
+                && std::abs (decoded->decodedSampleRate - currentSampleRate) > 0.01;
+
+            if (needsSampleRateRetry)
+            {
+                const int retryToken = requestSampleLoad (juce::File (decoded->filePath), currentLoadKind);
+                if (isStateRestoreLoad)
+                    pendingStateRestoreToken.store (retryToken, std::memory_order_release);
+            }
             else
             {
-                applyPendingSliceTimelineRemap();
-                clampSlicesToSampleBounds();
-                sliceManager.rebuildMidiMap();
+                clearVoicesBeforeSampleSwap();
+                sampleData.applyDecodedSample (std::move (decoded));
+                sampleMissing.store (false);
+                clearMissingFileInfo();
+                sampleAvailability.store ((int) SampleStateLoaded, std::memory_order_relaxed);
+
+                if (! isStateRestoreLoad
+                    && currentLoadKind == LoadKindReplace)
+                    sliceManager.clearAll();
+                else
+                {
+                    applyPendingSliceTimelineRemap();
+                    clampSlicesToSampleBounds();
+                    sliceManager.rebuildMidiMap();
+                }
+
+                if (isStateRestoreLoad)
+                    pendingStateRestoreToken.store (0, std::memory_order_release);
+
+                loadStateChanged = true;
+                uiSnapshotDirty.store (true, std::memory_order_release);
             }
-
-            if (isStateRestoreLoad)
-                pendingStateRestoreToken.store (0, std::memory_order_release);
-
-            loadStateChanged = true;
-            uiSnapshotDirty.store (true, std::memory_order_release);
         }
     }
 
