@@ -51,6 +51,17 @@ body:
     validations:
       required: false
 
+  - type: dropdown
+    id: architecture
+    attributes:
+      label: CPU / Architecture
+      options:
+        - ARM/Apple Silicon
+        - Intel/AMD
+        - Not applicable / unsure
+    validations:
+      required: false
+
   - type: input
     id: daw
     attributes:
