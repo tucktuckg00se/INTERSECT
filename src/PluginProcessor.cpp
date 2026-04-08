@@ -379,6 +379,16 @@ GlobalParamSnapshot IntersectProcessor::loadGlobalParamSnapshot() const
     return GlobalParamSnapshot::loadFrom (apvts, sliceManager.rootNote.load());
 }
 
+void IntersectProcessor::setStandaloneTransportBpm (float newBpm) noexcept
+{
+    standaloneTransportBpm.store (juce::jlimit (20.0f, 999.0f, newBpm), std::memory_order_relaxed);
+}
+
+float IntersectProcessor::getStandaloneTransportBpm() const noexcept
+{
+    return standaloneTransportBpm.load (std::memory_order_relaxed);
+}
+
 void IntersectProcessor::setMissingFileInfo (const RtText<512>& fileName, const RtText<4096>& filePath)
 {
     const int writeIndex = 1 - missingFileInfoIndex.load (std::memory_order_relaxed);
@@ -2095,14 +2105,16 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     juce::ScopedNoDenormals noDenormals;
     buffer.clear();
 
-    // Read DAW BPM from playhead
-    if (auto* ph = getPlayHead())
+    // Standalone has no host transport, so its shell provides the tempo directly.
+    if (wrapperType == wrapperType_Standalone)
+    {
+        dawBpm.store (standaloneTransportBpm.load (std::memory_order_relaxed), std::memory_order_relaxed);
+    }
+    else if (auto* ph = getPlayHead())
     {
         if (auto pos = ph->getPosition())
-        {
             if (auto bpmOpt = pos->getBpm())
                 dawBpm.store ((float) *bpmOpt, std::memory_order_relaxed);
-        }
     }
 
     // Poll shift preview request (atomic, avoids FIFO latency)

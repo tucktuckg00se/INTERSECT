@@ -43,6 +43,8 @@ public:
 
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
+    void setStandaloneTransportBpm (float newBpm) noexcept;
+    float getStandaloneTransportBpm() const noexcept;
 
     // Command FIFO for thread-safe communication from UI
     enum CommandType
@@ -256,6 +258,7 @@ public:
 
     // DAW BPM (read from playhead)
     std::atomic<float> dawBpm { 120.0f };
+    std::atomic<float> standaloneTransportBpm { 120.0f };
 
     // MIDI-selects-slice toggle
     std::atomic<bool> midiSelectsSlice { false };
