@@ -1,0 +1,28 @@
+* text=auto eol=lf
+
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.icns binary
+*.ttf binary
+*.otf binary
+*.wav binary
+*.aif binary
+*.aiff binary
+*.flac binary
+*.mp3 binary
+*.ogg binary
+*.zip binary
+*.gz binary
+*.7z binary
+*.dll binary
+*.so binary
+*.dylib binary
+*.exe binary
+*.vst3 binary
+*.component binary
