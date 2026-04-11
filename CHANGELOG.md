@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.12.3] - 2026-04-11
+
 ### Changed
 - Standalone builds now let you set the transport BPM from the Audio/MIDI settings dialog
 
