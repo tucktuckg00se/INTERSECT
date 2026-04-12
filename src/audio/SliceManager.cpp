@@ -193,14 +193,18 @@ void SliceManager::repackMidiNotes (bool sortByPosition)
         }
     }
 
-    int root = rootNote.load();
+    int nextNote = rootNote.load();
     for (int i = 0; i < numSlices; ++i)
     {
-        int note = std::min (root + i, kMaxMidiNote);
         const auto sliceIndex = (size_t) i;
-        slices[sliceIndex].midiNote      = note;
-        slices[sliceIndex].highNote      = note;
-        slices[sliceIndex].sliceRootNote = note;
+        const int span       = juce::jmax (0, slices[sliceIndex].highNote - slices[sliceIndex].midiNote);
+        const int rootOffset = juce::jlimit (0, span, slices[sliceIndex].sliceRootNote - slices[sliceIndex].midiNote);
+        const int newLow     = std::min (nextNote, kMaxMidiNote);
+        const int newHigh    = std::min (nextNote + span, kMaxMidiNote);
+        slices[sliceIndex].midiNote      = newLow;
+        slices[sliceIndex].highNote      = newHigh;
+        slices[sliceIndex].sliceRootNote = std::min (newLow + rootOffset, newHigh);
+        nextNote += span + 1;
     }
     rebuildMidiMap();
 }
