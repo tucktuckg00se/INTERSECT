@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- RESEQ no longer collapses note-range slices to single notes; ranges and root note offsets are preserved, and slices are packed without overlaps
+
 ## [0.12.3] - 2026-04-11
 
 ### Changed
