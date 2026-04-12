@@ -17,7 +17,8 @@ enum SettingsMenuItemId
     kMenuMidiPrev,
     kMenuMidiNext,
     kMenuSponsor,
-    kMenuThemeBase = 2000
+    kMenuThemeBase = 2000,
+    kMenuMiddleCBase = 3000  // +0=C3, +1=C4, +2=C5
 };
 
 float measureTextWidth (const juce::Font& font, const juce::String& text)
@@ -233,6 +234,13 @@ void HeaderBar::showSettingsPopup()
     const bool blockCc     = processor.midiEditState.consumeMidiEditCc.load (std::memory_order_relaxed);
     const int  nrpnCh      = processor.midiEditState.channel.load (std::memory_order_relaxed);
     const float currentScale = processor.apvts.getRawParameterValue (ParamIds::uiScale)->load();
+    const int currentMiddleC = editor->getMiddleCOctave();
+
+    juce::PopupMenu middleCMenu;
+    middleCMenu.setLookAndFeel (&getLookAndFeel());
+    for (int octave : { 3, 4, 5 })
+        middleCMenu.addItem (kMenuMiddleCBase + (octave - 3), "C" + juce::String (octave),
+                             true, currentMiddleC == octave);
 
     juce::PopupMenu nrpnMenu;
     nrpnMenu.setLookAndFeel (&getLookAndFeel());
@@ -260,6 +268,7 @@ void HeaderBar::showSettingsPopup()
     menu.addItem (kMenuScaleUp, "Scale Up", currentScale < 3.0f);
     menu.addItem (kMenuScaleDown, "Scale Down", currentScale > 0.5f);
     menu.addSeparator();
+    menu.addSubMenu ("Middle C  C" + juce::String (currentMiddleC), middleCMenu);
     menu.addSubMenu (formatNrpnStatus (nrpnCh), nrpnMenu);
     menu.addSubMenu ("Themes  " + currentName, themesMenu);
     menu.addSeparator();
@@ -316,6 +325,10 @@ void HeaderBar::showSettingsPopup()
             else if (result == kMenuSponsor)
             {
                 juce::URL ("https://buymeacoffee.com/tucktuckgoose").launchInDefaultBrowser();
+            }
+            else if (result >= kMenuMiddleCBase && result <= kMenuMiddleCBase + 2)
+            {
+                editor->setMiddleCOctave (3 + (result - kMenuMiddleCBase));
             }
             else if (result >= kMenuThemeBase && result < kMenuThemeBase + themes.size())
             {

@@ -23,6 +23,8 @@ public:
     juce::StringArray getAvailableThemes();
     void applyTheme (const juce::String& themeName);
     void saveUserSettings (float scale, const juce::String& themeName);
+    void setMiddleCOctave (int octave);
+    int getMiddleCOctave() const { return middleCOctave; }
 
 private:
     void timerCallback() override;
@@ -30,6 +32,7 @@ private:
     void loadUserSettings();
 
     IntersectProcessor& processor;
+    int middleCOctave = 4;
     float lastScale = 1.0f;   // last applied scale value, compared each tick
     bool scaleDirty = true;   // forces scale application on first timer tick
     float lastZoom = -1.0f;

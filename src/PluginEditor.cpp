@@ -499,6 +499,16 @@ void IntersectEditor::applyTheme (const juce::String& themeName)
     repaint();
 }
 
+void IntersectEditor::setMiddleCOctave (int octave)
+{
+    middleCOctave = octave;
+    signalChainBar.middleCOctave = octave;
+    signalChainBar.markLayoutDirty();
+    signalChainBar.repaint();
+    float scale = processor.apvts.getRawParameterValue (ParamIds::uiScale)->load();
+    saveUserSettings (scale, getTheme().name);
+}
+
 void IntersectEditor::saveUserSettings (float scale, const juce::String& themeName)
 {
     auto file = getUserSettingsFile();
@@ -510,6 +520,7 @@ void IntersectEditor::saveUserSettings (float scale, const juce::String& themeNa
     content << "nrpnEnabled: "  << (processor.midiEditState.enabled.load (std::memory_order_relaxed) ? "true" : "false") << "\n";
     content << "nrpnChannel: "  << processor.midiEditState.channel.load (std::memory_order_relaxed) << "\n";
     content << "nrpnBlockCc: "  << (processor.midiEditState.consumeMidiEditCc.load (std::memory_order_relaxed) ? "true" : "false") << "\n";
+    content << "middleC: " << middleCOctave << "\n";
     file.replaceWithText (content);
 }
 
@@ -550,8 +561,16 @@ void IntersectEditor::loadUserSettings()
                 auto val = line.fromFirstOccurrenceOf (":", false, false).trim();
                 processor.midiEditState.consumeMidiEditCc.store (val == "true", std::memory_order_relaxed);
             }
+            else if (line.startsWith ("middleC:"))
+            {
+                int val = line.fromFirstOccurrenceOf (":", false, false).trim().getIntValue();
+                if (val == 3 || val == 4 || val == 5)
+                    middleCOctave = val;
+            }
         }
     }
+
+    signalChainBar.middleCOctave = middleCOctave;
 
     // Apply theme
     applyTheme (themeName);

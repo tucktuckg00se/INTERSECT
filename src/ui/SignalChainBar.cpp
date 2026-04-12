@@ -85,9 +85,9 @@ juce::String getChoiceName (int value, const juce::StringArray& names)
     return names[juce::jlimit (0, names.size() - 1, value)];
 }
 
-juce::String midiNoteName (int note)
+juce::String midiNoteName (int note, int middleCOctave)
 {
-    return juce::MidiMessage::getMidiNoteName (note, true, true, 4);
+    return juce::MidiMessage::getMidiNoteName (note, true, true, middleCOctave);
 }
 
 juce::Rectangle<int> toIntBounds (juce::Rectangle<float> bounds)
@@ -569,6 +569,7 @@ void SignalChainBar::rebuildLayout()
         ? (float) sampleSnap->decodedSampleRate
         : 44100.0f;
     input.selectedSlice = input.hasValidSlice ? &ui.slices[(size_t) ui.selectedSlice] : nullptr;
+    input.middleCOctave = middleCOctave;
 
     contextTitle.clear();
     contextSubtitle.clear();
@@ -820,9 +821,9 @@ void SignalChainBar::rebuildContextBar (const LayoutInput& input)
 
             addContextNoteNameCell (toIntBounds (contextRow.items[noteNameItemIndex].currentBounds),
                                     hasRange
-                                        ? midiNoteName (input.selectedSlice->midiNote) + "-"
-                                              + midiNoteName (input.selectedSlice->highNote)
-                                        : midiNoteName (input.selectedSlice->midiNote));
+                                        ? midiNoteName (input.selectedSlice->midiNote, input.middleCOctave) + "-"
+                                              + midiNoteName (input.selectedSlice->highNote, input.middleCOctave)
+                                        : midiNoteName (input.selectedSlice->midiNote, input.middleCOctave));
         }
         else
         {
@@ -945,9 +946,9 @@ void SignalChainBar::rebuildContextBar (const LayoutInput& input)
 
         addContextNoteNameCell (toIntBounds (contextRow.items[noteNameItemIndex].currentBounds),
                                 hasRange
-                                    ? midiNoteName (input.selectedSlice->midiNote) + "-"
-                                          + midiNoteName (input.selectedSlice->highNote)
-                                    : midiNoteName (input.selectedSlice->midiNote));
+                                    ? midiNoteName (input.selectedSlice->midiNote, input.middleCOctave) + "-"
+                                          + midiNoteName (input.selectedSlice->highNote, input.middleCOctave)
+                                    : midiNoteName (input.selectedSlice->midiNote, input.middleCOctave));
         return;
     }
 

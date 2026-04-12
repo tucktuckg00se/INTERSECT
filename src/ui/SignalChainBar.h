@@ -33,6 +33,7 @@ public:
     bool isExpanded() const { return expanded; }
     float getDesiredHeight() const;
     std::function<void()> onHeightChanged;
+    int middleCOctave = 4;
 
 private:
     enum class Scope
@@ -122,6 +123,7 @@ private:
         bool hasValidSlice = false;
         bool sliceScope = false;
         float sampleRate = 44100.0f;
+        int middleCOctave = 4;
     };
 
     void rebuildLayout();

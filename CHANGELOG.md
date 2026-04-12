@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Middle C octave convention setting in the SET menu: choose C3, C4, or C5 to match your DAW's note naming (saved globally, does not affect stored MIDI data)
+
 ### Fixed
 - RESEQ no longer collapses note-range slices to single notes; ranges and root note offsets are preserved, and slices are packed without overlaps
 
