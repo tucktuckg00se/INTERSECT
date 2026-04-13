@@ -19,7 +19,7 @@ public:
     int  midiNoteToSlice (int note) const;
     const std::vector<int>& midiNoteToSlices (int note) const;
     int  nextMidiNote() const;
-    void repackMidiNotes (bool sortByPosition);
+    int  repackMidiNotes (bool sortByPosition);
 
     float resolveParam (int sliceIdx, LockBit lockBit, float sliceValue, float globalDefault) const;
 

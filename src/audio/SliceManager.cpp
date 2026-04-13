@@ -162,7 +162,7 @@ int SliceManager::nextMidiNote() const
     return std::min (highest + 1, kMaxMidiNote);
 }
 
-void SliceManager::repackMidiNotes (bool sortByPosition)
+int SliceManager::repackMidiNotes (bool sortByPosition)
 {
     if (sortByPosition && numSlices > 1)
     {
@@ -193,18 +193,28 @@ void SliceManager::repackMidiNotes (bool sortByPosition)
         }
     }
 
+    int overflowSlice = -1;
     int nextNote = rootNote.load();
     for (int i = 0; i < numSlices; ++i)
     {
         const auto sliceIndex = (size_t) i;
         const int span       = juce::jmax (0, slices[sliceIndex].highNote - slices[sliceIndex].midiNote);
         const int rootOffset = juce::jlimit (0, span, slices[sliceIndex].sliceRootNote - slices[sliceIndex].midiNote);
-        const int newLow     = std::min (nextNote, kMaxMidiNote);
-        const int newHigh    = std::min (nextNote + span, kMaxMidiNote);
+
+        if (nextNote > kMaxMidiNote)
+        {
+            // No MIDI notes left — keep remaining slices at their current assignments
+            overflowSlice = i;
+            break;
+        }
+
+        const int newLow  = nextNote;
+        const int newHigh = std::min (nextNote + span, kMaxMidiNote);
         slices[sliceIndex].midiNote      = newLow;
         slices[sliceIndex].highNote      = newHigh;
         slices[sliceIndex].sliceRootNote = std::min (newLow + rootOffset, newHigh);
-        nextNote += span + 1;
+        nextNote = newHigh + 1;
     }
     rebuildMidiMap();
+    return overflowSlice;
 }

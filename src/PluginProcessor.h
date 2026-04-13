@@ -266,6 +266,9 @@ public:
     // Snap-to-zero-crossing toggle
     std::atomic<bool> snapToZeroCrossing { false };
 
+    // Middle C octave convention (synced from editor for warning messages)
+    std::atomic<int> middleCOctave { 4 };
+
     // Undo/redo
     UndoManager undoMgr;
 
@@ -323,6 +326,7 @@ private:
             none = 0,
             generic,
             droppedCommands,
+            midiLimit,
         };
 
         RtText<256> text;
@@ -360,7 +364,8 @@ private:
     void setMissingFileInfo (const RtText<512>& fileName, const RtText<4096>& filePath);
     void clearMissingFileInfo();
     const MissingFileInfo& getMissingFileInfo() const;
-    void setUiStatusMessage (const juce::String& text, bool isWarning);
+    void setUiStatusMessage (const juce::String& text, bool isWarning,
+                             UiStatusMessage::Source source = UiStatusMessage::Source::generic);
     void setUiStatusMessage (const RtText<256>& text,
                              bool isWarning,
                              UiStatusMessage::Source source = UiStatusMessage::Source::generic);

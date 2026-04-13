@@ -503,6 +503,7 @@ void IntersectEditor::setMiddleCOctave (int octave)
 {
     middleCOctave = octave;
     signalChainBar.middleCOctave = octave;
+    processor.middleCOctave.store (octave, std::memory_order_relaxed);
     signalChainBar.markLayoutDirty();
     signalChainBar.repaint();
     float scale = processor.apvts.getRawParameterValue (ParamIds::uiScale)->load();
@@ -571,6 +572,7 @@ void IntersectEditor::loadUserSettings()
     }
 
     signalChainBar.middleCOctave = middleCOctave;
+    processor.middleCOctave.store (middleCOctave, std::memory_order_relaxed);
 
     // Apply theme
     applyTheme (themeName);

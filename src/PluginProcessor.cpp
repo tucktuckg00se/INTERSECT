@@ -409,11 +409,12 @@ const IntersectProcessor::MissingFileInfo& IntersectProcessor::getMissingFileInf
     return missingFileInfos[(size_t) missingFileInfoIndex.load (std::memory_order_acquire)];
 }
 
-void IntersectProcessor::setUiStatusMessage (const juce::String& text, bool isWarning)
+void IntersectProcessor::setUiStatusMessage (const juce::String& text, bool isWarning,
+                                             UiStatusMessage::Source source)
 {
     RtText<256> rtText;
     rtText.assign (text);
-    setUiStatusMessage (rtText, isWarning, UiStatusMessage::Source::generic);
+    setUiStatusMessage (rtText, isWarning, source);
 }
 
 void IntersectProcessor::setUiStatusMessage (const RtText<256>& text,
@@ -1228,6 +1229,8 @@ void IntersectProcessor::handleCommand (const Command& cmd)
         case CmdSplitSlice:
         case CmdTransientChop:
         case CmdRepackMidi:
+            if (getUiStatusMessage().source == UiStatusMessage::Source::midiLimit)
+                clearUiStatusMessage();
             if (! gestureSnapshotCaptured)
                 captureSnapshot();
             gestureSnapshotCaptured = false;
@@ -1242,8 +1245,16 @@ void IntersectProcessor::handleCommand (const Command& cmd)
             break;
 
         case CmdCreateSlice:
-            sliceManager.createSlice (cmd.intParam1, cmd.intParam2);
+        {
+            bool wasAtLimit = sliceManager.nextMidiNote() == kMaxMidiNote
+                              && ! sliceManager.midiNoteToSlices (kMaxMidiNote).empty();
+            int idx = sliceManager.createSlice (cmd.intParam1, cmd.intParam2);
+            if (idx >= 0 && wasAtLimit)
+                setUiStatusMessage ("MIDI note limit - slice " + juce::String (idx + 1)
+                    + " has no unique MIDI note",
+                    true, UiStatusMessage::Source::midiLimit);
             break;
+        }
 
         case CmdDeleteSlice:
             sliceManager.deleteSlice (cmd.intParam1);
@@ -1522,6 +1533,8 @@ void IntersectProcessor::handleCommand (const Command& cmd)
             int sel = cmd.sliceIdx >= 0 ? cmd.sliceIdx : sliceManager.selectedSlice.load();
             if (sel >= 0 && sel < sliceManager.getNumSlices())
             {
+                bool wasAtLimit = sliceManager.nextMidiNote() == kMaxMidiNote
+                                  && ! sliceManager.midiNoteToSlices (kMaxMidiNote).empty();
                 const auto& src = sliceManager.getSlice (sel);
                 int newIdx = sliceManager.createSlice (src.startSample, src.endSample);
                 if (newIdx >= 0)
@@ -1544,6 +1557,10 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                     }
                     // else (intParam1 == -1): inherit src.startSample/endSample as-is
                     sliceManager.selectedSlice = newIdx;
+                    if (wasAtLimit)
+                        setUiStatusMessage ("MIDI note limit - slice " + juce::String (newIdx + 1)
+                            + " has no unique MIDI note",
+                            true, UiStatusMessage::Source::midiLimit);
                 }
             }
             break;
@@ -1601,6 +1618,13 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                 sliceManager.rebuildMidiMap();
                 if (firstNew >= 0)
                     sliceManager.selectedSlice = firstNew;
+                if (baseNote + count - 1 > kMaxMidiNote)
+                {
+                    int firstOverflow = firstNew + (kMaxMidiNote - baseNote + 1);
+                    setUiStatusMessage ("MIDI note limit - slices " + juce::String (firstOverflow + 1)
+                        + "+ have no unique MIDI note",
+                        true, UiStatusMessage::Source::midiLimit);
+                }
             }
             break;
         }
@@ -1655,13 +1679,26 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                 sliceManager.rebuildMidiMap();
                 if (firstNew >= 0)
                     sliceManager.selectedSlice = firstNew;
+                if (baseNote + subIdx - 1 > kMaxMidiNote)
+                {
+                    int firstOverflow = firstNew + (kMaxMidiNote - baseNote + 1);
+                    setUiStatusMessage ("MIDI note limit - slices " + juce::String (firstOverflow + 1)
+                        + "+ have no unique MIDI note",
+                        true, UiStatusMessage::Source::midiLimit);
+                }
             }
             break;
         }
 
         case CmdRepackMidi:
-            sliceManager.repackMidiNotes (cmd.intParam1 != 0);
+        {
+            int overflowAt = sliceManager.repackMidiNotes (cmd.intParam1 != 0);
+            if (overflowAt >= 0)
+                setUiStatusMessage ("MIDI note limit - slices " + juce::String (overflowAt + 1)
+                    + "+ were not resequenced",
+                    true, UiStatusMessage::Source::midiLimit);
             break;
+        }
 
         case CmdRelinkFile:
             relinkFileAsync (cmd.fileParam);
