@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 - RESEQ no longer collapses note-range slices to single notes; ranges and root note offsets are preserved, and slices are packed without overlaps
 - Warning now appears when creating or resequencing slices past the MIDI note limit, showing which slices are affected
+- Auto chop no longer freezes the UI on large samples; transient analysis now runs in the background with responsive slider controls
 
 ## [0.12.3] - 2026-04-11
 

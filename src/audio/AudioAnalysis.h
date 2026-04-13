@@ -4,6 +4,7 @@
 #include <vector>
 #include <cmath>
 #include <algorithm>
+#include <deque>
 #include <iterator>
 #include <numeric>
 
@@ -46,28 +47,40 @@ inline int findNearestZeroCrossing (const juce::AudioBuffer<float>& buffer, int 
     return bestPos;
 }
 
-inline std::vector<int> detectTransients (const juce::AudioBuffer<float>& buffer,
-                                           int start, int end,
-                                           float sensitivity = 1.0f,
-                                           double sampleRate = 44100.0,
-                                           float minSliceLenMs = 100.0f)
+// Result of the expensive STFT spectral flux computation.
+struct ODFResult
 {
-    std::vector<int> onsets;
+    std::vector<float> odf;
+    int hopSize  = 0;
+    int fftSize  = 0;
+    int start    = 0;
+    int end      = 0;
+};
+
+// Phase 1 (expensive): Compute spectral flux onset detection function via STFT.
+// This is the heavy part — ~5000 FFTs for a 30-second sample at 44.1kHz.
+inline ODFResult computeSpectralFluxODF (const juce::AudioBuffer<float>& buffer,
+                                          int start, int end,
+                                          double /*sampleRate*/ = 44100.0)
+{
+    ODFResult result;
+    result.start = start;
+    result.end   = end;
+
+    constexpr int fftOrder = 10;
+    constexpr int fftSize  = 1 << fftOrder;  // 1024
+    constexpr int hopSize  = 256;
+    constexpr int numBins  = fftSize / 2 + 1;
+
+    result.hopSize = hopSize;
+    result.fftSize = fftSize;
 
     int numFrames = buffer.getNumSamples();
     if (numFrames == 0 || start < 0 || end <= start || end > numFrames)
-        return onsets;
+        return result;
 
     const float* L = buffer.getReadPointer (0);
     const float* R = buffer.getNumChannels() > 1 ? buffer.getReadPointer (1) : L;
-
-    // --- STFT parameters ---
-    constexpr int fftOrder = 10;            // 2^10 = 1024
-    constexpr int fftSize = 1 << fftOrder;  // 1024
-    constexpr int hopSize = 256;            // ~5.8ms at 44.1kHz
-    constexpr int numBins = fftSize / 2 + 1; // 513 magnitude bins
-    constexpr int peakRadius = 3;
-    constexpr float delta = 1e-4f;          // noise floor for silence suppression
 
     // Precompute Hann window
     std::vector<float> hannWindow (fftSize);
@@ -76,16 +89,12 @@ inline std::vector<int> detectTransients (const juce::AudioBuffer<float>& buffer
 
     juce::dsp::FFT fft (fftOrder);
 
-    // --- Step 1: STFT and spectral flux ODF ---
-    // FFT work buffer: needs 2*fftSize floats for performRealOnlyForwardTransform
     std::vector<float> fftData (2 * (size_t) fftSize, 0.0f);
     std::vector<float> prevMag (numBins, 0.0f);
     std::vector<float> currMag (numBins);
-    std::vector<float> odf;
 
     for (int pos = start; pos + fftSize <= end; pos += hopSize)
     {
-        // Fill FFT buffer with windowed mono signal
         std::fill (fftData.begin(), fftData.end(), 0.0f);
         for (int i = 0; i < fftSize; ++i)
         {
@@ -96,7 +105,6 @@ inline std::vector<int> detectTransients (const juce::AudioBuffer<float>& buffer
 
         fft.performRealOnlyForwardTransform (fftData.data());
 
-        // Compute magnitudes from interleaved real/imag pairs
         for (int k = 0; k < numBins; ++k)
         {
             float re = fftData[(size_t) (2 * k)];
@@ -104,7 +112,6 @@ inline std::vector<int> detectTransients (const juce::AudioBuffer<float>& buffer
             currMag[(size_t) k] = std::sqrt (re * re + im * im);
         }
 
-        // Half-wave rectified spectral flux: sum of positive magnitude increases
         float flux = 0.0f;
         for (int k = 0; k < numBins; ++k)
         {
@@ -113,16 +120,41 @@ inline std::vector<int> detectTransients (const juce::AudioBuffer<float>& buffer
                 flux += diff;
         }
 
-        odf.push_back (flux);
+        result.odf.push_back (flux);
         std::swap (prevMag, currMag);
     }
+
+    return result;
+}
+
+// Phase 2 (cheap): Pick transients from a pre-computed ODF.
+// Runs adaptive threshold, peak-pick, backtrack refinement, and min-distance filter.
+inline std::vector<int> pickTransientsFromODF (const ODFResult& odfResult,
+                                                const juce::AudioBuffer<float>& buffer,
+                                                float sensitivity = 1.0f,
+                                                double sampleRate = 44100.0,
+                                                float minSliceLenMs = 100.0f)
+{
+    std::vector<int> onsets;
+
+    const auto& odf = odfResult.odf;
+    const int hopSize = odfResult.hopSize;
+    const int fftSize = odfResult.fftSize;
+    const int start   = odfResult.start;
+    const int end     = odfResult.end;
 
     if (odf.size() < 5)
         return onsets;
 
-    // --- Step 2: Adaptive threshold — moving median × multiplier ---
+    constexpr int peakRadius = 3;
+    constexpr float delta = 1e-4f;
+
+    const float* L = buffer.getReadPointer (0);
+    const float* R = buffer.getNumChannels() > 1 ? buffer.getReadPointer (1) : L;
+
+    // --- Adaptive threshold — moving median x multiplier ---
     float lambda = std::max (0.1f, sensitivity);
-    int medianW = 10; // ~58ms lookaround at 256-sample hop / 44.1kHz
+    int medianW = 10;
 
     std::vector<float> threshold (odf.size());
     std::vector<float> window;
@@ -144,7 +176,7 @@ inline std::vector<int> detectTransients (const juce::AudioBuffer<float>& buffer
         threshold[i] = delta + lambda * median;
     }
 
-    // --- Step 3: Peak-pick — local maxima above adaptive threshold ---
+    // --- Peak-pick — local maxima above adaptive threshold ---
     struct Onset
     {
         int samplePos;
@@ -175,29 +207,62 @@ inline std::vector<int> detectTransients (const juce::AudioBuffer<float>& buffer
             candidates.push_back ({ samplePos, odf[i] });
     }
 
-    // --- Step 3.5: Backtrack refinement — walk backward to true transient onset ---
+    // --- Backtrack refinement — walk backward to true transient onset ---
     {
-        // Time-based constants, converted to samples via sampleRate
-        constexpr float envWindowMs    = 0.7f;   // moving-max smoothing half-width
-        constexpr float noiseWindowMs  = 6.0f;   // RMS noise floor measurement window
-        constexpr float noiseGapMs     = 1.0f;   // gap between noise window end and peak search start
-        constexpr float prerollMs      = 0.2f;   // safety margin nudge after refinement
-        constexpr float backtrackFraction = 0.1f; // onset threshold: 10% of (peak - noise)
+        constexpr float envWindowMs    = 0.7f;
+        constexpr float noiseWindowMs  = 6.0f;
+        constexpr float noiseGapMs     = 1.0f;
+        constexpr float prerollMs      = 0.2f;
+        constexpr float backtrackFraction = 0.1f;
 
         const int envHalf     = std::max (1, (int) std::round (sampleRate * envWindowMs   / 1000.0));
         const int noiseWinLen = std::max (1, (int) std::round (sampleRate * noiseWindowMs / 1000.0));
         const int noiseGap    = std::max (1, (int) std::round (sampleRate * noiseGapMs    / 1000.0));
         const int preroll     = std::max (0, (int) std::round (sampleRate * prerollMs     / 1000.0));
 
-        // Smoothed envelope: moving maximum avoids zero-crossing dips in raw abs(mono)
+        // Pre-compute sliding window max envelope over [start, end) — O(n) total
+        // Uses a monotonic deque for sliding window maximum.
+        const int regionLen = end - start;
+        std::vector<float> envArray ((size_t) regionLen);
+        {
+            // Pre-compute absolute mono values to avoid redundant per-sample calculation
+            std::vector<float> absMono ((size_t) regionLen);
+            for (int i = 0; i < regionLen; ++i)
+                absMono[(size_t) i] = std::abs ((L[start + i] + R[start + i]) * 0.5f);
+
+            std::deque<int> deq; // indices into absMono of descending local maxima
+
+            // Process indices [0, regionLen + envHalf) so that center = i - envHalf
+            // covers [0, regionLen) fully.
+            const int loopEnd = regionLen + envHalf;
+            for (int i = 0; i < loopEnd; ++i)
+            {
+                // Only push real samples; past regionLen the window just shrinks
+                if (i < regionLen)
+                {
+                    while (! deq.empty() && absMono[(size_t) deq.back()] <= absMono[(size_t) i])
+                        deq.pop_back();
+                    deq.push_back (i);
+                }
+
+                // Evict elements that have fallen out of the window [center - envHalf, center + envHalf]
+                int center = i - envHalf;
+                int windowStart = center - envHalf;
+                while (! deq.empty() && deq.front() < windowStart)
+                    deq.pop_front();
+
+                if (center >= 0 && center < regionLen && ! deq.empty())
+                    envArray[(size_t) center] = absMono[(size_t) deq.front()];
+            }
+        }
+
+        // O(1) envelope lookup (idx is in absolute sample coordinates)
         auto envelope = [&] (int idx) -> float
         {
-            float mx = 0.0f;
-            int lo = std::max (start, idx - envHalf);
-            int hi = std::min (end, idx + envHalf);
-            for (int s = lo; s < hi; ++s)
-                mx = std::max (mx, std::abs ((L[s] + R[s]) * 0.5f));
-            return mx;
+            int rel = idx - start;
+            if (rel < 0 || rel >= regionLen)
+                return 0.0f;
+            return envArray[(size_t) rel];
         };
 
         std::sort (candidates.begin(), candidates.end(),
@@ -210,11 +275,10 @@ inline std::vector<int> detectTransients (const juce::AudioBuffer<float>& buffer
             if (ci > 0)
                 earliest = std::max (earliest, candidates[ci - 1].samplePos + 1);
 
-            // Find actual peak in a hop-scale window around the candidate
             int peakLo = std::max (earliest, pos - hopSize);
             int peakHi = std::min (end, pos + hopSize / 2);
             if (peakHi <= peakLo)
-                continue; // collapsed window near region boundary — skip refinement
+                continue;
 
             int peakPos = peakLo;
             float peakAmp = 0.0f;
@@ -228,7 +292,6 @@ inline std::vector<int> detectTransients (const juce::AudioBuffer<float>& buffer
                 }
             }
 
-            // Noise floor: RMS of a window ending before the peak search region
             int noiseEnd = std::max (start, peakLo - noiseGap);
             int noiseStart = std::max (start, noiseEnd - noiseWinLen);
             float noiseFloor = 0.0f;
@@ -243,10 +306,8 @@ inline std::vector<int> detectTransients (const juce::AudioBuffer<float>& buffer
                 noiseFloor = std::sqrt (sumSq / (float) (noiseEnd - noiseStart));
             }
 
-            // Backtrack threshold
             float thresh = noiseFloor + backtrackFraction * (peakAmp - noiseFloor);
 
-            // Walk backward from peakPos until envelope drops below threshold
             int refined = peakPos;
             for (int s = peakPos; s >= earliest; --s)
             {
@@ -258,18 +319,16 @@ inline std::vector<int> detectTransients (const juce::AudioBuffer<float>& buffer
                 refined = s;
             }
 
-            // Small preroll safety margin
             refined = std::max (earliest, refined - preroll);
 
             candidates[ci].samplePos = refined;
         }
     }
 
-    // --- Step 4: MIN post-filter — greedy strongest-first, remove close neighbors ---
+    // --- MIN post-filter — greedy strongest-first, remove close neighbors ---
     int minOnsetDist = (int) std::round (sampleRate * (double) minSliceLenMs / 1000.0);
     minOnsetDist = std::max (1, minOnsetDist);
 
-    // Sort by strength descending so strongest onsets survive
     std::sort (candidates.begin(), candidates.end(),
                [] (const Onset& a, const Onset& b) { return a.strength > b.strength; });
 
@@ -289,11 +348,22 @@ inline std::vector<int> detectTransients (const juce::AudioBuffer<float>& buffer
             kept.push_back (c.samplePos);
     }
 
-    // Sort by position for output
     std::sort (kept.begin(), kept.end());
     onsets = std::move (kept);
 
     return onsets;
+}
+
+// Convenience wrapper — calls both phases sequentially. Preserves the original API
+// so existing call sites (if any outside AutoChopPanel) continue to work.
+inline std::vector<int> detectTransients (const juce::AudioBuffer<float>& buffer,
+                                           int start, int end,
+                                           float sensitivity = 1.0f,
+                                           double sampleRate = 44100.0,
+                                           float minSliceLenMs = 100.0f)
+{
+    auto odf = computeSpectralFluxODF (buffer, start, end, sampleRate);
+    return pickTransientsFromODF (odf, buffer, sensitivity, sampleRate, minSliceLenMs);
 }
 
 } // namespace AudioAnalysis

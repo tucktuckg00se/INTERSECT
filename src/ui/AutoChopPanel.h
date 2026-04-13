@@ -1,11 +1,14 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
+#include "../audio/AudioAnalysis.h"
 #include <memory>
+#include <atomic>
 
 class IntersectProcessor;
 class WaveformView;
 
-class AutoChopPanel : public juce::Component
+class AutoChopPanel : public juce::Component,
+                      private juce::Timer
 {
 public:
     AutoChopPanel (IntersectProcessor& p, WaveformView& wv);
@@ -30,9 +33,13 @@ private:
     };
 
     void updatePreview();
+    void updatePreviewFromCachedODF();
+    void startODFComputation();
     int hitTestCell (juce::Point<int> pos) const;
     void showTextEditor (ParamCell& cell);
     void dismissTextEditor();
+
+    void timerCallback() override;
 
     IntersectProcessor& processor;
     WaveformView& waveformView;
@@ -50,4 +57,35 @@ private:
     float dragStartValue = 0.0f;
 
     std::unique_ptr<juce::TextEditor> textEditor;
+
+    // --- ODF cache for async computation ---
+    AudioAnalysis::ODFResult cachedODF;
+    int cachedSliceStart = -1;
+    int cachedSliceEnd   = -1;
+    bool odfReady = false;
+
+    // Background thread for initial ODF computation
+    class ODFThread : public juce::Thread
+    {
+    public:
+        ODFThread (const juce::AudioBuffer<float>& buf, int start, int end, double sr)
+            : juce::Thread ("ODF-Compute"), buffer (buf), sliceStart (start), sliceEnd (end), sampleRate (sr) {}
+
+        void run() override
+        {
+            result = AudioAnalysis::computeSpectralFluxODF (buffer, sliceStart, sliceEnd, sampleRate);
+        }
+
+        AudioAnalysis::ODFResult result;
+
+    private:
+        const juce::AudioBuffer<float>& buffer;
+        int sliceStart, sliceEnd;
+        double sampleRate;
+    };
+
+    std::unique_ptr<ODFThread> odfThread;
+    std::shared_ptr<juce::AudioBuffer<float>> odfBufferSnapshot; // prevent dangling ref
+
+    bool debounceScheduled = false;
 };

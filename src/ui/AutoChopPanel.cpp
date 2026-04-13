@@ -2,7 +2,6 @@
 #include "IntersectLookAndFeel.h"
 #include "WaveformView.h"
 #include "../PluginProcessor.h"
-#include "../audio/AudioAnalysis.h"
 #include <algorithm>
 
 AutoChopPanel::AutoChopPanel (IntersectProcessor& p, WaveformView& wv)
@@ -68,12 +67,26 @@ AutoChopPanel::AutoChopPanel (IntersectProcessor& p, WaveformView& wv)
             parent->removeChildComponent (this);
     };
 
-    updatePreview();
+    // Hide action controls until ODF is ready (keep cancel visible)
+    splitEqualBtn.setVisible (false);
+    detectBtn.setVisible (false);
+
+    // Kick off async ODF computation instead of blocking
+    startODFComputation();
 }
 
 AutoChopPanel::~AutoChopPanel()
 {
+    stopTimer();
     dismissTextEditor();
+
+    if (odfThread != nullptr)
+    {
+        odfThread->signalThreadShouldExit();
+        odfThread->stopThread (500);
+        odfThread.reset();
+    }
+
     waveformView.transientPreviewPositions.clear();
     waveformView.repaint();
 }
@@ -85,6 +98,15 @@ void AutoChopPanel::paint (juce::Graphics& g)
 
     g.setColour (getTheme().surface5);
     g.drawRect (getLocalBounds(), 1);
+
+    // Show analyzing indicator while ODF is computing
+    if (! odfReady)
+    {
+        g.setFont (IntersectLookAndFeel::makeFont (10.0f));
+        g.setColour (getTheme().text2.withAlpha (0.5f));
+        g.drawText ("Analyzing...", getLocalBounds(), juce::Justification::centred);
+        return;
+    }
 
     // Draw each param cell
     auto drawCell = [&] (const ParamCell& cell)
@@ -189,15 +211,29 @@ void AutoChopPanel::mouseDrag (const juce::MouseEvent& e)
     newValue = juce::jlimit (cell->minVal, cell->maxVal, std::round (newValue / cell->step) * cell->step);
     cell->value = newValue;
 
-    // Live preview for SENS and MIN
-    if (activeDragCell <= 1)
-        updatePreview();
+    // Debounced live preview for SENS and MIN
+    if (activeDragCell <= 1 && odfReady)
+    {
+        if (! debounceScheduled)
+        {
+            debounceScheduled = true;
+            startTimer (40); // ~25Hz update rate
+        }
+    }
 
     repaint();
 }
 
 void AutoChopPanel::mouseUp (const juce::MouseEvent&)
 {
+    // Flush any pending debounced preview on mouse up
+    if (activeDragCell <= 1 && debounceScheduled && odfReady)
+    {
+        stopTimer();
+        debounceScheduled = false;
+        updatePreviewFromCachedODF();
+    }
+
     activeDragCell = -1;
 }
 
@@ -264,7 +300,7 @@ void AutoChopPanel::showTextEditor (ParamCell& cell)
             cellPtr->value = newValue;
             // Update preview for SENS/MIN cells
             if (cellPtr == &safeThis->sensCell || cellPtr == &safeThis->minCell)
-                safeThis->updatePreview();
+                safeThis->updatePreviewFromCachedODF();
             safeThis->repaint();
         });
     };
@@ -295,8 +331,11 @@ void AutoChopPanel::dismissTextEditor()
     textEditor.reset();
 }
 
-void AutoChopPanel::updatePreview()
+void AutoChopPanel::startODFComputation()
 {
+    odfReady = false;
+    repaint();
+
     auto sampleSnap = processor.sampleData.getSnapshot();
     const auto& ui = processor.getUiSliceSnapshot();
     int sel = ui.selectedSlice;
@@ -308,18 +347,82 @@ void AutoChopPanel::updatePreview()
     }
 
     const auto& s = ui.slices[(size_t) sel];
-    float sens = sensCell.value * 0.1f;
-    float minMs = minCell.value;
+    int sliceStart = s.startSample;
+    int sliceEnd   = s.endSample;
 
     const double sampleRate = sampleSnap->decodedSampleRate > 0.0 ? sampleSnap->decodedSampleRate : 44100.0;
 
-    auto positions = AudioAnalysis::detectTransients (
-        sampleSnap->buffer, s.startSample, s.endSample, sens, sampleRate, minMs);
+    // Hold onto the snapshot so the buffer stays alive for the thread
+    odfBufferSnapshot = std::make_shared<juce::AudioBuffer<float>> (sampleSnap->buffer);
+    cachedSliceStart = sliceStart;
+    cachedSliceEnd   = sliceEnd;
+
+    // Clean up any previous thread
+    if (odfThread != nullptr)
+    {
+        odfThread->signalThreadShouldExit();
+        odfThread->stopThread (500);
+    }
+
+    odfThread = std::make_unique<ODFThread> (*odfBufferSnapshot, sliceStart, sliceEnd, sampleRate);
+    odfThread->startThread (juce::Thread::Priority::background);
+
+    // Poll for completion
+    startTimer (50);
+}
+
+void AutoChopPanel::timerCallback()
+{
+    // Check if debounced slider drag needs flushing
+    if (debounceScheduled && odfReady)
+    {
+        stopTimer();
+        debounceScheduled = false;
+        updatePreviewFromCachedODF();
+        return;
+    }
+
+    // Check if background ODF computation finished
+    if (odfThread != nullptr && ! odfThread->isThreadRunning())
+    {
+        stopTimer();
+        cachedODF = std::move (odfThread->result);
+        odfThread.reset();
+        odfReady = true;
+
+        splitEqualBtn.setVisible (true);
+        detectBtn.setVisible (true);
+        cancelBtn.setVisible (true);
+
+        updatePreviewFromCachedODF();
+        repaint(); // redraw to show controls instead of "Analyzing..."
+    }
+}
+
+void AutoChopPanel::updatePreviewFromCachedODF()
+{
+    if (! odfReady)
+        return;
+
+    auto sampleSnap = processor.sampleData.getSnapshot();
+    if (sampleSnap == nullptr)
+    {
+        waveformView.transientPreviewPositions.clear();
+        waveformView.repaint();
+        return;
+    }
+
+    float sens = sensCell.value * 0.1f;
+    float minMs = minCell.value;
+    const double sampleRate = sampleSnap->decodedSampleRate > 0.0 ? sampleSnap->decodedSampleRate : 44100.0;
+
+    auto positions = AudioAnalysis::pickTransientsFromODF (
+        cachedODF, sampleSnap->buffer, sens, sampleRate, minMs);
 
     if (processor.snapToZeroCrossing.load())
     {
-        int sliceStart = s.startSample;
-        int sliceEnd = s.endSample;
+        int sliceStart = cachedSliceStart;
+        int sliceEnd = cachedSliceEnd;
         std::transform (positions.begin(), positions.end(), positions.begin(),
                         [sampleSnap, sliceStart, sliceEnd] (int p) {
                             int snapped = AudioAnalysis::findNearestZeroCrossing (
@@ -347,4 +450,29 @@ void AutoChopPanel::updatePreview()
 
     waveformView.transientPreviewPositions = std::move (positions);
     waveformView.repaint();
+}
+
+void AutoChopPanel::updatePreview()
+{
+    auto sampleSnap = processor.sampleData.getSnapshot();
+    const auto& ui = processor.getUiSliceSnapshot();
+    int sel = ui.selectedSlice;
+    if (sel < 0 || sel >= ui.numSlices || sampleSnap == nullptr)
+    {
+        waveformView.transientPreviewPositions.clear();
+        waveformView.repaint();
+        return;
+    }
+
+    const auto& s = ui.slices[(size_t) sel];
+
+    // If slice bounds changed, need to recompute ODF
+    if (s.startSample != cachedSliceStart || s.endSample != cachedSliceEnd)
+    {
+        startODFComputation();
+        return;
+    }
+
+    // Otherwise just re-pick from cached ODF
+    updatePreviewFromCachedODF();
 }
