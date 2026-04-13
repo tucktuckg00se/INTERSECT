@@ -1,6 +1,6 @@
 # INTERSECT
 
-INTERSECT is a sample slicer instrument plugin (VST3/AU/Standalone) with per-slice locking, slice note ranges, multiple time/pitch algorithms, and MIDI-triggered slice playback.
+INTERSECT is a sample slicer instrument plugin (VST3/AU/Standalone) with multi-sample sessions, per-slice locking, slice note ranges, multiple time/pitch algorithms, and MIDI-triggered slice playback.
 
 ![INTERSECT screenshot](.github/assets/screenshot.png)
 *Theme shown: Open Color (`oc.intersectstyle`)*
@@ -57,11 +57,11 @@ xattr -cr /Applications/INTERSECT.app
 
 ## Workflow Basics
 
-1. **One sample at a time:** INTERSECT loads one audio file per instance (`.wav`, `.ogg`, `.aiff`, `.flac`, `.mp3`).
-2. **Current editor layout:** header bar, slice lane, waveform, time/zoom bar, action bar, and bottom signal-chain editor.
+1. **Multi-sample session:** INTERSECT can load and concatenate multiple audio files per instance (`.wav`, `.ogg`, `.aiff`, `.flac`, `.mp3`). `LOAD` replaces the session, `APPEND` adds more files to the current session.
+2. **Current editor layout:** header bar, sample lane, slice lane, waveform, time/zoom bar, action bar, and bottom signal-chain editor.
 3. **Slice creation:** draw slices manually, chop live with **LAZY**, or split a selected slice via **AUTO**.
 4. **Inheritance model:** `GLOBAL` in the Signal Chain edits sample defaults. `SLICE` edits the selected slice and locks fields that diverge from the global value.
-5. **Playback model:** MIDI triggers slices by note mapping. A slice can respond to one note or a `LOW`-to-`HIGH` range, with `ROOT` defining the transposition center for that slice. Mute groups can choke voices in the same group.
+5. **Playback model:** MIDI triggers slices by note mapping. A slice belongs to one loaded sample, but playback and editing happen on the concatenated session timeline. A slice can respond to one note or a `LOW`-to-`HIGH` range, with `ROOT` defining the transposition center for that slice. Mute groups can choke voices in the same group.
 6. **Algorithms:**
    - `Repitch`: pitch and speed are linked. `MODE` switches the playback interpolation between `Linear` and `Cubic`.
    - `Signalsmith`: independent time/pitch via Signalsmith Stretch (`TONAL`, `FMNT`, `FMNT C`).
@@ -84,18 +84,20 @@ xattr -cr /Applications/INTERSECT.app
 
 | Area | Function | Notes |
 | --- | --- | --- |
-| Sample name / status | Shows loaded file name and length, or missing-file relink prompt | Click to load a sample; missing-file text opens relink |
+| Sample name / status | Shows loaded file name, session count, and missing-file relink prompt | Click to load samples; missing-file text opens relink |
 | `UNDO` / `REDO` | History navigation | Same as `Ctrl/Cmd + Z` and `Ctrl/Cmd + Shift + Z` |
 | `PANIC` | Kills active voices immediately | Also stops lazy chop |
-| `LOAD` | Open file browser | Replaces current sample |
+| `LOAD` | Open file browser | Replaces the current session |
+| `APPEND` | Open file browser | Adds files to the current session |
 | `SET` | Popup for theme, UI scale, and NRPN settings | Also shows current plugin version |
 
-### Slice Lane and Waveform
+### Sample Lane, Slice Lane, and Waveform
 
 | Area | Function | Notes |
 | --- | --- | --- |
+| Sample lane | Compact session-sample overview above the slice lane | Reflects selection and zoom; drag to reorder samples |
 | Slice lane | Compact slice-region overview above the waveform | Reflects selection and zoom |
-| Waveform | Main editing surface | Drag-and-drop loading, slice selection, boundary editing, move/duplicate, preview |
+| Waveform | Main editing surface | Drag-and-drop loading/appending, slice selection, boundary editing, move/duplicate, preview |
 | Overlay hints | Contextual help and action prompts | Used by `ADD`, `AUTO`, and other actions |
 | Playback cursors | Voice-position display | Shows active playheads |
 | Transient preview markers | Auto Chop preview | Dashed markers shown before applying transient split |
@@ -116,7 +118,7 @@ xattr -cr /Applications/INTERSECT.app
 | `LAZY` / `STOP` | Start/stop real-time lazy chopping | Label changes while active |
 | `AUTO` | Open/close Auto Chop panel | Requires a selected slice |
 | `COPY` | Duplicate selected slice | Equivalent to duplicate command |
-| `DEL` | Delete selected slice | No effect with no selection |
+| `DEL` | Delete selected slice or selected sample | Uses the last lane you interacted with |
 | `ZX` | Snap edits to nearest zero crossing | Toggle |
 | `FM` | Follow MIDI note selection | Auto-selects the played slice |
 | `RESEQ` | Resequence slice MIDI notes | Opens overlay with `BY POSITION` and `AS CREATED` modes; requires 2+ slices |
@@ -145,10 +147,11 @@ General behavior:
 
 | Control | Function | Notes |
 | --- | --- | --- |
-| Sample info text | Load / relink sample | Click the text area |
+| Sample info text | Load / relink samples | Click the text area |
 | `UNDO / REDO` | History navigation | Buttons in the header |
 | `PANIC` | Kill active voices immediately | Also stops lazy chop |
-| `LOAD` | Open file chooser | Replaces current sample |
+| `LOAD` | Open file chooser | Replaces the current session |
+| `APPEND` | Open file chooser | Adds files to the current session |
 | `SET` | Theme, scale, and NRPN popup | Theme chooser, `+/- 0.25` scale, and NRPN settings |
 
 ### Signal Chain Bar
@@ -242,7 +245,7 @@ Filter notes:
 | `LAZY` / `STOP` | Start/stop real-time lazy chopping |
 | `AUTO` | Open Auto Chop panel for the selected slice (prompts you to select a slice first if none is selected) |
 | `COPY` | Duplicate selected slice |
-| `DEL` | Delete selected slice |
+| `DEL` | Delete the selected slice, or the selected sample when the sample lane was the last thing clicked |
 | `ZX` | Snap edits to nearest zero crossing |
 | `FM` | Follow MIDI (auto-select played slice) |
 | `RESEQ` | Resequence MIDI note assignments (opens overlay with `BY POSITION` or `AS CREATED`) |
@@ -266,7 +269,10 @@ All three parameter cells support drag-to-edit (drag up/down) and double-click t
 
 | Gesture | Result |
 | --- | --- |
-| Drag-and-drop file | Load sample |
+| Drag-and-drop file | Load sample session |
+| Drag-and-drop file onto loaded session | Append to current session |
+| Click sample in sample lane | Select sample |
+| Drag sample in sample lane | Reorder session samples |
 | Click slice | Select slice |
 | Click empty waveform in `ADD` mode | Begin draw-slice gesture |
 | Drag `S` / `E` edge handles | Resize selected slice |
@@ -290,7 +296,7 @@ All three parameter cells support drag-to-edit (drag up/down) and double-click t
 | `Shift + Z` | Toggle `LAZY` / `STOP` |
 | `Shift + C` | Toggle Auto Chop panel |
 | `Shift + D` | Duplicate selected slice |
-| `Delete` / `Backspace` | Delete selected slice |
+| `Delete` / `Backspace` | Delete selected slice, or selected sample when the sample lane was the last thing clicked |
 | `Shift + X` | Toggle `ZX` |
 | `Shift + F` | Toggle `FM` |
 | `Right Arrow` or `Tab` | Select next slice |
@@ -465,7 +471,6 @@ INTERSECT is licensed under the [GNU General Public License v3.0](LICENSE).
 
 ## Support / Known Limitations
 
-- INTERSECT currently works with one loaded sample per plugin instance.
-- Project recall stores sample file paths; if files move, relink is required.
+- INTERSECT project recall stores sample file paths for every file in the session; if files move, relink is required.
 - Builds are unsigned; platform security prompts (especially macOS) may require manual trust/quarantine removal.
 - Report bugs or request features via GitHub Issues on this repository.
