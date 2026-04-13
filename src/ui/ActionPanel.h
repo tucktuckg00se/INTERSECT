@@ -12,6 +12,7 @@ class ActionPanel : public juce::Component,
 public:
     ActionPanel (IntersectProcessor& p, WaveformView& wv);
     ~ActionPanel() override;
+    std::function<void()> onDeleteRequested;
     juce::String getTooltip() override;
     void resized() override;
     void paint (juce::Graphics& g) override;
@@ -23,6 +24,7 @@ public:
     void triggerDuplicateSlice();
     void triggerAutoChop();
     void triggerDeleteSelectedSlice();
+    void deleteSelectedSliceDirect();
     void toggleSnapToZeroCrossing();
     void toggleFollowMidiSelection();
     void toggleAutoChop();

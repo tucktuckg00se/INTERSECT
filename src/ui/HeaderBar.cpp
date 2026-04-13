@@ -44,7 +44,7 @@ juce::String formatNrpnStatus (int channel)
 
 HeaderBar::HeaderBar (IntersectProcessor& p) : processor (p)
 {
-    for (auto* btn : { &undoBtn, &redoBtn, &panicBtn, &loadBtn, &settingsBtn })
+    for (auto* btn : { &undoBtn, &redoBtn, &panicBtn, &loadBtn, &appendBtn, &settingsBtn })
     {
         addAndMakeVisible (*btn);
         btn->setAlwaysOnTop (true);
@@ -65,6 +65,7 @@ HeaderBar::HeaderBar (IntersectProcessor& p) : processor (p)
     undoBtn.setTooltip ("Undo (Ctrl+Z)");
     redoBtn.setTooltip ("Redo (Ctrl+Shift+Z)");
     loadBtn.setTooltip ("Load sample");
+    appendBtn.setTooltip ("Append samples");
     settingsBtn.setTooltip ("Settings");
 
     undoBtn.onClick = [this]
@@ -81,7 +82,8 @@ HeaderBar::HeaderBar (IntersectProcessor& p) : processor (p)
         processor.pushCommand (cmd);
     };
 
-    loadBtn.onClick = [this] { openFileBrowser(); };
+    loadBtn.onClick = [this] { openFileBrowser (false); };
+    appendBtn.onClick = [this] { openFileBrowser (true); };
     settingsBtn.onClick = [this] { showSettingsPopup(); };
 }
 
@@ -114,11 +116,12 @@ void HeaderBar::resized()
     };
 
     const int setW = buttonWidth (settingsBtn.getButtonText(), 38);
+    const int appendW = buttonWidth (appendBtn.getButtonText(), 58);
     const int loadW = buttonWidth (loadBtn.getButtonText(), 42);
     const int panicW = buttonWidth (panicBtn.getButtonText(), 50);
     const int redoW = buttonWidth (redoBtn.getButtonText(), 44);
     const int undoW = buttonWidth (undoBtn.getButtonText(), 44);
-    const int buttonStripW = undoW + redoW + panicW + loadW + setW + buttonGap * 4;
+    const int buttonStripW = undoW + redoW + panicW + loadW + appendW + setW + buttonGap * 5;
 
     juce::FlexBox row;
     row.flexDirection = juce::FlexBox::Direction::row;
@@ -146,13 +149,15 @@ void HeaderBar::resized()
     buttons.items.add (juce::FlexItem().withWidth ((float) buttonGap).withHeight ((float) buttonHeight));
     buttons.items.add (juce::FlexItem (loadBtn).withWidth ((float) loadW).withHeight ((float) buttonHeight));
     buttons.items.add (juce::FlexItem().withWidth ((float) buttonGap).withHeight ((float) buttonHeight));
+    buttons.items.add (juce::FlexItem (appendBtn).withWidth ((float) appendW).withHeight ((float) buttonHeight));
+    buttons.items.add (juce::FlexItem().withWidth ((float) buttonGap).withHeight ((float) buttonHeight));
     buttons.items.add (juce::FlexItem (settingsBtn).withWidth ((float) setW).withHeight ((float) buttonHeight));
     buttons.performLayout (buttonArea.toFloat());
 }
 
 void HeaderBar::paint (juce::Graphics& g)
 {
-    for (auto* btn : { &undoBtn, &redoBtn, &panicBtn, &loadBtn, &settingsBtn })
+    for (auto* btn : { &undoBtn, &redoBtn, &panicBtn, &loadBtn, &appendBtn, &settingsBtn })
     {
         auto text = getTheme().text2.withAlpha (btn->isMouseOverOrDragging() ? 1.0f : 0.88f);
         btn->setColour (juce::TextButton::buttonColourId,
@@ -206,7 +211,7 @@ void HeaderBar::mouseDown (const juce::MouseEvent& e)
         if (ui.sampleMissing)
             openRelinkBrowser();
         else
-            openFileBrowser();
+            openFileBrowser (false);
     }
 }
 
@@ -337,21 +342,34 @@ void HeaderBar::showSettingsPopup()
         });
 }
 
-void HeaderBar::openFileBrowser()
+void HeaderBar::openFileBrowser (bool append)
 {
     fileChooser = std::make_unique<juce::FileChooser> (
-        "Load Audio File",
+        append ? "Append Audio Files" : "Load Audio Files",
         juce::File(),
         "*.wav;*.ogg;*.aiff;*.aif;*.flac;*.mp3");
 
     fileChooser->launchAsync (juce::FileBrowserComponent::openMode
-                                | juce::FileBrowserComponent::canSelectFiles,
-        [this] (const juce::FileChooser& fc)
+                                | juce::FileBrowserComponent::canSelectFiles
+                                | juce::FileBrowserComponent::canSelectMultipleItems,
+        [this, append] (const juce::FileChooser& fc)
         {
-            auto result = fc.getResult();
-            if (result.existsAsFile())
+            const auto results = fc.getResults();
+            std::vector<juce::File> files;
+            files.reserve (results.size());
+            for (const auto& result : results)
             {
-                processor.loadFileAsync (result);
+                if (result.existsAsFile())
+                    files.push_back (result);
+            }
+
+            if (files.empty())
+                return;
+
+            const bool doAppend = append && processor.sampleData.isLoaded();
+            processor.loadFilesAsync (files, doAppend);
+            if (! doAppend)
+            {
                 processor.zoom.store (1.0f);
                 processor.scroll.store (0.0f);
             }

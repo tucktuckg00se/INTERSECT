@@ -63,64 +63,172 @@ SampleData::SampleData() = default;
 std::unique_ptr<SampleData::DecodedSample> SampleData::decodeFromFile (const juce::File& file,
                                                                         double projectSampleRate)
 {
+    return decodeFromFiles (std::vector<juce::File> { file }, projectSampleRate);
+}
+
+std::unique_ptr<SampleData::DecodedSample> SampleData::decodeFromFiles (const std::vector<juce::File>& files,
+                                                                        double projectSampleRate,
+                                                                        const std::vector<int>* sampleIds)
+{
+    if (files.empty())
+        return nullptr;
+
     juce::AudioFormatManager fm;
     fm.registerBasicFormats();
 
-    std::unique_ptr<juce::AudioFormatReader> reader (fm.createReaderFor (file));
-    if (reader == nullptr)
-        return nullptr;
+    auto decoded = std::make_unique<DecodedSample>();
+    int totalFrames = 0;
+    double targetSampleRate = 0.0;
+    int totalSourceFrames = 0;
+    double firstSourceSampleRate = 0.0;
 
-    auto numFrames = (int) reader->lengthInSamples;
-    auto numChannels = (int) reader->numChannels;
-    const int sourceNumFrames = numFrames;
-    const double sourceSampleRate = reader->sampleRate > 0.0 ? reader->sampleRate : 44100.0;
-    const double targetSampleRate = projectSampleRate > 0.0 ? projectSampleRate : sourceSampleRate;
-
-    juce::AudioBuffer<float> sourceBuffer (numChannels, numFrames);
-    reader->read (&sourceBuffer, 0, numFrames, 0, true, true);
-
-    if (std::abs (sourceSampleRate - targetSampleRate) > 0.01)
+    struct DecodedRegion
     {
-        double ratio = sourceSampleRate / targetSampleRate;
-        int resampledLen = (int) std::ceil (numFrames / ratio);
-        juce::AudioBuffer<float> resampledBuffer (numChannels, resampledLen);
+        juce::AudioBuffer<float> buffer;
+        SessionSample meta;
+    };
 
-        for (int ch = 0; ch < numChannels; ++ch)
+    std::vector<DecodedRegion> regions;
+    regions.reserve (files.size());
+
+    for (size_t i = 0; i < files.size(); ++i)
+    {
+        const auto& file = files[i];
+        std::unique_ptr<juce::AudioFormatReader> reader (fm.createReaderFor (file));
+        if (reader == nullptr)
+            return nullptr;
+
+        auto numFrames = (int) reader->lengthInSamples;
+        auto numChannels = (int) reader->numChannels;
+        const int sourceNumFrames = numFrames;
+        const double sourceSampleRate = reader->sampleRate > 0.0 ? reader->sampleRate : 44100.0;
+        if (targetSampleRate <= 0.0)
+            targetSampleRate = projectSampleRate > 0.0 ? projectSampleRate : sourceSampleRate;
+        if (firstSourceSampleRate <= 0.0)
+            firstSourceSampleRate = sourceSampleRate;
+
+        juce::AudioBuffer<float> sourceBuffer (juce::jmax (1, numChannels), numFrames);
+        reader->read (&sourceBuffer, 0, numFrames, 0, true, true);
+
+        if (std::abs (sourceSampleRate - targetSampleRate) > 0.01)
         {
-            juce::LagrangeInterpolator interpolator;
-            interpolator.process (ratio,
-                                  sourceBuffer.getReadPointer (ch),
-                                  resampledBuffer.getWritePointer (ch),
-                                  resampledLen);
+            const double ratio = sourceSampleRate / targetSampleRate;
+            const int resampledLen = (int) std::ceil (numFrames / ratio);
+            juce::AudioBuffer<float> resampledBuffer (juce::jmax (1, numChannels), resampledLen);
+
+            for (int ch = 0; ch < numChannels; ++ch)
+            {
+                juce::LagrangeInterpolator interpolator;
+                interpolator.process (ratio,
+                                      sourceBuffer.getReadPointer (ch),
+                                      resampledBuffer.getWritePointer (ch),
+                                      resampledLen);
+            }
+
+            sourceBuffer = std::move (resampledBuffer);
+            numFrames = resampledLen;
         }
 
-        sourceBuffer = std::move (resampledBuffer);
-        numFrames = resampledLen;
+        juce::AudioBuffer<float> stereoBuffer (2, numFrames);
+        if (numChannels >= 2)
+        {
+            stereoBuffer.copyFrom (0, 0, sourceBuffer, 0, 0, numFrames);
+            stereoBuffer.copyFrom (1, 0, sourceBuffer, 1, 0, numFrames);
+        }
+        else
+        {
+            stereoBuffer.copyFrom (0, 0, sourceBuffer, 0, 0, numFrames);
+            stereoBuffer.copyFrom (1, 0, sourceBuffer, 0, 0, numFrames);
+        }
+
+        DecodedRegion region;
+        region.buffer = std::move (stereoBuffer);
+        region.meta.sampleId = sampleIds != nullptr && i < sampleIds->size() ? (*sampleIds)[i] : (int) i;
+        region.meta.fileName = file.getFileName();
+        region.meta.filePath = file.getFullPathName();
+        region.meta.startFrame = totalFrames;
+        region.meta.numFrames = numFrames;
+        region.meta.sourceNumFrames = sourceNumFrames;
+        region.meta.sourceSampleRate = sourceSampleRate;
+        totalFrames += numFrames;
+        totalSourceFrames += sourceNumFrames;
+        regions.push_back (std::move (region));
     }
 
-    juce::AudioBuffer<float> newBuffer (2, numFrames);
-
-    if (numChannels >= 2)
+    decoded->buffer.setSize (2, totalFrames);
+    int writePos = 0;
+    for (auto& region : regions)
     {
-        newBuffer.copyFrom (0, 0, sourceBuffer, 0, 0, numFrames);
-        newBuffer.copyFrom (1, 0, sourceBuffer, 1, 0, numFrames);
-    }
-    else
-    {
-        newBuffer.copyFrom (0, 0, sourceBuffer, 0, 0, numFrames);
-        newBuffer.copyFrom (1, 0, sourceBuffer, 0, 0, numFrames);
+        const int regionFrames = region.buffer.getNumSamples();
+        decoded->buffer.copyFrom (0, writePos, region.buffer, 0, 0, regionFrames);
+        decoded->buffer.copyFrom (1, writePos, region.buffer, 1, 0, regionFrames);
+        decoded->sessionSamples.push_back (region.meta);
+        writePos += regionFrames;
     }
 
-    auto decoded = std::make_unique<DecodedSample>();
-    decoded->buffer = std::move (newBuffer);
-    decoded->fileName = file.getFileName();
-    decoded->filePath = file.getFullPathName();
-    decoded->decodedNumFrames = numFrames;
+    if (! decoded->sessionSamples.empty())
+    {
+        decoded->fileName = decoded->sessionSamples.front().fileName;
+        decoded->filePath = decoded->sessionSamples.front().filePath;
+    }
+    decoded->decodedNumFrames = totalFrames;
     decoded->decodedSampleRate = targetSampleRate;
-    decoded->sourceNumFrames = sourceNumFrames;
-    decoded->sourceSampleRate = sourceSampleRate;
+    decoded->sourceNumFrames = totalSourceFrames;
+    decoded->sourceSampleRate = firstSourceSampleRate;
     buildMipmapsForBuffer (decoded->buffer, decoded->peakMipmaps);
     return decoded;
+}
+
+std::unique_ptr<SampleData::DecodedSample> SampleData::rebuildWithSessionSamples (const DecodedSample& source,
+                                                                                  const std::vector<SessionSample>& sessionSamples)
+{
+    auto rebuilt = std::make_unique<DecodedSample>();
+
+    if (sessionSamples.empty())
+        return rebuilt;
+
+    int totalFrames = 0;
+    int totalSourceFrames = 0;
+    for (const auto& sample : sessionSamples)
+    {
+        totalFrames += juce::jmax (0, sample.numFrames);
+        totalSourceFrames += juce::jmax (0, sample.sourceNumFrames);
+    }
+
+    rebuilt->buffer.setSize (2, totalFrames);
+    rebuilt->decodedNumFrames = totalFrames;
+    rebuilt->decodedSampleRate = source.decodedSampleRate;
+    rebuilt->sourceNumFrames = totalSourceFrames;
+    rebuilt->sourceSampleRate = source.sourceSampleRate;
+
+    int writePos = 0;
+    for (const auto& sample : sessionSamples)
+    {
+        const int sourceStart = juce::jlimit (0, source.buffer.getNumSamples(), sample.startFrame);
+        const int availableFrames = juce::jmax (0, source.buffer.getNumSamples() - sourceStart);
+        const int copyFrames = juce::jmin (juce::jmax (0, sample.numFrames), availableFrames);
+
+        SampleData::SessionSample rebuiltSample = sample;
+        rebuiltSample.startFrame = writePos;
+        rebuiltSample.numFrames = copyFrames;
+        rebuilt->sessionSamples.push_back (rebuiltSample);
+
+        if (copyFrames > 0)
+        {
+            rebuilt->buffer.copyFrom (0, writePos, source.buffer, 0, sourceStart, copyFrames);
+            rebuilt->buffer.copyFrom (1, writePos, source.buffer, 1, sourceStart, copyFrames);
+            writePos += copyFrames;
+        }
+    }
+
+    if (! rebuilt->sessionSamples.empty())
+    {
+        rebuilt->fileName = rebuilt->sessionSamples.front().fileName;
+        rebuilt->filePath = rebuilt->sessionSamples.front().filePath;
+    }
+
+    buildMipmapsForBuffer (rebuilt->buffer, rebuilt->peakMipmaps);
+    return rebuilt;
 }
 
 void SampleData::applyDecodedSample (std::unique_ptr<DecodedSample> decoded)
@@ -187,6 +295,30 @@ const std::array<SampleData::PeakMipmap, SampleData::kNumMipmapLevels>& SampleDa
     if (activeDecoded)
         return activeDecoded->peakMipmaps;
     return kEmptyMipmaps;
+}
+
+int SampleData::getNumSessionSamples() const
+{
+    return activeDecoded != nullptr ? (int) activeDecoded->sessionSamples.size() : 0;
+}
+
+const SampleData::SessionSample* SampleData::findSessionSampleById (int sampleId) const
+{
+    if (! activeDecoded)
+        return nullptr;
+
+    for (const auto& sample : activeDecoded->sessionSamples)
+        if (sample.sampleId == sampleId)
+            return &sample;
+    return nullptr;
+}
+
+const std::vector<SampleData::SessionSample>& SampleData::getSessionSamples() const
+{
+    static const std::vector<SessionSample> empty;
+    if (activeDecoded)
+        return activeDecoded->sessionSamples;
+    return empty;
 }
 
 float SampleData::interpolateCubic (float y0, float y1, float y2, float y3, float frac)

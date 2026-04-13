@@ -51,8 +51,10 @@ public:
     {
         CmdNone = 0,
         CmdLoadFile,
+        CmdAppendFiles,
         CmdCreateSlice,
         CmdDeleteSlice,
+        CmdDeleteSessionSample,
         CmdLazyChopStart,
         CmdLazyChopStop,
         CmdStretch,
@@ -78,6 +80,7 @@ public:
     {
         LoadKindReplace = 0,
         LoadKindRelink = 1,
+        LoadKindPreserveSlices = 2,
     };
 
     enum SampleAvailabilityState
@@ -175,6 +178,7 @@ public:
         float floatParam1 = 0.0f;
         uint64_t lockBitParam = 0;
         juce::File fileParam;
+        std::vector<juce::File> filesParam;
         // Fixed-size array avoids heap allocation/deallocation on the audio thread.
         std::array<int, 128> positions {};
         int numPositions = 0;
@@ -189,10 +193,23 @@ public:
     std::atomic<bool> pendingEndGesture { false };
 
     void loadFileAsync (const juce::File& file);
+    void loadFilesAsync (const std::vector<juce::File>& files, bool append);
     void relinkFileAsync (const juce::File& file);
+    void reorderSessionSampleAsync (int sourceSampleId, int targetIndex);
+    void deleteSessionSampleAsync (int sampleId);
 
     struct UiSliceSnapshot
     {
+        struct UiSessionSample
+        {
+            int sampleId = 0;
+            int startSample = 0;
+            int numFrames = 0;
+            RtText<256> fileName;
+        };
+
+        int numSessionSamples = 0;
+        int selectedSessionSampleId = -1;
         int numSlices = 0;
         int selectedSlice = -1;
         int rootNote = kDefaultRootNote;
@@ -204,6 +221,7 @@ public:
         bool hasStatusMessage = false;
         bool statusIsWarning = false;
         RtText<256> statusMessage;
+        std::array<UiSessionSample, SampleData::kMaxSessionSamples> sessionSamples {};
         std::array<Slice, SliceManager::kMaxSlices> slices {};
     };
 
@@ -298,6 +316,7 @@ public:
     // Missing sample state (for relink UI)
     std::atomic<bool> sampleMissing { false };
     std::atomic<int> sampleAvailability { (int) SampleStateEmpty };
+    std::atomic<int> selectedSessionSampleId { -1 };
 
     SampleAvailabilityState getSampleAvailabilityState() const
     {
@@ -357,9 +376,17 @@ private:
     void setMidiBoundaryPreviewState (int sliceIdx, int startSample, int endSample, bool isStart);
     void commitMidiSliceBoundaryGestureIfIdle (int blockSamples);
     void clearMidiEditGestureState();
-    int requestSampleLoad (const juce::File& file, LoadKind kind);
+    int requestSampleLoad (const std::vector<juce::File>& files, LoadKind kind,
+                           const std::vector<int>* sampleIds = nullptr);
     void clearVoicesBeforeSampleSwap();
     void clampSlicesToSampleBounds();
+    void deleteSessionSample (int sampleId);
+    void syncAllSliceOwnershipToCurrentSession();
+    void syncSliceOwnershipFromAbsolute (Slice& slice, bool clampToSessionBounds = true);
+    void syncSliceAbsoluteToCurrentSession (Slice& slice);
+    void syncAllSliceAbsolutePositions();
+    int findSessionSampleIndexById (int sampleId) const;
+    int generateSessionSampleId();
     void publishUiSliceSnapshot();
     void setMissingFileInfo (const RtText<512>& fileName, const RtText<4096>& filePath);
     void clearMissingFileInfo();
@@ -376,6 +403,9 @@ private:
     void setPendingStateFile (const juce::File& file);
     void clearPendingStateFile();
     juce::File getPendingStateFile() const;
+    void setPendingStateFiles (const std::vector<juce::File>& files);
+    void clearPendingStateFiles();
+    std::vector<juce::File> getPendingStateFiles() const;
     ParamUndoState captureParamUndoState() const;
     void applyParamUndoState (const ParamUndoState& state);
     void clearPendingSliceTimelineRemap();
@@ -427,6 +457,7 @@ private:
 
     juce::ThreadPool fileLoadPool { 1 };
     std::atomic<int> nextLoadToken { 0 };
+    std::atomic<int> nextSessionSampleId { 0 };
     std::atomic<int> latestLoadToken { 0 };
     std::atomic<int> latestLoadKind { (int) LoadKindReplace };
     std::atomic<SampleData::DecodedSample*> completedLoadData { nullptr };
@@ -447,6 +478,7 @@ private:
     std::atomic<int> uiStatusMessageIndex { 0 };
     std::atomic<int> pendingStateRestoreToken { 0 };
     juce::File pendingStateFile;
+    std::vector<juce::File> pendingStateFiles;
     mutable juce::CriticalSection pendingStateFileLock;
 
     // Cached parameter pointers

@@ -28,6 +28,9 @@ int SliceManager::createSlice (int start, int end)
     auto& s = slices[(size_t) idx];
 
     s.active      = true;
+    s.sampleId    = 0;
+    s.startInSample = start;
+    s.endInSample   = end;
     s.startSample = start;
     s.endSample   = end;
     s.midiNote      = nextMidiNote();

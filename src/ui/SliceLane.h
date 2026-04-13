@@ -8,6 +8,7 @@ class SliceLane : public juce::Component
 {
 public:
     explicit SliceLane (IntersectProcessor& p);
+    std::function<void()> onInteraction;
     void setWaveformView (WaveformView* view) { waveformView = view; }
     void paint (juce::Graphics& g) override;
     void mouseDown (const juce::MouseEvent& e) override;

@@ -84,18 +84,6 @@ void SliceLane::paint (juce::Graphics& g)
             int sw = si.x2 - si.x1;
             g.setColour ((si.selected ? si.col.darker (0.78f) : si.col.darker (0.82f)).withAlpha (0.92f));
             g.fillRect (si.x1, 0, sw, h);
-
-            if (si.selected)
-            {
-                g.setColour (si.col.withAlpha (0.95f));
-                g.fillRect (si.x1, 0, sw, 2);
-                g.fillRect (si.x1, h - 2, sw, 2);
-            }
-            else
-            {
-                g.setColour (si.col.withAlpha (0.45f));
-                g.fillRect (si.x1, 0, sw, 1);
-            }
         }
     }
 
@@ -148,6 +136,9 @@ void SliceLane::paint (juce::Graphics& g)
 
 void SliceLane::mouseDown (const juce::MouseEvent& e)
 {
+    if (onInteraction != nullptr)
+        onInteraction();
+
     auto sampleSnap = processor.sampleData.getSnapshot();
     int numFrames = sampleSnap ? sampleSnap->buffer.getNumSamples() : 0;
     if (numFrames <= 0)

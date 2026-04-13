@@ -5,6 +5,7 @@
 static constexpr int kBaseW        = 800;
 static constexpr int kBaseH        = 400;
 static constexpr float kHeaderH    = 28.0f;
+static constexpr float kSampleLaneH = 14.0f;
 static constexpr float kSliceLaneH = 20.0f;
 static constexpr float kScrollbarH = 10.0f;
 static constexpr float kActionH    = 22.0f;
@@ -93,6 +94,7 @@ IntersectEditor::IntersectEditor (IntersectProcessor& p)
     : AudioProcessorEditor (p),
       processor (p),
       headerBar (p),
+      sampleLane (p),
       signalChainBar (p),
       sliceLane (p),
       waveformView (p),
@@ -102,6 +104,7 @@ IntersectEditor::IntersectEditor (IntersectProcessor& p)
     setLookAndFeel (&lnf);
 
     addAndMakeVisible (headerBar);
+    addAndMakeVisible (sampleLane);
     addAndMakeVisible (signalChainBar);
     addAndMakeVisible (sliceLane);
     addAndMakeVisible (waveformView);
@@ -109,6 +112,10 @@ IntersectEditor::IntersectEditor (IntersectProcessor& p)
     addAndMakeVisible (actionPanel);
 
     sliceLane.setWaveformView (&waveformView);
+    sampleLane.onInteraction = [this] { deleteTarget = DeleteTarget::sample; };
+    sliceLane.onInteraction = [this] { deleteTarget = DeleteTarget::slice; };
+    waveformView.onInteraction = [this] { deleteTarget = DeleteTarget::slice; };
+    actionPanel.onDeleteRequested = [this] { performContextualDelete(); };
 
     signalChainBar.onHeightChanged = [this]
     {
@@ -160,6 +167,10 @@ void IntersectEditor::resized()
                          .withMinHeight (kHeaderH)
                          .withMaxHeight (kHeaderH)
                          .withHeight (kHeaderH));
+    shell.items.add (juce::FlexItem (sampleLane)
+                         .withMinHeight (kSampleLaneH)
+                         .withMaxHeight (kSampleLaneH)
+                         .withHeight (kSampleLaneH));
     shell.items.add (juce::FlexItem (sliceLane)
                          .withMinHeight (kSliceLaneH)
                          .withMaxHeight (kSliceLaneH)
@@ -266,7 +277,7 @@ bool IntersectEditor::keyPressed (const juce::KeyPress& key)
     // Delete / Backspace - Delete Slice
     if (code == juce::KeyPress::deleteKey || code == juce::KeyPress::backspaceKey)
     {
-        actionPanel.triggerDeleteSelectedSlice();
+        performContextualDelete();
         return true;
     }
 
@@ -279,6 +290,7 @@ bool IntersectEditor::keyPressed (const juce::KeyPress& key)
         int num = ui.numSlices;
         if (num > 0)
         {
+            deleteTarget = DeleteTarget::slice;
             IntersectProcessor::Command cmd;
             cmd.type = IntersectProcessor::CmdSelectSlice;
             cmd.intParam1 = juce::jlimit (0, num - 1, sel + 1);
@@ -297,6 +309,7 @@ bool IntersectEditor::keyPressed (const juce::KeyPress& key)
         int num = ui.numSlices;
         if (num > 0)
         {
+            deleteTarget = DeleteTarget::slice;
             IntersectProcessor::Command cmd;
             cmd.type = IntersectProcessor::CmdSelectSlice;
             cmd.intParam1 = juce::jlimit (0, num - 1, sel - 1);
@@ -307,6 +320,21 @@ bool IntersectEditor::keyPressed (const juce::KeyPress& key)
     }
 
     return false;
+}
+
+void IntersectEditor::performContextualDelete()
+{
+    if (deleteTarget == DeleteTarget::sample)
+    {
+        const int selectedSampleId = processor.selectedSessionSampleId.load (std::memory_order_relaxed);
+        if (selectedSampleId >= 0)
+        {
+            processor.deleteSessionSampleAsync (selectedSampleId);
+            return;
+        }
+    }
+
+    actionPanel.deleteSelectedSliceDirect();
 }
 
 void IntersectEditor::timerCallback()
@@ -412,6 +440,9 @@ void IntersectEditor::timerCallback()
 
     if (waveformNeedsRepaint)
         waveformView.repaint();
+
+    if (laneNeedsRepaint)
+        sampleLane.repaint();
 
     if (laneNeedsRepaint)
         sliceLane.repaint();

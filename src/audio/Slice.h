@@ -87,6 +87,9 @@ inline int clampPingPongCrossfadeLengthSamples (int fadeLen,
 struct Slice
 {
     bool     active        = false;
+    int      sampleId      = 0;
+    int      startInSample = 0;
+    int      endInSample   = 0;
     int      startSample   = 0;
     int      endSample     = 0;
     int      midiNote      = kDefaultRootNote;

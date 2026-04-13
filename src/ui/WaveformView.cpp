@@ -8,6 +8,18 @@
 
 namespace
 {
+const SampleData::SessionSample* findSessionSampleById (const SampleData::SnapshotPtr& sampleSnap, int sampleId)
+{
+    if (sampleSnap == nullptr)
+        return nullptr;
+
+    for (const auto& sample : sampleSnap->sessionSamples)
+        if (sample.sampleId == sampleId)
+            return &sample;
+
+    return sampleSnap->sessionSamples.empty() ? nullptr : &sampleSnap->sessionSamples.front();
+}
+
 struct LoopDisplayState
 {
     bool active = false;
@@ -260,6 +272,24 @@ void WaveformView::paint (juce::Graphics& g)
     {
         cachedPaintViewState = buildViewState (sampleSnap);
         paintViewStateActive = cachedPaintViewState.valid;
+        if (cachedPaintViewState.valid)
+        {
+            for (size_t i = 0; i < sampleSnap->sessionSamples.size(); ++i)
+            {
+                const auto& sample = sampleSnap->sessionSamples[i];
+                int x1 = (int) ((float) (sample.startFrame - cachedPaintViewState.visibleStart)
+                                / (float) cachedPaintViewState.visibleLen * (float) getWidth());
+                int x2 = (int) ((float) (sample.startFrame + sample.numFrames - cachedPaintViewState.visibleStart)
+                                / (float) cachedPaintViewState.visibleLen * (float) getWidth());
+                x1 = juce::jlimit (0, getWidth(), x1);
+                x2 = juce::jlimit (0, getWidth(), x2);
+                if (x2 > x1)
+                {
+                    g.setColour ((i % 2 == 0 ? getTheme().surface1 : getTheme().surface2).withAlpha (0.22f));
+                    g.fillRect (x1, 0, x2 - x1, getHeight());
+                }
+            }
+        }
         rebuildCacheIfNeeded();
         drawWaveform (g);
         drawSlices (g);
@@ -791,6 +821,9 @@ void WaveformView::modifierKeysChanged (const juce::ModifierKeys& mods)
 
 void WaveformView::mouseDown (const juce::MouseEvent& e)
 {
+    if (onInteraction != nullptr)
+        onInteraction();
+
     syncAltStateFromMods (e.mods);
 
     auto sampleSnap = processor.sampleData.getSnapshot();
@@ -999,6 +1032,21 @@ void WaveformView::mouseDrag (const juce::MouseEvent& e)
     if (dragMode == DrawSlice)
     {
         drawEnd = samplePos;
+        if (! sampleSnap->sessionSamples.empty())
+        {
+            const SampleData::SessionSample* owner = nullptr;
+            for (const auto& sample : sampleSnap->sessionSamples)
+            {
+                const int sampleEnd = sample.startFrame + sample.numFrames;
+                if (drawStart >= sample.startFrame && drawStart < sampleEnd)
+                {
+                    owner = &sample;
+                    break;
+                }
+            }
+            if (owner != nullptr)
+                drawEnd = juce::jlimit (owner->startFrame, owner->startFrame + owner->numFrames, drawEnd);
+        }
         return;
     }
 
@@ -1006,14 +1054,20 @@ void WaveformView::mouseDrag (const juce::MouseEvent& e)
 
     if (dragMode == DragEdgeLeft && dragSliceIdx >= 0)
     {
+        const auto& s = ui.slices[(size_t) dragSliceIdx];
         if (processor.snapToZeroCrossing.load())
             samplePos = AudioAnalysis::findNearestZeroCrossing (sampleSnap->buffer, samplePos);
+        if (const auto* owner = findSessionSampleById (sampleSnap, s.sampleId))
+            samplePos = juce::jlimit (owner->startFrame, dragPreviewEnd - kMinSliceLengthSamples, samplePos);
         dragPreviewStart = std::min (samplePos, dragPreviewEnd - kMinSliceLengthSamples);
     }
     else if (dragMode == DragEdgeRight && dragSliceIdx >= 0)
     {
+        const auto& s = ui.slices[(size_t) dragSliceIdx];
         if (processor.snapToZeroCrossing.load())
             samplePos = AudioAnalysis::findNearestZeroCrossing (sampleSnap->buffer, samplePos);
+        if (const auto* owner = findSessionSampleById (sampleSnap, s.sampleId))
+            samplePos = juce::jlimit (dragPreviewStart + kMinSliceLengthSamples, owner->startFrame + owner->numFrames, samplePos);
         dragPreviewEnd = std::max (samplePos, dragPreviewStart + kMinSliceLengthSamples);
     }
     else if (dragMode == DragLoopLeft && dragSliceIdx >= 0 && dragSliceIdx < ui.numSlices)
@@ -1032,13 +1086,16 @@ void WaveformView::mouseDrag (const juce::MouseEvent& e)
     }
     else if (dragMode == MoveSlice && dragSliceIdx >= 0)
     {
+        const auto& s = ui.slices[(size_t) dragSliceIdx];
+        const auto* owner = findSessionSampleById (sampleSnap, s.sampleId);
         int newStart = samplePos - dragOffset;
         int newEnd = newStart + dragSliceLen;
 
         // Clamp to sample bounds
-        int maxLen = sampleSnap->buffer.getNumSamples();
-        if (newStart < 0) { newStart = 0; newEnd = dragSliceLen; }
-        if (newEnd > maxLen) { newEnd = maxLen; newStart = maxLen - dragSliceLen; }
+        const int minStart = owner != nullptr ? owner->startFrame : 0;
+        const int maxEnd = owner != nullptr ? owner->startFrame + owner->numFrames : sampleSnap->buffer.getNumSamples();
+        if (newStart < minStart) { newStart = minStart; newEnd = minStart + dragSliceLen; }
+        if (newEnd > maxEnd) { newEnd = maxEnd; newStart = maxEnd - dragSliceLen; }
 
         dragPreviewStart = newStart;
         dragPreviewEnd = newEnd;
@@ -1094,6 +1151,21 @@ void WaveformView::mouseUp (const juce::MouseEvent& e)
         const bool altStillDown = e.mods.isAltDown();
         const int maxFrames = sampleSnap ? sampleSnap->buffer.getNumSamples() : 0;
         int endPos = std::max (0, std::min (pixelToSample (e.x), maxFrames));
+        if (sampleSnap != nullptr && ! sampleSnap->sessionSamples.empty())
+        {
+            const SampleData::SessionSample* owner = nullptr;
+            for (const auto& sample : sampleSnap->sessionSamples)
+            {
+                const int sampleEnd = sample.startFrame + sample.numFrames;
+                if (drawStart >= sample.startFrame && drawStart < sampleEnd)
+                {
+                    owner = &sample;
+                    break;
+                }
+            }
+            if (owner != nullptr)
+                endPos = juce::jlimit (owner->startFrame, owner->startFrame + owner->numFrames, endPos);
+        }
         if (sampleSnap != nullptr && processor.snapToZeroCrossing.load())
         {
             drawStart = AudioAnalysis::findNearestZeroCrossing (sampleSnap->buffer, drawStart);
@@ -1169,6 +1241,15 @@ void WaveformView::mouseUp (const juce::MouseEvent& e)
         {
             ghostStart = AudioAnalysis::findNearestZeroCrossing (sampleSnap->buffer, ghostStart);
             ghostEnd   = ghostStart + dragSliceLen;
+        }
+        if (sampleSnap != nullptr && dragSliceIdx >= 0 && dragSliceIdx < ui.numSlices)
+        {
+            const auto& s = ui.slices[(size_t) dragSliceIdx];
+            if (const auto* owner = findSessionSampleById (sampleSnap, s.sampleId))
+            {
+                ghostStart = juce::jlimit (owner->startFrame, owner->startFrame + owner->numFrames - dragSliceLen, ghostStart);
+                ghostEnd = ghostStart + dragSliceLen;
+            }
         }
         IntersectProcessor::Command cmd;
         cmd.type      = IntersectProcessor::CmdDuplicateSlice;
@@ -1260,9 +1341,25 @@ void WaveformView::filesDropped (const juce::StringArray& files, int, int)
 {
     if (! files.isEmpty())
     {
-        processor.loadFileAsync (juce::File (files[0]));
-        processor.zoom.store (1.0f);
-        processor.scroll.store (0.0f);
+        std::vector<juce::File> droppedFiles;
+        droppedFiles.reserve (files.size());
+        for (const auto& path : files)
+        {
+            juce::File file (path);
+            if (file.existsAsFile())
+                droppedFiles.push_back (file);
+        }
+
+        if (droppedFiles.empty())
+            return;
+
+        const bool append = processor.sampleData.isLoaded();
+        processor.loadFilesAsync (droppedFiles, append);
+        if (! append)
+        {
+            processor.zoom.store (1.0f);
+            processor.scroll.store (0.0f);
+        }
         prevCacheKey = {};
     }
 }

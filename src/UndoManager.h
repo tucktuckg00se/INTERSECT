@@ -1,6 +1,7 @@
 #pragma once
 #include <array>
 #include "Constants.h"
+#include "audio/SampleData.h"
 #include "audio/Slice.h"
 #include "audio/SliceManager.h"
 #include "params/ParamUndoState.h"
@@ -12,6 +13,9 @@ public:
 
     struct Snapshot
     {
+        std::array<SampleData::SessionSample, SampleData::kMaxSessionSamples> sessionSamples {};
+        int numSessionSamples = 0;
+        int selectedSessionSampleId = -1;
         std::array<Slice, SliceManager::kMaxSlices> slices;
         int numSlices = 0;
         int selectedSlice = -1;

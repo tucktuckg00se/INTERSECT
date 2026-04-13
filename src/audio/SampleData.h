@@ -15,6 +15,8 @@
 class SampleData
 {
 public:
+    static constexpr int kMaxSessionSamples = 64;
+
     struct PeakMipmap
     {
         int samplesPerPeak = 0;
@@ -23,6 +25,17 @@ public:
     };
 
     static constexpr int kNumMipmapLevels = 3;
+
+    struct SessionSample
+    {
+        int sampleId = 0;
+        juce::String fileName;
+        juce::String filePath;
+        int startFrame = 0;
+        int numFrames = 0;
+        int sourceNumFrames = 0;
+        double sourceSampleRate = 0.0;
+    };
 
     struct DecodedSample
     {
@@ -34,6 +47,7 @@ public:
         double decodedSampleRate = 0.0;
         int sourceNumFrames = 0;
         double sourceSampleRate = 0.0;
+        std::vector<SessionSample> sessionSamples;
     };
 
     using SnapshotPtr = std::shared_ptr<const DecodedSample>;
@@ -42,6 +56,11 @@ public:
 
     static std::unique_ptr<DecodedSample> decodeFromFile (const juce::File& file,
                                                            double projectSampleRate);
+    static std::unique_ptr<DecodedSample> decodeFromFiles (const std::vector<juce::File>& files,
+                                                           double projectSampleRate,
+                                                           const std::vector<int>* sampleIds = nullptr);
+    static std::unique_ptr<DecodedSample> rebuildWithSessionSamples (const DecodedSample& source,
+                                                                     const std::vector<SessionSample>& sessionSamples);
 
     // Audio-thread safe: converts unique_ptr to shared_ptr (no buffer copy).
     void applyDecodedSample (std::unique_ptr<DecodedSample> decoded);
@@ -61,12 +80,16 @@ public:
     double getDecodedSampleRate() const { return decodedSampleRate.load (std::memory_order_acquire); }
     int getSourceNumFrames() const { return sourceNumFrames.load (std::memory_order_acquire); }
     double getSourceSampleRate() const { return sourceSampleRate.load (std::memory_order_acquire); }
+    int getNumSessionSamples() const;
+    const SessionSample* findSessionSampleById (int sampleId) const;
 
     // Audio-thread only — returns the buffer from the active decoded sample.
     const juce::AudioBuffer<float>& getBuffer() const;
 
     // Audio-thread only — returns mipmaps from the active decoded sample.
     const std::array<PeakMipmap, kNumMipmapLevels>& getMipmaps() const;
+
+    const std::vector<SessionSample>& getSessionSamples() const;
 
 private:
     // Audio-thread-only strong reference to the current sample.

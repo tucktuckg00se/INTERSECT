@@ -16,7 +16,7 @@ public:
 private:
     void showSettingsPopup();
     void adjustScale (float delta);
-    void openFileBrowser();
+    void openFileBrowser (bool append = false);
     void openRelinkBrowser();
 
     IntersectProcessor& processor;
@@ -24,6 +24,7 @@ private:
     juce::TextButton redoBtn  { "REDO" };
     juce::TextButton panicBtn { "PANIC" };
     juce::TextButton loadBtn  { "LOAD" };
+    juce::TextButton appendBtn { "APPEND" };
     juce::TextButton settingsBtn { "SET" };
 
     std::unique_ptr<juce::FileChooser> fileChooser;

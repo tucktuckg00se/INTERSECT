@@ -10,6 +10,7 @@ class WaveformView : public juce::Component,
 {
 public:
     explicit WaveformView (IntersectProcessor& p);
+    std::function<void()> onInteraction;
 
     void paint (juce::Graphics& g) override;
     void resized() override;

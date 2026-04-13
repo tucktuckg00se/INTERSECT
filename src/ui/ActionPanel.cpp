@@ -113,6 +113,18 @@ void ActionPanel::triggerAutoChop()
 
 void ActionPanel::triggerDeleteSelectedSlice()
 {
+    if (onDeleteRequested != nullptr)
+    {
+        onDeleteRequested();
+        return;
+    }
+
+    deleteSelectedSliceDirect();
+}
+
+void ActionPanel::deleteSelectedSliceDirect()
+{
+
     const auto& ui = processor.getUiSliceSnapshot();
     const int sel = ui.selectedSlice;
     if (sel < 0)

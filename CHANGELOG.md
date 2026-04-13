@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Multi-sample sessions with APPEND loading, a dedicated sample lane, sample reordering, and sample deletion
+
+### Changed
+- Sample lane colors now run opposite the slice palette, labels truncate cleanly, and slice/sample lane blocks use a simpler filled style
+
+### Fixed
+- Restoring multi-sample projects and undoing back to an empty session no longer leaves stale sample data loaded
+
 ## [0.12.4] - 2026-04-12
 
 ### Added

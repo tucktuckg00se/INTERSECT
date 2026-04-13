@@ -3,6 +3,7 @@
 #include "PluginProcessor.h"
 #include "ui/IntersectLookAndFeel.h"
 #include "ui/HeaderBar.h"
+#include "ui/SampleLane.h"
 #include "ui/SignalChainBar.h"
 #include "ui/SliceLane.h"
 #include "ui/WaveformView.h"
@@ -27,6 +28,13 @@ public:
     int getMiddleCOctave() const { return middleCOctave; }
 
 private:
+    enum class DeleteTarget
+    {
+        slice,
+        sample,
+    };
+
+    void performContextualDelete();
     void timerCallback() override;
     void ensureDefaultThemes();
     void loadUserSettings();
@@ -45,9 +53,11 @@ private:
     bool lastPreviewActive = false;
     float savedScale = -1.0f;
     uint32_t lastUiSnapshotVersion = 0;
+    DeleteTarget deleteTarget = DeleteTarget::slice;
 
     IntersectLookAndFeel lnf;
     HeaderBar       headerBar;
+    SampleLane      sampleLane;
     SignalChainBar  signalChainBar;
     SliceLane       sliceLane;
     WaveformView    waveformView;
