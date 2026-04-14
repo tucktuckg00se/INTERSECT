@@ -9,6 +9,8 @@
 #include "audio/SliceManager.h"
 #include "audio/VoicePool.h"
 #include "audio/LazyChopEngine.h"
+#include "audio/StemModelDownloadJob.h"
+#include "audio/StemSeparationJob.h"
 #include "UndoManager.h"
 #include "params/GlobalParamSnapshot.h"
 #include "params/ParamUndoState.h"
@@ -74,6 +76,7 @@ public:
         CmdPanic,
         CmdSelectSlice,
         CmdSetRootNote,
+        CmdStemSeparate,
     };
 
     enum LoadKind
@@ -197,6 +200,21 @@ public:
     void relinkFileAsync (const juce::File& file);
     void reorderSessionSampleAsync (int sourceSampleId, int targetIndex);
     void deleteSessionSampleAsync (int sampleId);
+    void startStemSeparation (int sampleId, StemModelId modelId, const juce::File& outputFolder = {});
+    void cancelStemSeparation();
+    void startStemModelDownload (const std::vector<StemModelId>& modelIds);
+    void cancelStemModelDownload();
+    juce::File getStemModelFolder() const;
+    juce::File getResolvedStemModelFolder() const;
+    void setStemModelFolder (const juce::File& modelFolder);
+    StemComputeDevice getStemComputeDevice() const noexcept { return stemComputeDevice; }
+    void setStemComputeDevice (StemComputeDevice device) noexcept { stemComputeDevice = device; }
+    std::vector<StemModelId> getInstalledStemModels() const;
+    bool isStemModelInstalled (StemModelId modelId) const;
+    void showTransientStatusMessage (const juce::String& text, bool isWarning)
+    {
+        setUiStatusMessage (text, isWarning);
+    }
 
     struct UiSliceSnapshot
     {
@@ -221,6 +239,11 @@ public:
         bool hasStatusMessage = false;
         bool statusIsWarning = false;
         RtText<256> statusMessage;
+        StemJobState stemJobState = StemJobState::idle;
+        float stemJobProgress = 0.0f;
+        int stemJobSourceSampleId = -1;
+        StemModelDownloadState stemDownloadState = StemModelDownloadState::idle;
+        float stemDownloadProgress = 0.0f;
         std::array<UiSessionSample, SampleData::kMaxSessionSamples> sessionSamples {};
         std::array<Slice, SliceManager::kMaxSlices> slices {};
     };
@@ -454,6 +477,31 @@ private:
     static constexpr int kUiUndoFifoSize = 4;
     std::array<UndoManager::Snapshot, kUiUndoFifoSize> uiUndoBuffer {};
     juce::AbstractFifo uiUndoFifo { kUiUndoFifoSize };
+
+    juce::File stemModelFolder;
+    StemComputeDevice stemComputeDevice = StemComputeDevice::cpu;
+    StemModelDownloadJob stemModelDownloadJob;
+    StemSeparationJob stemJob;
+
+    // Stem metadata keyed by session sample ID.
+    // Stored separately because DecodedSample is immutable (const shared_ptr).
+    struct StemMetaEntry
+    {
+        int sampleId = -1;
+        StemMetadata meta;
+    };
+    std::array<StemMetaEntry, SampleData::kMaxSessionSamples> stemMetaEntries {};
+    int stemMetaEntryCount = 0;
+    void setStemMeta (int sampleId, const StemMetadata& meta);
+    StemMetadata getStemMeta (int sampleId) const;
+
+    // Pending stem metadata to apply after the import load completes
+    struct PendingStemImport
+    {
+        std::vector<StemRole> roles;
+        int parentSourceSampleId = -1;
+    };
+    std::atomic<PendingStemImport*> pendingStemImport { nullptr };
 
     juce::ThreadPool fileLoadPool { 1 };
     std::atomic<int> nextLoadToken { 0 };

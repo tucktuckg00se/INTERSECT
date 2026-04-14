@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - Multi-sample sessions with APPEND loading, a dedicated sample lane, sample reordering, and sample deletion
+- Stem separation powered by BS-RoFormer: split any sample into vocals and instrumental via the STEM panel
 
 ### Changed
 - Sample lane colors now run opposite the slice palette, labels truncate cleanly, and slice/sample lane blocks use a simpler filled style

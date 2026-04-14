@@ -1,5 +1,7 @@
 #include "SampleLane.h"
+#include "StemExportPanel.h"
 #include "IntersectLookAndFeel.h"
+#include "WaveformView.h"
 #include "../PluginProcessor.h"
 #include <algorithm>
 #include <array>
@@ -15,7 +17,12 @@ float measureTextWidth (const juce::Font& font, const juce::String& text)
 }
 }
 
-SampleLane::SampleLane (IntersectProcessor& p) : processor (p) {}
+SampleLane::SampleLane (IntersectProcessor& p, WaveformView& wv) : processor (p), waveformView (wv) {}
+
+SampleLane::~SampleLane()
+{
+    dismissStemExportPanel();
+}
 
 std::vector<SampleLane::VisibleSample> SampleLane::buildVisibleSamples() const
 {
@@ -58,17 +65,28 @@ std::vector<SampleLane::VisibleSample> SampleLane::buildVisibleSamples() const
         visible.selected = sample.sampleId == selectedId;
         visible.colour = getTheme().slicePalette[(15 - (i % 16) + 16) % 16];
         visible.label = sample.fileName.toString();
+        const int blockW = x2 - x1;
+        const int buttonH = juce::jmax (12, getHeight() - 6);
+        const int buttonY = (getHeight() - buttonH) / 2;
+        const int deleteW = juce::jmin (16, juce::jmax (12, blockW / 6));
+        const int stemsW = juce::jmin (44, juce::jmax (18, blockW / 3));
+        int right = x2 - 3;
+        visible.deleteBounds = { right - deleteW, buttonY, deleteW, buttonH };
+        right = visible.deleteBounds.getX() - 2;
+        visible.stemsBounds = { right - stemsW, buttonY, stemsW, buttonH };
+        visible.deleteBounds = visible.deleteBounds.getIntersection ({ x1 + 1, buttonY, juce::jmax (1, blockW - 2), buttonH });
+        visible.stemsBounds = visible.stemsBounds.getIntersection ({ x1 + 1, buttonY, juce::jmax (1, blockW - 2), buttonH });
         out.push_back (std::move (visible));
     }
 
     return out;
 }
 
-int SampleLane::hitTestSample (int x) const
+int SampleLane::hitTestSample (juce::Point<int> pos) const
 {
     const auto visible = buildVisibleSamples();
     for (const auto& sample : visible)
-        if (x >= sample.x1 && x < sample.x2)
+        if (sample.x1 <= pos.x && pos.x < sample.x2 && pos.y >= 0 && pos.y < getHeight())
             return sample.sampleId;
     return -1;
 }
@@ -133,7 +151,7 @@ void SampleLane::paint (juce::Graphics& g)
                 labelX = end + 1;
         }
 
-        const int maxLabelRight = juce::jmin (sample.x2, getWidth());
+        const int maxLabelRight = juce::jmin (sample.stemsBounds.getX() - 2, getWidth());
         const int availableLabelW = juce::jmax (1, maxLabelRight - labelX - 2);
         if (availableLabelW >= 8)
         {
@@ -142,6 +160,55 @@ void SampleLane::paint (juce::Graphics& g)
             g.drawFittedText (label, labelX, 0, availableLabelW, h, juce::Justification::centredLeft, 1, 1.0f);
             if (labelEndCount < (int) labelEnds.size())
                 labelEnds[(size_t) labelEndCount++] = labelX + juce::jmin (labelW, availableLabelW);
+        }
+    }
+
+    auto drawButton = [&] (const juce::Rectangle<int>& bounds,
+                           const juce::String& text,
+                           juce::Colour base,
+                           juce::Colour textColour)
+    {
+        g.setColour (base);
+        g.fillRoundedRectangle (bounds.toFloat(), 2.0f);
+        g.setColour (textColour);
+        g.setFont (IntersectLookAndFeel::makeFont (8.0f, true));
+        g.drawFittedText (text, bounds, juce::Justification::centred, 1, 0.9f);
+    };
+
+    for (const auto& sample : visible)
+    {
+        drawButton (sample.stemsBounds,
+                    sample.stemsBounds.getWidth() < 24 ? "S" : "STEMS",
+                    getTheme().surface4.withAlpha (0.92f),
+                    getTheme().text2.withAlpha (0.92f));
+        drawButton (sample.deleteBounds,
+                    "X",
+                    juce::Colours::black.withAlpha (0.18f),
+                    getTheme().text2.withAlpha (0.86f));
+    }
+
+    // Draw stem separation progress bar on the source sample
+    {
+        const auto& ui = processor.getUiSliceSnapshot();
+        const auto stemState = ui.stemJobState;
+        if (stemState == StemJobState::preparing
+            || stemState == StemJobState::separating
+            || stemState == StemJobState::writing)
+        {
+            for (const auto& sample : visible)
+            {
+                if (sample.sampleId == ui.stemJobSourceSampleId)
+                {
+                    const int blockW = sample.x2 - sample.x1;
+                    const int barH = 3;
+                    const int fillW = juce::jmax (1, juce::roundToInt (ui.stemJobProgress * (float) blockW));
+                    g.setColour (getTheme().accent.withAlpha (0.4f));
+                    g.fillRect (sample.x1, h - barH, blockW, barH);
+                    g.setColour (getTheme().accent.withAlpha (0.9f));
+                    g.fillRect (sample.x1, h - barH, fillW, barH);
+                    break;
+                }
+            }
         }
     }
 
@@ -163,7 +230,49 @@ void SampleLane::mouseDown (const juce::MouseEvent& e)
     if (onInteraction != nullptr)
         onInteraction();
 
-    dragSampleId = hitTestSample (e.x);
+    const auto visible = buildVisibleSamples();
+    const auto pos = e.getPosition();
+    const int hitId = hitTestSample (pos);
+    const auto it = std::find_if (visible.begin(), visible.end(),
+                                  [hitId] (const VisibleSample& sample) { return sample.sampleId == hitId; });
+
+    if (it != visible.end() && it->deleteBounds.contains (pos))
+    {
+        processor.selectedSessionSampleId.store (hitId, std::memory_order_relaxed);
+        processor.markUiSnapshotDirty();
+        processor.deleteSessionSampleAsync (hitId);
+        repaint();
+        return;
+    }
+
+    if (it != visible.end() && it->stemsBounds.contains (pos))
+    {
+        processor.selectedSessionSampleId.store (hitId, std::memory_order_relaxed);
+        processor.markUiSnapshotDirty();
+        repaint();
+
+        const auto& ui = processor.getUiSliceSnapshot();
+        const bool jobRunning = ui.stemJobSourceSampleId == hitId
+                                && ui.stemJobState != StemJobState::idle
+                                && ui.stemJobState != StemJobState::completed
+                                && ui.stemJobState != StemJobState::failed
+                                && ui.stemJobState != StemJobState::cancelled;
+
+        if (jobRunning)
+        {
+            processor.cancelStemSeparation();
+        }
+        else
+        {
+            if (stemExportPanel != nullptr)
+                dismissStemExportPanel();
+            else
+                showStemExportPanel (hitId);
+        }
+        return;
+    }
+
+    dragSampleId = hitId;
     dragStartX = e.x;
     dragTargetIndex = -1;
     dragging = false;
@@ -208,4 +317,32 @@ void SampleLane::mouseUp (const juce::MouseEvent&)
     dragTargetIndex = -1;
     dragging = false;
     repaint();
+}
+
+void SampleLane::showStemExportPanel (int sampleId)
+{
+    dismissStemExportPanel();
+    stemExportPanel = std::make_unique<StemExportPanel> (processor, sampleId);
+
+    if (auto* editor = waveformView.getParentComponent())
+    {
+        auto wfBounds = waveformView.getBoundsInParent();
+        int panelH = 34;
+        int panelX = wfBounds.getX();
+        int panelW = wfBounds.getWidth();
+        int panelY = wfBounds.getY();
+        stemExportPanel->setBounds (panelX, panelY, panelW, panelH);
+        editor->addAndMakeVisible (*stemExportPanel);
+    }
+}
+
+void SampleLane::dismissStemExportPanel()
+{
+    if (stemExportPanel == nullptr)
+        return;
+
+    if (auto* parent = stemExportPanel->getParentComponent())
+        parent->removeChildComponent (stemExportPanel.get());
+
+    stemExportPanel.reset();
 }

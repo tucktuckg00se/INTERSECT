@@ -37,6 +37,9 @@ review.md
 *.vst3
 *.component
 
+# Third-party prebuilt binaries (auto-downloaded by CMake)
+third_party/
+
 # Misc
 nul
 info/

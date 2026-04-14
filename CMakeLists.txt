@@ -29,6 +29,43 @@ project(Intersect)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+set(INTERSECT_ORT_VERSION "1.23.2" CACHE STRING "ONNX Runtime version to download")
+set(INTERSECT_ORT_ROOT "" CACHE PATH "Path to a prebuilt ONNX Runtime package (skips auto-download)")
+
+# --- Auto-download ONNX Runtime if no custom root is set ---
+if(INTERSECT_ORT_ROOT STREQUAL "")
+    include(FetchContent)
+    if(WIN32)
+        set(_ort_archive "onnxruntime-win-x64-${INTERSECT_ORT_VERSION}.zip")
+        set(_ort_dir "onnxruntime-win-x64-${INTERSECT_ORT_VERSION}")
+    elseif(APPLE)
+        set(_ort_archive "onnxruntime-osx-universal2-${INTERSECT_ORT_VERSION}.tgz")
+        set(_ort_dir "onnxruntime-osx-universal2-${INTERSECT_ORT_VERSION}")
+    else()
+        set(_ort_archive "onnxruntime-linux-x64-${INTERSECT_ORT_VERSION}.tgz")
+        set(_ort_dir "onnxruntime-linux-x64-${INTERSECT_ORT_VERSION}")
+    endif()
+    set(_ort_url "https://github.com/microsoft/onnxruntime/releases/download/v${INTERSECT_ORT_VERSION}/${_ort_archive}")
+
+    FetchContent_Declare(onnxruntime
+        URL "${_ort_url}"
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    )
+    FetchContent_MakeAvailable(onnxruntime)
+    set(INTERSECT_ORT_ROOT "${onnxruntime_SOURCE_DIR}")
+endif()
+
+set(INTERSECT_HAS_ONNX_RUNTIME OFF)
+if(EXISTS "${INTERSECT_ORT_ROOT}/include/onnxruntime_cxx_api.h")
+    if(WIN32 AND EXISTS "${INTERSECT_ORT_ROOT}/lib/onnxruntime.lib")
+        set(INTERSECT_HAS_ONNX_RUNTIME ON)
+    elseif(APPLE AND EXISTS "${INTERSECT_ORT_ROOT}/lib/libonnxruntime.dylib")
+        set(INTERSECT_HAS_ONNX_RUNTIME ON)
+    elseif(UNIX AND EXISTS "${INTERSECT_ORT_ROOT}/lib/libonnxruntime.so")
+        set(INTERSECT_HAS_ONNX_RUNTIME ON)
+    endif()
+endif()
+
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/JUCE JUCE)
 
 # --- Bungee (built as static library) ---
@@ -100,6 +137,8 @@ target_sources(Intersect PRIVATE
     src/audio/VoicePool.cpp
     src/audio/GrainEngine.cpp
     src/audio/LazyChopEngine.cpp
+    src/audio/StemSeparation.cpp
+    src/audio/StemModelDownloadJob.cpp
     src/params/ParamLayout.cpp
     src/ui/IntersectLookAndFeel.cpp
     src/ui/HeaderBar.cpp
@@ -111,6 +150,8 @@ target_sources(Intersect PRIVATE
     src/ui/SliceLane.cpp
     src/ui/ActionPanel.cpp
     src/ui/AutoChopPanel.cpp
+    src/ui/StemExportPanel.cpp
+    src/audio/StemSeparationJob.cpp
 )
 
 target_include_directories(Intersect PRIVATE
@@ -120,16 +161,26 @@ target_include_directories(Intersect PRIVATE
     ${BUNGEE_ROOT}
 )
 
+if(INTERSECT_HAS_ONNX_RUNTIME)
+    target_include_directories(Intersect PRIVATE "${INTERSECT_ORT_ROOT}/include")
+endif()
+
 target_compile_definitions(Intersect PUBLIC
     JUCE_WEB_BROWSER=0
-    JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0
     JUCE_DISPLAY_SPLASH_SCREEN=0
     JUCE_USE_CUSTOM_PLUGIN_STANDALONE_APP=1
+    INTERSECT_HAS_ONNX_RUNTIME=$<BOOL:${INTERSECT_HAS_ONNX_RUNTIME}>
 )
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    target_compile_definitions(Intersect PUBLIC JUCE_USE_MP3AUDIOFORMAT=1)
+    find_package(CURL REQUIRED)
+    target_compile_definitions(Intersect PUBLIC
+        JUCE_USE_MP3AUDIOFORMAT=1
+        JUCE_USE_CURL=1
+    )
+else()
+    target_compile_definitions(Intersect PUBLIC JUCE_USE_CURL=0)
 endif()
 
 target_link_libraries(Intersect
@@ -143,3 +194,19 @@ target_link_libraries(Intersect
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags
 )
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_link_libraries(Intersect PRIVATE CURL::libcurl)
+endif()
+
+if(INTERSECT_HAS_ONNX_RUNTIME)
+    if(WIN32)
+        target_link_libraries(Intersect PRIVATE "${INTERSECT_ORT_ROOT}/lib/onnxruntime.lib")
+    elseif(APPLE)
+        target_link_libraries(Intersect PRIVATE "${INTERSECT_ORT_ROOT}/lib/libonnxruntime.dylib")
+        set_target_properties(Intersect PROPERTIES BUILD_RPATH "${INTERSECT_ORT_ROOT}/lib")
+    else()
+        target_link_libraries(Intersect PRIVATE "${INTERSECT_ORT_ROOT}/lib/libonnxruntime.so")
+        set_target_properties(Intersect PROPERTIES BUILD_RPATH "${INTERSECT_ORT_ROOT}/lib")
+    endif()
+endif()
