@@ -25,8 +25,16 @@ private:
         juce::String displayValue;
     };
 
+    struct StemToggle
+    {
+        juce::Rectangle<int> bounds;
+        juce::String label;
+        bool selected = false;
+    };
+
     void close();
     int hitTestCell (juce::Point<int> pos) const;
+    int hitTestStemToggle (juce::Point<int> pos) const;
     void rebuildStemToggles();
     void updateSelectedModelDisplay();
     void updateSeparateButtonState();
@@ -41,7 +49,7 @@ private:
 
     std::vector<StemModelId> installedModels;
     std::vector<StemRole> availableRoles;
-    std::vector<std::unique_ptr<juce::ToggleButton>> stemToggleButtons;
+    std::vector<StemToggle> stemToggles;
     int selectedModelIndex = 0;
     StemComputeDevice selectedDevice = StemComputeDevice::cpu;
     juce::File customOutputFolder;

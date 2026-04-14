@@ -327,7 +327,7 @@ void SampleLane::showStemExportPanel (int sampleId)
     if (auto* editor = waveformView.getParentComponent())
     {
         auto wfBounds = waveformView.getBoundsInParent();
-        int panelH = 88;
+        int panelH = 72;
         int panelX = wfBounds.getX();
         int panelW = wfBounds.getWidth();
         int panelY = wfBounds.getY();

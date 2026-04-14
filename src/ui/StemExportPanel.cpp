@@ -106,12 +106,33 @@ void StemExportPanel::paint (juce::Graphics& g)
     drawCell (deviceCell);
     drawCell (outputCell);
 
-    if (! availableRoles.empty())
+    // Stem toggles
+    if (! stemToggles.empty())
     {
-        auto toggleArea = getLocalBounds().withTrimmedTop (38).reduced (4, 2);
+        auto toggleArea = getLocalBounds().withTrimmedTop (33).reduced (4, 0);
         g.setFont (IntersectLookAndFeel::makeFont (9.0f, true));
         g.setColour (getTheme().text2.withAlpha (0.6f));
-        g.drawText ("STEMS", toggleArea.removeFromTop (12), juce::Justification::centredLeft);
+        g.drawText ("STEMS", toggleArea.removeFromTop (10), juce::Justification::centredLeft);
+
+        for (const auto& toggle : stemToggles)
+        {
+            if (toggle.selected)
+            {
+                g.setColour (getTheme().accent.withAlpha (0.8f));
+                g.fillRoundedRectangle (toggle.bounds.toFloat(), 3.0f);
+                g.setFont (IntersectLookAndFeel::makeFont (9.0f, true));
+                g.setColour (getTheme().surface1);
+            }
+            else
+            {
+                g.setColour (getTheme().surface4);
+                g.fillRoundedRectangle (toggle.bounds.toFloat(), 3.0f);
+                g.setFont (IntersectLookAndFeel::makeFont (9.0f));
+                g.setColour (getTheme().text2);
+            }
+
+            g.drawText (toggle.label, toggle.bounds, juce::Justification::centred);
+        }
     }
 }
 
@@ -147,22 +168,23 @@ void StemExportPanel::resized()
 
     separateBtn.setBounds (x, pad, separateW, btnH);
 
-    auto toggleArea = getLocalBounds().withTrimmedTop (topRowH + pad * 2 + 6).reduced (pad, 0);
-    const int toggleW = 88;
-    const int toggleH = 20;
-    const int toggleGap = 8;
+    // Layout stem toggle cells — align with paint() STEMS label (top 33 + label 10 + gap 3)
+    auto toggleArea = getLocalBounds().withTrimmedTop (46).reduced (pad, 0);
+    const int toggleW = 64;
+    const int toggleH = 18;
+    const int toggleGap = 4;
     int toggleX = toggleArea.getX();
     int toggleY = toggleArea.getY();
 
-    for (auto& button : stemToggleButtons)
+    for (auto& toggle : stemToggles)
     {
         if (toggleX + toggleW > toggleArea.getRight())
         {
             toggleX = toggleArea.getX();
-            toggleY += toggleH + 4;
+            toggleY += toggleH + 3;
         }
 
-        button->setBounds (toggleX, toggleY, toggleW, toggleH);
+        toggle.bounds = { toggleX, toggleY, toggleW, toggleH };
         toggleX += toggleW + toggleGap;
     }
 }
@@ -172,6 +194,14 @@ int StemExportPanel::hitTestCell (juce::Point<int> pos) const
     if (modelCell.bounds.contains (pos))  return 0;
     if (deviceCell.bounds.contains (pos)) return 1;
     if (outputCell.bounds.contains (pos)) return 2;
+    return -1;
+}
+
+int StemExportPanel::hitTestStemToggle (juce::Point<int> pos) const
+{
+    for (int i = 0; i < (int) stemToggles.size(); ++i)
+        if (stemToggles[(size_t) i].bounds.contains (pos))
+            return i;
     return -1;
 }
 
@@ -203,14 +233,19 @@ void StemExportPanel::mouseDown (const juce::MouseEvent& e)
             repaint();
         }
     }
+
+    int stemIdx = hitTestStemToggle (e.getPosition());
+    if (stemIdx >= 0)
+    {
+        stemToggles[(size_t) stemIdx].selected = ! stemToggles[(size_t) stemIdx].selected;
+        updateSeparateButtonState();
+        repaint();
+    }
 }
 
 void StemExportPanel::rebuildStemToggles()
 {
-    for (auto& button : stemToggleButtons)
-        removeChildComponent (button.get());
-
-    stemToggleButtons.clear();
+    stemToggles.clear();
     availableRoles.clear();
 
     if (! installedModels.empty())
@@ -222,13 +257,10 @@ void StemExportPanel::rebuildStemToggles()
             const auto role = entry.modelOutputRoles[i];
             availableRoles.push_back (role);
 
-            auto button = std::make_unique<juce::ToggleButton> (stemRoleToString (role).toUpperCase());
-            button->setClickingTogglesState (true);
-            button->setToggleState (false, juce::dontSendNotification);
-            button->setColour (juce::ToggleButton::textColourId, getTheme().text1);
-            button->onClick = [this] { updateSeparateButtonState(); };
-            addAndMakeVisible (*button);
-            stemToggleButtons.push_back (std::move (button));
+            StemToggle toggle;
+            toggle.label = stemRoleToString (role).toUpperCase();
+            toggle.selected = false;
+            stemToggles.push_back (std::move (toggle));
         }
     }
 
@@ -253,8 +285,8 @@ void StemExportPanel::updateSeparateButtonState()
 StemSelectionMask StemExportPanel::getStemSelectionMask() const
 {
     StemSelectionMask mask = 0;
-    for (size_t i = 0; i < stemToggleButtons.size(); ++i)
-        if (stemToggleButtons[i]->getToggleState())
+    for (size_t i = 0; i < stemToggles.size(); ++i)
+        if (stemToggles[i].selected)
             mask |= stemSelectionBitForIndex ((int) i);
     return mask;
 }
