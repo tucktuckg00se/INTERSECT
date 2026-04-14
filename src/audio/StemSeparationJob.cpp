@@ -1,7 +1,6 @@
 #include "StemSeparationJob.h"
 
 #include <juce_audio_formats/juce_audio_formats.h>
-#include <juce_dsp/juce_dsp.h>
 #include <cmath>
 
 #if INTERSECT_HAS_ONNX_RUNTIME
@@ -108,7 +107,7 @@ bool configureExecutionProvider (Ort::SessionOptions&, StemComputeDevice request
     return false;
 }
 
-// ── BS-RoFormer STFT / inference helpers ─────────────────────────────────
+// ── Waveform overlap-add inference ──────────────────────────────────────
 
 std::vector<float> makeHannWindow (int size)
 {
@@ -119,213 +118,14 @@ std::vector<float> makeHannWindow (int size)
     return w;
 }
 
-std::vector<float> makeFadeWindow (int chunkSize, int fadeSize)
-{
-    std::vector<float> w ((size_t) chunkSize, 1.0f);
-    if (fadeSize <= 1)
-        return w;
-    for (int i = 0; i < fadeSize; ++i)
-    {
-        const float t = (float) i / (float) (fadeSize - 1);
-        w[(size_t) i] = t;
-        w[(size_t) (chunkSize - 1 - i)] = t;
-    }
-    return w;
-}
-
-void reflectPadChannel (const float* input, int inputLen, float* output, int padLeft, int padRight)
-{
-    if (inputLen >= 2 && padLeft < inputLen && padRight < inputLen)
-    {
-        for (int i = 0; i < padLeft; ++i)
-            output[i] = input[padLeft - i];
-        std::copy (input, input + inputLen, output + padLeft);
-        for (int i = 0; i < padRight; ++i)
-            output[padLeft + inputLen + i] = input[inputLen - 2 - i];
-    }
-    else
-    {
-        std::fill (output, output + padLeft, 0.0f);
-        std::copy (input, input + inputLen, output + padLeft);
-        std::fill (output + padLeft + inputLen, output + padLeft + inputLen + padRight, 0.0f);
-    }
-}
-
-struct ForwardSTFTResult
-{
-    std::vector<float> modelInput;  // [T, 4 * freqBins] row-major
-    std::vector<float> stftData;    // [2 * freqBins, T, 2] row-major (for mask multiply)
-    int numFrames = 0;
-};
-
-// Forward STFT of stereo audio.
-// modelInput: [numFrames, 4 * freqBins] with per-freq-bin interleaving:
-//   [f0_ch0_re, f0_ch0_im, f0_ch1_re, f0_ch1_im, f1_ch0_re, ...]
-// stftData: [2*freqBins, numFrames, 2] for complex mask multiplication.
-//   chanFreq index cf = f * 2 + ch.
-ForwardSTFTResult forwardSTFT (const juce::AudioBuffer<float>& audio,
-                                int nFft, int hopLength,
-                                const std::vector<float>& hannWindow)
-{
-    const int L = audio.getNumSamples();
-    const int padSize = nFft / 2;
-    const int paddedLen = L + nFft;
-    const int numFrames = 1 + (paddedLen - nFft) / hopLength;
-    const int freqBins = nFft / 2 + 1;
-    const int modelFeatPerFrame = 4 * freqBins;
-    const int chanFreqDim = 2 * freqBins;
-
-    const int fftOrder = (int) std::round (std::log2 ((double) nFft));
-    juce::dsp::FFT fft (fftOrder);
-    const size_t fftBufSize = (size_t) (2 * nFft);
-    std::vector<float> fftBuffer (fftBufSize);
-    std::vector<float> padded ((size_t) paddedLen);
-
-    ForwardSTFTResult out;
-    out.numFrames = numFrames;
-    out.modelInput.resize ((size_t) (numFrames * modelFeatPerFrame), 0.0f);
-    out.stftData.resize ((size_t) (chanFreqDim * numFrames * 2), 0.0f);
-
-    for (int ch = 0; ch < 2; ++ch)
-    {
-        reflectPadChannel (audio.getReadPointer (ch), L, padded.data(), padSize, padSize);
-
-        for (int frame = 0; frame < numFrames; ++frame)
-        {
-            const int frameStart = frame * hopLength;
-
-            std::fill (fftBuffer.begin(), fftBuffer.end(), 0.0f);
-            for (int i = 0; i < nFft; ++i)
-                fftBuffer[(size_t) i] = padded[(size_t) (frameStart + i)] * hannWindow[(size_t) i];
-
-            fft.performRealOnlyForwardTransform (fftBuffer.data(), true);
-
-            for (int f = 0; f < freqBins; ++f)
-            {
-                const float re = fftBuffer[(size_t) (2 * f)];
-                const float im = fftBuffer[(size_t) (2 * f + 1)];
-
-                // Model input: interleaved per freq bin
-                const size_t mIdx = (size_t) frame * modelFeatPerFrame
-                                  + (size_t) (f * 4 + ch * 2);
-                out.modelInput[mIdx]     = re;
-                out.modelInput[mIdx + 1] = im;
-
-                // STFT data: [cf, frame, 2] where cf = f*2 + ch
-                const size_t sIdx = (size_t) (((f * 2 + ch) * numFrames + frame) * 2);
-                out.stftData[sIdx]     = re;
-                out.stftData[sIdx + 1] = im;
-            }
-        }
-    }
-
-    return out;
-}
-
-// Apply complex mask to saved STFT, then inverse STFT.
-// maskData: model output [stems, 2*freqBins, T, 2] — complex mask.
-//   chanFreq interleaved: [f0_ch0, f0_ch1, f1_ch0, f1_ch1, ...]
-// stftData: [2*freqBins, T, 2] — saved from forwardSTFT, same interleaving.
-// For each element: separated = stft * mask (complex multiply), then ISTFT.
-std::vector<juce::AudioBuffer<float>> applyMaskAndISTFT (
-    const float* maskData,
-    const std::vector<float>& stftData,
-    int numStems,
-    int nFft, int hopLength,
-    int freqBins, int numFrames,
-    int originalLength,
-    const std::vector<float>& hannWindow)
-{
-    const int fftOrder = (int) std::round (std::log2 ((double) nFft));
-    juce::dsp::FFT fft (fftOrder);
-    const int padSize = nFft / 2;
-    const int paddedLen = originalLength + nFft;
-    const size_t fftBufSize = (size_t) (2 * nFft);
-    const int chanFreqDim = 2 * freqBins;
-
-    std::vector<float> fftBuffer (fftBufSize);
-    std::vector<float> outputBuf ((size_t) paddedLen);
-    std::vector<float> windowSum ((size_t) paddedLen);
-
-    std::vector<juce::AudioBuffer<float>> result;
-    result.reserve ((size_t) numStems);
-
-    for (int stem = 0; stem < numStems; ++stem)
-    {
-        juce::AudioBuffer<float> stereo (2, originalLength);
-        stereo.clear();
-
-        for (int ch = 0; ch < 2; ++ch)
-        {
-            std::fill (outputBuf.begin(), outputBuf.end(), 0.0f);
-            std::fill (windowSum.begin(), windowSum.end(), 0.0f);
-
-            for (int frame = 0; frame < numFrames; ++frame)
-            {
-                const int frameStart = frame * hopLength;
-
-                std::fill (fftBuffer.begin(), fftBuffer.end(), 0.0f);
-
-                for (int f = 0; f < freqBins; ++f)
-                {
-                    // chanFreq interleaved: cf = f * 2 + ch
-                    const int cf = f * 2 + ch;
-
-                    // Mask: [stem, cf, frame, 2]
-                    const size_t maskIdx = (size_t) (((stem * chanFreqDim + cf) * numFrames + frame) * 2);
-                    const float mask_re = maskData[maskIdx];
-                    const float mask_im = maskData[maskIdx + 1];
-
-                    // Saved STFT: [cf, frame, 2]
-                    const size_t stftIdx = (size_t) ((cf * numFrames + frame) * 2);
-                    const float stft_re = stftData[stftIdx];
-                    const float stft_im = stftData[stftIdx + 1];
-
-                    // Complex multiply: separated = stft * mask
-                    fftBuffer[(size_t) (2 * f)]     = stft_re * mask_re - stft_im * mask_im;
-                    fftBuffer[(size_t) (2 * f + 1)] = stft_re * mask_im + stft_im * mask_re;
-                }
-
-                // Fill conjugate mirror: bin[N-k] = conj(bin[k])
-                for (int k = 1; k < freqBins - 1; ++k)
-                {
-                    fftBuffer[(size_t) (2 * (nFft - k))]     =  fftBuffer[(size_t) (2 * k)];
-                    fftBuffer[(size_t) (2 * (nFft - k) + 1)] = -fftBuffer[(size_t) (2 * k + 1)];
-                }
-
-                fft.performRealOnlyInverseTransform (fftBuffer.data());
-
-                for (int i = 0; i < nFft && frameStart + i < paddedLen; ++i)
-                {
-                    const float w = hannWindow[(size_t) i];
-                    outputBuf[(size_t) (frameStart + i)] += fftBuffer[(size_t) i] * w;
-                    windowSum[(size_t) (frameStart + i)] += w * w;
-                }
-            }
-
-            for (int i = 0; i < paddedLen; ++i)
-            {
-                if (windowSum[(size_t) i] > 1.0e-8f)
-                    outputBuf[(size_t) i] /= windowSum[(size_t) i];
-            }
-
-            stereo.copyFrom (ch, 0, outputBuf.data() + padSize, originalLength);
-        }
-
-        result.push_back (std::move (stereo));
-    }
-
-    return result;
-}
-
-bool runBsRoformerChunked (Ort::Session& session,
-                            const juce::AudioBuffer<float>& sourceAudio,
-                            const StemModelCatalogEntry& catalog,
-                            std::vector<juce::AudioBuffer<float>>& stemBuffers,
-                            std::atomic<bool>& shouldCancel,
-                            juce::Thread& thread,
-                            std::atomic<float>& progress,
-                            juce::String& errorMessage)
+bool runWaveformChunked (Ort::Session& session,
+                         const juce::AudioBuffer<float>& sourceAudio,
+                         const StemModelCatalogEntry& catalog,
+                         std::vector<juce::AudioBuffer<float>>& stemBuffers,
+                         std::atomic<bool>& shouldCancel,
+                         juce::Thread& thread,
+                         std::atomic<float>& progress,
+                         juce::String& errorMessage)
 {
     Ort::AllocatorWithDefaultOptions allocator;
     auto inputName = session.GetInputNameAllocated (0, allocator);
@@ -336,50 +136,51 @@ bool runBsRoformerChunked (Ort::Session& session,
 
     const int originalLen = sourceAudio.getNumSamples();
     const int chunkSize = catalog.chunkSize;
-    const int step = chunkSize / juce::jmax (1, catalog.numOverlap);
-    const int border = chunkSize - step;
+    const int hopSize = juce::jmax (1, (int) ((float) chunkSize * (1.0f - catalog.overlapRatio)));
+    const auto hannWindow = makeHannWindow (chunkSize);
+
+    // Pad audio so that every sample is covered by at least one full chunk.
+    // Add chunkSize - hopSize padding at both start and end, then round up to hop alignment.
+    const int border = chunkSize - hopSize;
     const int paddedLen = originalLen + 2 * border;
-    const int fadeSize = chunkSize / 10;
+    const int totalChunks = juce::jmax (1, (paddedLen - chunkSize) / hopSize + 1);
+    const int fullLen = (totalChunks - 1) * hopSize + chunkSize;
 
-    juce::AudioBuffer<float> paddedAudio (2, paddedLen);
+    juce::AudioBuffer<float> paddedAudio (2, fullLen);
+    paddedAudio.clear();
     for (int ch = 0; ch < 2; ++ch)
-        reflectPadChannel (sourceAudio.getReadPointer (ch), originalLen,
-                           paddedAudio.getWritePointer (ch), border, border);
+    {
+        const int srcCh = juce::jmin (ch, sourceAudio.getNumChannels() - 1);
+        paddedAudio.copyFrom (ch, border, sourceAudio, srcCh, 0, originalLen);
+    }
 
-    const auto hannWindow = makeHannWindow (catalog.nFft);
-    const auto fadeWindow = makeFadeWindow (chunkSize, fadeSize);
+    // Preallocate input buffer for the model: [1, 2, chunkSize]
+    std::vector<float> inputBuffer ((size_t) (2 * chunkSize));
+    const std::array<int64_t, 3> inputShape = { 1, 2, (int64_t) chunkSize };
 
-    int totalChunks = 0;
-    for (int pos = 0; pos < paddedLen; pos += step)
-        ++totalChunks;
-    if (totalChunks < 1)
-        totalChunks = 1;
-
+    // Accumulation buffers (allocated after first inference tells us stem count)
     int numOutputStems = 0;
     std::vector<juce::AudioBuffer<float>> accumBuffers;
-    std::vector<float> counter ((size_t) paddedLen, 0.0f);
+    std::vector<float> weightAccum ((size_t) fullLen, 0.0f);
 
-    int chunkIndex = 0;
-    for (int chunkStart = 0; chunkStart < paddedLen; chunkStart += step)
+    for (int chunkIdx = 0; chunkIdx < totalChunks; ++chunkIdx)
     {
         if (thread.threadShouldExit() || shouldCancel.load (std::memory_order_acquire))
             return false;
 
-        const int actualLen = juce::jmin (chunkSize, paddedLen - chunkStart);
+        const int chunkStart = chunkIdx * hopSize;
 
-        juce::AudioBuffer<float> chunk (2, chunkSize);
-        chunk.clear();
+        // Fill input tensor: [1, 2, chunkSize] — channel-first layout
         for (int ch = 0; ch < 2; ++ch)
-            chunk.copyFrom (ch, 0, paddedAudio, ch, chunkStart, actualLen);
+        {
+            const float* src = paddedAudio.getReadPointer (ch, chunkStart);
+            float* dst = inputBuffer.data() + (size_t) (ch * chunkSize);
+            std::copy (src, src + chunkSize, dst);
+        }
 
-        auto stft = forwardSTFT (chunk, catalog.nFft, catalog.hopLength, hannWindow);
-
-        const int freqBins = catalog.nFft / 2 + 1;
-        const int featuresPerFrame = 4 * freqBins;
-        const std::array<int64_t, 3> inputShape = { 1, (int64_t) stft.numFrames, (int64_t) featuresPerFrame };
         auto inputTensor = Ort::Value::CreateTensor<float> (memoryInfo,
-                                                             stft.modelInput.data(),
-                                                             stft.modelInput.size(),
+                                                             inputBuffer.data(),
+                                                             inputBuffer.size(),
                                                              inputShape.data(),
                                                              inputShape.size());
 
@@ -393,30 +194,26 @@ bool runBsRoformerChunked (Ort::Session& session,
             return false;
         }
 
-        // Output shape: [1, stems, 2*freqBins, T, 2] — complex mask
+        // Expected output shape: [1, numStems, 2, chunkSize]
         auto tensorInfo = outputValues.front().GetTensorTypeAndShapeInfo();
         auto shape = tensorInfo.GetShape();
-
-        if (shape.size() != 5 || shape[0] != 1 || shape[4] != 2)
+        if (shape.size() != 4 || shape[0] != 1 || shape[2] != 2 || shape[3] != (int64_t) chunkSize)
         {
-            errorMessage = "Unexpected model output shape (expected [1, stems, chanFreq, T, 2])";
+            errorMessage = "Unexpected model output shape (expected [1, stems, 2, " + juce::String (chunkSize) + "])";
             return false;
         }
 
         const int stemsInTensor = (int) shape[1];
-        const float* maskData = outputValues.front().GetTensorData<float>();
+        const float* outputData = outputValues.front().GetTensorData<float>();
 
-        auto stemChunks = applyMaskAndISTFT (maskData, stft.stftData, stemsInTensor,
-                                              catalog.nFft, catalog.hopLength,
-                                              freqBins, stft.numFrames, chunkSize, hannWindow);
-
+        // Allocate accumulation buffers on first chunk
         if (accumBuffers.empty())
         {
             numOutputStems = stemsInTensor;
             accumBuffers.reserve ((size_t) numOutputStems);
             for (int s = 0; s < numOutputStems; ++s)
             {
-                accumBuffers.emplace_back (2, paddedLen);
+                accumBuffers.emplace_back (2, fullLen);
                 accumBuffers.back().clear();
             }
         }
@@ -427,22 +224,25 @@ bool runBsRoformerChunked (Ort::Session& session,
             return false;
         }
 
+        // Apply Hann window and accumulate
+        // Output layout: [stem, channel, sample]
+        const int stemStride = 2 * chunkSize;
         for (int s = 0; s < numOutputStems; ++s)
         {
             for (int ch = 0; ch < 2; ++ch)
             {
+                const float* src = outputData + (size_t) (s * stemStride + ch * chunkSize);
                 float* dst = accumBuffers[(size_t) s].getWritePointer (ch, chunkStart);
-                const float* src = stemChunks[(size_t) s].getReadPointer (ch);
-                for (int i = 0; i < actualLen; ++i)
-                    dst[i] += src[i] * fadeWindow[(size_t) i];
+                for (int i = 0; i < chunkSize; ++i)
+                    dst[i] += src[i] * hannWindow[(size_t) i];
             }
         }
 
-        for (int i = 0; i < actualLen; ++i)
-            counter[(size_t) (chunkStart + i)] += fadeWindow[(size_t) i];
+        // Accumulate window weights
+        for (int i = 0; i < chunkSize; ++i)
+            weightAccum[(size_t) (chunkStart + i)] += hannWindow[(size_t) i];
 
-        ++chunkIndex;
-        progress.store (0.15f + 0.55f * ((float) chunkIndex / (float) totalChunks),
+        progress.store (0.15f + 0.55f * ((float) (chunkIdx + 1) / (float) totalChunks),
                         std::memory_order_release);
     }
 
@@ -452,19 +252,22 @@ bool runBsRoformerChunked (Ort::Session& session,
         return false;
     }
 
+    // Normalize by accumulated window weight
     for (int s = 0; s < numOutputStems; ++s)
     {
         for (int ch = 0; ch < 2; ++ch)
         {
             float* dst = accumBuffers[(size_t) s].getWritePointer (ch);
-            for (int i = 0; i < paddedLen; ++i)
+            for (int i = 0; i < fullLen; ++i)
             {
-                const float denom = counter[(size_t) i] > 1.0e-8f ? counter[(size_t) i] : 1.0f;
-                dst[i] /= denom;
+                const float w = weightAccum[(size_t) i];
+                if (w > 1.0e-8f)
+                    dst[i] /= w;
             }
         }
     }
 
+    // Trim padding to recover original length
     stemBuffers.clear();
     stemBuffers.reserve ((size_t) numOutputStems);
     for (int s = 0; s < numOutputStems; ++s)
@@ -485,11 +288,37 @@ std::vector<StemRole> buildStemRoles (const StemModelCatalogEntry& catalog)
 {
     std::vector<StemRole> roles;
     roles.reserve ((size_t) (catalog.numModelOutputs + (catalog.computeResidual ? 1 : 0)));
-    for (int i = 0; i < catalog.numModelOutputs && i < 4; ++i)
+    for (int i = 0; i < catalog.numModelOutputs && i < 6; ++i)
         roles.push_back (catalog.modelOutputRoles[i]);
     if (catalog.computeResidual)
         roles.push_back (catalog.residualRole);
     return roles;
+}
+
+int countSelectedStemOutputs (StemSelectionMask selectionMask, int numOutputs)
+{
+    int count = 0;
+    for (int i = 0; i < numOutputs; ++i)
+        if (isStemOutputSelected (selectionMask, i))
+            ++count;
+    return count;
+}
+
+juce::String buildCombinedStemName (const std::vector<StemRole>& roles, StemSelectionMask selectionMask)
+{
+    juce::StringArray parts;
+    for (int i = 0; i < (int) roles.size(); ++i)
+    {
+        if (! isStemOutputSelected (selectionMask, i))
+            continue;
+
+        parts.add (sanitisePathComponent (stemRoleToString (roles[(size_t) i])));
+    }
+
+    if (parts.isEmpty())
+        return "stem";
+
+    return parts.joinIntoString ("+");
 }
 
 } // namespace
@@ -510,6 +339,8 @@ bool StemSeparationJob::start (const juce::AudioBuffer<float>& sourceAudio,
                                int sampleId,
                                const juce::String& sourceName,
                                StemModelId modelId,
+                               const StemModelCatalogEntry& catalogEntry,
+                               StemSelectionMask stemSelectionMask,
                                StemComputeDevice computeDevice,
                                const juce::File& modelPath,
                                const juce::File& outputDir)
@@ -522,6 +353,8 @@ bool StemSeparationJob::start (const juce::AudioBuffer<float>& sourceAudio,
     sourceSampleId.store (sampleId, std::memory_order_release);
     jobSourceName = sourceName;
     jobModelId = modelId;
+    jobCatalogEntry = catalogEntry;
+    jobStemSelectionMask = stemSelectionMask;
     jobComputeDevice = computeDevice;
     jobModelPath = modelPath;
     jobOutputDir = outputDir;
@@ -586,8 +419,7 @@ void StemSeparationJob::run()
 #else
     StemJobState finalState = StemJobState::failed;
 
-    const auto* catalogEntry = findStemModelCatalogEntry (jobModelId);
-    if (catalogEntry == nullptr)
+    if (jobCatalogEntry.numModelOutputs <= 0)
     {
         localResult.errorMessage = "Unknown stem model";
         const juce::ScopedLock sl (resultLock);
@@ -598,7 +430,7 @@ void StemSeparationJob::run()
 
     try
     {
-        const double modelRate = catalogEntry->sampleRate;
+        const double modelRate = jobCatalogEntry.sampleRate;
         juce::AudioBuffer<float> inferenceAudio = resampleStereoBuffer (audioBuffer, jobSampleRate, modelRate);
         if (inferenceAudio.getNumChannels() < 2)
         {
@@ -629,8 +461,8 @@ void StemSeparationJob::run()
 
         std::vector<juce::AudioBuffer<float>> stemBuffers;
         juce::String parseError;
-        if (! runBsRoformerChunked (session, inferenceAudio, *catalogEntry, stemBuffers,
-                                     shouldCancel, *this, progress, parseError))
+        if (! runWaveformChunked (session, inferenceAudio, jobCatalogEntry, stemBuffers,
+                                  shouldCancel, *this, progress, parseError))
         {
             if (threadShouldExit() || shouldCancel.load (std::memory_order_acquire))
             {
@@ -641,21 +473,19 @@ void StemSeparationJob::run()
             throw std::runtime_error (parseError.toStdString());
         }
 
-        // Compute residual stem (e.g. instrumental = mix - vocals)
-        if (catalogEntry->computeResidual)
-        {
-            const int numFrames = inferenceAudio.getNumSamples();
-            juce::AudioBuffer<float> residual;
-            residual.makeCopyOf (inferenceAudio);
-            for (const auto& stem : stemBuffers)
-                for (int ch = 0; ch < 2; ++ch)
-                    residual.addFrom (ch, 0, stem, ch, 0, numFrames, -1.0f);
-            stemBuffers.push_back (std::move (residual));
-        }
+        const auto roles = buildStemRoles (jobCatalogEntry);
+        if (roles.empty())
+            throw std::runtime_error ("Stem model has no configured outputs");
 
-        state.store (StemJobState::writing, std::memory_order_release);
+        if ((int) stemBuffers.size() != (int) roles.size())
+            throw std::runtime_error ("Stem model output count did not match catalog");
 
-        const auto roles = buildStemRoles (*catalogEntry);
+        if (countSelectedStemOutputs (jobStemSelectionMask, (int) roles.size()) <= 0)
+            throw std::runtime_error ("Select at least one stem");
+
+        juce::AudioBuffer<float> combinedStem (2, inferenceAudio.getNumSamples());
+        combinedStem.clear();
+
         for (size_t i = 0; i < stemBuffers.size(); ++i)
         {
             if (threadShouldExit() || shouldCancel.load (std::memory_order_acquire))
@@ -664,21 +494,29 @@ void StemSeparationJob::run()
                 return;
             }
 
-            stemBuffers[i] = resampleStereoBuffer (stemBuffers[i], modelRate, jobSampleRate);
+            if (! isStemOutputSelected (jobStemSelectionMask, (int) i))
+                continue;
 
-            juce::String stemName = sanitisePathComponent (
-                stemRoleToString (i < roles.size() ? roles[i] : StemRole::unknown));
-            auto stemFile = jobOutputDir.getChildFile (jobSourceName + "_" + stemName + ".wav");
+            for (int ch = 0; ch < 2; ++ch)
+                combinedStem.addFrom (ch, 0, stemBuffers[i], ch, 0, combinedStem.getNumSamples());
 
-            juce::String writeError;
-            if (! writeWaveFile (stemFile, stemBuffers[i], jobSampleRate, writeError))
-                throw std::runtime_error (writeError.toStdString());
-
-            localResult.stemFiles.push_back (stemFile);
-            localResult.stemRoles.push_back (i < roles.size() ? roles[i] : StemRole::unknown);
-            progress.store (0.7f + (0.3f * (float) (i + 1) / (float) stemBuffers.size()),
+            progress.store (0.7f + (0.15f * (float) (i + 1) / (float) stemBuffers.size()),
                             std::memory_order_release);
         }
+
+        state.store (StemJobState::writing, std::memory_order_release);
+
+        auto resampledCombinedStem = resampleStereoBuffer (combinedStem, modelRate, jobSampleRate);
+        const auto stemName = buildCombinedStemName (roles, jobStemSelectionMask);
+        auto stemFile = jobOutputDir.getChildFile (jobSourceName + "_" + stemName + ".wav");
+
+        juce::String writeError;
+        if (! writeWaveFile (stemFile, resampledCombinedStem, jobSampleRate, writeError))
+            throw std::runtime_error (writeError.toStdString());
+
+        localResult.stemFiles.push_back (stemFile);
+        localResult.stemRoles.push_back (StemRole::unknown);
+        progress.store (1.0f, std::memory_order_release);
 
         finalState = StemJobState::completed;
     }

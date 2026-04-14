@@ -939,7 +939,10 @@ void IntersectProcessor::cancelStemSeparation()
         stemJob.cancel();
 }
 
-void IntersectProcessor::startStemSeparation (int sampleId, StemModelId modelId, const juce::File& outputFolder)
+void IntersectProcessor::startStemSeparation (int sampleId,
+                                              StemModelId modelId,
+                                              StemSelectionMask stemSelectionMask,
+                                              const juce::File& outputFolder)
 {
     if (stemJob.getState() != StemJobState::idle)
     {
@@ -947,10 +950,18 @@ void IntersectProcessor::startStemSeparation (int sampleId, StemModelId modelId,
         return;
     }
 
-    const auto modelFile = resolveStemModelFile (getResolvedStemModelFolder(), modelId);
+    const auto modelFolder = getResolvedStemModelFolder();
+    const auto catalogEntry = getEffectiveStemModelCatalogEntry (modelId, modelFolder);
+    const auto modelFile = modelFolder.getChildFile (catalogEntry.fileName);
     if (! modelFile.existsAsFile())
     {
         setUiStatusMessage ("Selected stem model is not installed", true);
+        return;
+    }
+
+    if (stemSelectionMask == 0)
+    {
+        setUiStatusMessage ("Select at least one stem", true);
         return;
     }
 
@@ -1009,7 +1020,7 @@ void IntersectProcessor::startStemSeparation (int sampleId, StemModelId modelId,
     auto jobDir = outputRoot.getChildFile (sourceName + "_" + stemModelIdToString (modelId) + "_" + timestamp);
 
     stemJob.start (regionAudio, sampleSnap->decodedSampleRate, sampleId,
-                   sourceName, modelId, stemComputeDevice, modelFile, jobDir);
+                   sourceName, modelId, catalogEntry, stemSelectionMask, stemComputeDevice, modelFile, jobDir);
     uiSnapshotDirty.store (true, std::memory_order_release);
 }
 

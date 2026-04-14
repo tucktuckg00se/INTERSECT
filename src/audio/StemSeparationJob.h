@@ -16,6 +16,8 @@ public:
                 int sourceSampleId,
                 const juce::String& sourceName,
                 StemModelId modelId,
+                const StemModelCatalogEntry& catalogEntry,
+                StemSelectionMask stemSelectionMask,
                 StemComputeDevice computeDevice,
                 const juce::File& modelPath,
                 const juce::File& outputDir);
@@ -45,7 +47,9 @@ private:
     juce::AudioBuffer<float> audioBuffer;
     double jobSampleRate = 44100.0;
     juce::String jobSourceName;
-    StemModelId jobModelId = StemModelId::bsRoformer2stem;
+    StemModelId jobModelId = StemModelId::bsRoformerSw6stem;
+    StemModelCatalogEntry jobCatalogEntry;
+    StemSelectionMask jobStemSelectionMask = 0;
     StemComputeDevice jobComputeDevice = StemComputeDevice::cpu;
     juce::File jobModelPath;
     juce::File jobOutputDir;

@@ -1,5 +1,72 @@
 #include "StemModelDownloadJob.h"
 
+namespace
+{
+
+bool downloadFileToTarget (const juce::URL& url,
+                           const juce::File& targetFile,
+                           std::atomic<bool>& shouldCancel,
+                           juce::Thread& thread,
+                           juce::String& errorMessage)
+{
+    juce::TemporaryFile tempFile (targetFile);
+    int statusCode = 0;
+    juce::StringPairArray responseHeaders;
+    auto input = url.createInputStream (
+        juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inAddress)
+            .withConnectionTimeoutMs (30000)
+            .withNumRedirectsToFollow (5)
+            .withStatusCode (&statusCode)
+            .withResponseHeaders (&responseHeaders));
+
+    if (input == nullptr || statusCode >= 400)
+    {
+        errorMessage = statusCode > 0
+                         ? "HTTP " + juce::String (statusCode)
+                         : "network connection failed";
+        return false;
+    }
+
+    auto output = tempFile.getFile().createOutputStream();
+    if (output == nullptr)
+    {
+        errorMessage = "write failed";
+        return false;
+    }
+
+    juce::HeapBlock<char> buffer (64 * 1024);
+    for (;;)
+    {
+        if (thread.threadShouldExit() || shouldCancel.load (std::memory_order_acquire))
+        {
+            output.reset();
+            tempFile.deleteTemporaryFile();
+            errorMessage = "cancelled";
+            return false;
+        }
+
+        const int bytesRead = input->read (buffer.getData(), 64 * 1024);
+        if (bytesRead <= 0)
+            break;
+
+        output->write (buffer.getData(), (size_t) bytesRead);
+    }
+
+    output->flush();
+    output.reset();
+
+    if (! tempFile.overwriteTargetFileWithTemporary())
+    {
+        tempFile.deleteTemporaryFile();
+        errorMessage = "install failed";
+        return false;
+    }
+
+    return true;
+}
+
+} // namespace
+
 StemModelDownloadJob::StemModelDownloadJob()
     : juce::Thread ("StemModelDownload")
 {
@@ -52,7 +119,7 @@ juce::String StemModelDownloadJob::consumeResultMessage()
     resultMessage = {};
     statusText = {};
     progress.store (0.0f, std::memory_order_release);
-    currentModelId.store (StemModelId::bsRoformer2stem, std::memory_order_release);
+    currentModelId.store (StemModelId::bsRoformerSw6stem, std::memory_order_release);
     state.store (StemModelDownloadState::idle, std::memory_order_release);
     return message;
 }
@@ -65,6 +132,24 @@ void StemModelDownloadJob::run()
         resultMessage = "Failed to create model folder: " + createResult.getErrorMessage();
         state.store (StemModelDownloadState::failed, std::memory_order_release);
         return;
+    }
+
+    {
+        juce::String downloadError;
+        const auto manifestUrl = juce::URL (getStemModelManifestDownloadUrl());
+        const auto manifestFile = getStemModelManifestFile (downloadFolder);
+        if (! downloadFileToTarget (manifestUrl, manifestFile, shouldCancel, *this, downloadError))
+        {
+            if (downloadError == "cancelled")
+            {
+                const juce::ScopedLock sl (lock);
+                resultMessage = "Model download cancelled";
+                state.store (StemModelDownloadState::cancelled, std::memory_order_release);
+                return;
+            }
+
+            // Manifest is optional fallback metadata. Keep going on failure.
+        }
     }
 
     for (size_t i = 0; i < requestedModels.size(); ++i)
@@ -80,17 +165,15 @@ void StemModelDownloadJob::run()
         const auto modelId = requestedModels[i];
         currentModelId.store (modelId, std::memory_order_release);
 
-        const auto* entry = findStemModelCatalogEntry (modelId);
-        if (entry == nullptr)
-            continue;
+        const auto entry = getEffectiveStemModelCatalogEntry (modelId, downloadFolder);
 
         {
             const juce::ScopedLock sl (lock);
-            statusText = "Downloading " + juce::String (entry->menuLabel);
+            statusText = "Downloading " + entry.menuLabel;
         }
 
-        const auto targetFile = downloadFolder.getChildFile (entry->fileName);
-        if (juce::String (entry->downloadUrl).isEmpty())
+        const auto targetFile = downloadFolder.getChildFile (entry.fileName);
+        if (entry.downloadUrl.isEmpty())
         {
             const juce::ScopedLock sl (lock);
             resultMessage = "Model downloads are not configured in this build";
@@ -98,67 +181,37 @@ void StemModelDownloadJob::run()
             return;
         }
 
-        juce::TemporaryFile tempFile (targetFile);
-        int statusCode = 0;
-        juce::StringPairArray responseHeaders;
-        auto input = juce::URL (entry->downloadUrl).createInputStream (
-            juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inAddress)
-                .withConnectionTimeoutMs (30000)
-                .withNumRedirectsToFollow (5)
-                .withStatusCode (&statusCode)
-                .withResponseHeaders (&responseHeaders));
-
-        if (input == nullptr || statusCode >= 400)
+        juce::String downloadError;
+        if (! downloadFileToTarget (juce::URL (entry.downloadUrl), targetFile, shouldCancel, *this, downloadError))
         {
             const juce::ScopedLock sl (lock);
-            if (statusCode > 0)
-                resultMessage = "Failed to download " + juce::String (entry->menuLabel)
-                              + " (HTTP " + juce::String (statusCode) + ")";
-            else
-                resultMessage = "Failed to download " + juce::String (entry->menuLabel)
-                              + " (network connection failed)";
-            state.store (StemModelDownloadState::failed, std::memory_order_release);
-            return;
-        }
-
-        auto output = tempFile.getFile().createOutputStream();
-        if (output == nullptr)
-        {
-            const juce::ScopedLock sl (lock);
-            resultMessage = "Failed to write " + juce::String (entry->fileName);
-            state.store (StemModelDownloadState::failed, std::memory_order_release);
-            return;
-        }
-
-        juce::HeapBlock<char> buffer (64 * 1024);
-        for (;;)
-        {
-            if (threadShouldExit() || shouldCancel.load (std::memory_order_acquire))
+            if (downloadError == "cancelled")
             {
-                output.reset();
-                tempFile.deleteTemporaryFile();
-                const juce::ScopedLock sl (lock);
                 resultMessage = "Model download cancelled";
                 state.store (StemModelDownloadState::cancelled, std::memory_order_release);
-                return;
             }
-
-            const int bytesRead = input->read (buffer.getData(), 64 * 1024);
-            if (bytesRead <= 0)
-                break;
-
-            output->write (buffer.getData(), (size_t) bytesRead);
-        }
-
-        output->flush();
-        output.reset();
-
-        if (! tempFile.overwriteTargetFileWithTemporary())
-        {
-            tempFile.deleteTemporaryFile();
-            const juce::ScopedLock sl (lock);
-            resultMessage = "Failed to install " + juce::String (entry->menuLabel);
-            state.store (StemModelDownloadState::failed, std::memory_order_release);
+            else if (downloadError.startsWith ("HTTP "))
+            {
+                resultMessage = "Failed to download " + entry.menuLabel
+                              + " (" + downloadError + ")";
+                state.store (StemModelDownloadState::failed, std::memory_order_release);
+            }
+            else if (downloadError == "write failed")
+            {
+                resultMessage = "Failed to write " + entry.fileName;
+                state.store (StemModelDownloadState::failed, std::memory_order_release);
+            }
+            else if (downloadError == "install failed")
+            {
+                resultMessage = "Failed to install " + entry.menuLabel;
+                state.store (StemModelDownloadState::failed, std::memory_order_release);
+            }
+            else
+            {
+                resultMessage = "Failed to download " + entry.menuLabel
+                              + " (network connection failed)";
+                state.store (StemModelDownloadState::failed, std::memory_order_release);
+            }
             return;
         }
 

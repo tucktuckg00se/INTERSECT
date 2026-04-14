@@ -22,7 +22,7 @@ private:
 
     std::atomic<StemModelDownloadState> state { StemModelDownloadState::idle };
     std::atomic<float> progress { 0.0f };
-    std::atomic<StemModelId> currentModelId { StemModelId::bsRoformer2stem };
+    std::atomic<StemModelId> currentModelId { StemModelId::bsRoformerSw6stem };
     std::atomic<bool> shouldCancel { false };
 
     juce::CriticalSection lock;

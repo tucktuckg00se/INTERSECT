@@ -12,13 +12,10 @@ StemExportPanel::StemExportPanel (IntersectProcessor& p, int sampleId)
     deviceCell.label = "DEVICE";
     outputCell.label = "OUTPUT";
 
-    if (! installedModels.empty())
-        modelCell.displayValue = stemModelMenuLabel (installedModels[0]);
-    else
-        modelCell.displayValue = "No models";
-
     deviceCell.displayValue = stemComputeDeviceToString (selectedDevice);
     outputCell.displayValue = "Beside sample";
+    updateSelectedModelDisplay();
+    rebuildStemToggles();
 
     addAndMakeVisible (separateBtn);
     addAndMakeVisible (browseBtn);
@@ -31,20 +28,19 @@ StemExportPanel::StemExportPanel (IntersectProcessor& p, int sampleId)
         btn->setColour (juce::TextButton::textColourOffId, getTheme().text2);
     }
 
-    separateBtn.setEnabled (! installedModels.empty());
-
     separateBtn.onClick = [this]
     {
         if (installedModels.empty())
             return;
 
         const auto chosenModel = installedModels[(size_t) selectedModelIndex];
+        const auto selectionMask = getStemSelectionMask();
         processor.setStemComputeDevice (selectedDevice);
 
         if (useCustomFolder && customOutputFolder.isDirectory())
-            processor.startStemSeparation (targetSampleId, chosenModel, customOutputFolder);
+            processor.startStemSeparation (targetSampleId, chosenModel, selectionMask, customOutputFolder);
         else
-            processor.startStemSeparation (targetSampleId, chosenModel);
+            processor.startStemSeparation (targetSampleId, chosenModel, selectionMask);
 
         close();
     };
@@ -69,6 +65,7 @@ StemExportPanel::StemExportPanel (IntersectProcessor& p, int sampleId)
     };
 
     cancelBtn.onClick = [this] { close(); };
+    updateSeparateButtonState();
 }
 
 StemExportPanel::~StemExportPanel() = default;
@@ -108,16 +105,24 @@ void StemExportPanel::paint (juce::Graphics& g)
     drawCell (modelCell);
     drawCell (deviceCell);
     drawCell (outputCell);
+
+    if (! availableRoles.empty())
+    {
+        auto toggleArea = getLocalBounds().withTrimmedTop (38).reduced (4, 2);
+        g.setFont (IntersectLookAndFeel::makeFont (9.0f, true));
+        g.setColour (getTheme().text2.withAlpha (0.6f));
+        g.drawText ("STEMS", toggleArea.removeFromTop (12), juce::Justification::centredLeft);
+    }
 }
 
 void StemExportPanel::resized()
 {
-    int h = getHeight();
     int pad = 4;
-    int btnH = h - pad * 2;
+    int topRowH = 26;
+    int btnH = topRowH;
     int gap = 6;
 
-    int cancelW = 60;
+    int cancelW = 64;
     cancelBtn.setBounds (getWidth() - cancelW - pad, pad, cancelW, btnH);
 
     int x = pad;
@@ -141,6 +146,25 @@ void StemExportPanel::resized()
     x += browseW + gap;
 
     separateBtn.setBounds (x, pad, separateW, btnH);
+
+    auto toggleArea = getLocalBounds().withTrimmedTop (topRowH + pad * 2 + 6).reduced (pad, 0);
+    const int toggleW = 88;
+    const int toggleH = 20;
+    const int toggleGap = 8;
+    int toggleX = toggleArea.getX();
+    int toggleY = toggleArea.getY();
+
+    for (auto& button : stemToggleButtons)
+    {
+        if (toggleX + toggleW > toggleArea.getRight())
+        {
+            toggleX = toggleArea.getX();
+            toggleY += toggleH + 4;
+        }
+
+        button->setBounds (toggleX, toggleY, toggleW, toggleH);
+        toggleX += toggleW + toggleGap;
+    }
 }
 
 int StemExportPanel::hitTestCell (juce::Point<int> pos) const
@@ -158,8 +182,8 @@ void StemExportPanel::mouseDown (const juce::MouseEvent& e)
     if (idx == 0 && installedModels.size() > 1)
     {
         selectedModelIndex = (selectedModelIndex + 1) % (int) installedModels.size();
-        modelCell.displayValue = stemModelMenuLabel (installedModels[(size_t) selectedModelIndex]);
-        repaint();
+        updateSelectedModelDisplay();
+        rebuildStemToggles();
     }
     else if (idx == 1)
     {
@@ -179,4 +203,58 @@ void StemExportPanel::mouseDown (const juce::MouseEvent& e)
             repaint();
         }
     }
+}
+
+void StemExportPanel::rebuildStemToggles()
+{
+    for (auto& button : stemToggleButtons)
+        removeChildComponent (button.get());
+
+    stemToggleButtons.clear();
+    availableRoles.clear();
+
+    if (! installedModels.empty())
+    {
+        const auto entry = getEffectiveStemModelCatalogEntry (installedModels[(size_t) selectedModelIndex],
+                                                              processor.getResolvedStemModelFolder());
+        for (int i = 0; i < entry.numModelOutputs; ++i)
+        {
+            const auto role = entry.modelOutputRoles[i];
+            availableRoles.push_back (role);
+
+            auto button = std::make_unique<juce::ToggleButton> (stemRoleToString (role).toUpperCase());
+            button->setClickingTogglesState (true);
+            button->setToggleState (false, juce::dontSendNotification);
+            button->setColour (juce::ToggleButton::textColourId, getTheme().text1);
+            button->onClick = [this] { updateSeparateButtonState(); };
+            addAndMakeVisible (*button);
+            stemToggleButtons.push_back (std::move (button));
+        }
+    }
+
+    updateSeparateButtonState();
+    resized();
+    repaint();
+}
+
+void StemExportPanel::updateSelectedModelDisplay()
+{
+    if (! installedModels.empty())
+        modelCell.displayValue = stemModelMenuLabel (installedModels[(size_t) selectedModelIndex]);
+    else
+        modelCell.displayValue = "No models";
+}
+
+void StemExportPanel::updateSeparateButtonState()
+{
+    separateBtn.setEnabled (! installedModels.empty() && getStemSelectionMask() != 0);
+}
+
+StemSelectionMask StemExportPanel::getStemSelectionMask() const
+{
+    StemSelectionMask mask = 0;
+    for (size_t i = 0; i < stemToggleButtons.size(); ++i)
+        if (stemToggleButtons[i]->getToggleState())
+            mask |= stemSelectionBitForIndex ((int) i);
+    return mask;
 }

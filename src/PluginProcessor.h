@@ -200,7 +200,10 @@ public:
     void relinkFileAsync (const juce::File& file);
     void reorderSessionSampleAsync (int sourceSampleId, int targetIndex);
     void deleteSessionSampleAsync (int sampleId);
-    void startStemSeparation (int sampleId, StemModelId modelId, const juce::File& outputFolder = {});
+    void startStemSeparation (int sampleId,
+                              StemModelId modelId,
+                              StemSelectionMask stemSelectionMask,
+                              const juce::File& outputFolder = {});
     void cancelStemSeparation();
     void startStemModelDownload (const std::vector<StemModelId>& modelIds);
     void cancelStemModelDownload();

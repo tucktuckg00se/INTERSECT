@@ -9,13 +9,15 @@ enum class StemRole
     bass,
     other,
     vocals,
+    guitar,
+    piano,
     unknown,
     instrumental
 };
 
 enum class StemModelId
 {
-    bsRoformer2stem = 0,
+    bsRoformerSw6stem = 0,
 };
 
 enum class StemComputeDevice
@@ -61,21 +63,21 @@ struct StemMetadata
 
 struct StemModelCatalogEntry
 {
-    StemModelId id = StemModelId::bsRoformer2stem;
-    const char* menuLabel = "";
-    const char* fileName = "";
-    const char* downloadUrl = "";
+    StemModelId id = StemModelId::bsRoformerSw6stem;
+    juce::String menuLabel;
+    juce::String fileName;
+    juce::String downloadUrl;
     int numModelOutputs = 1;
-    StemRole modelOutputRoles[4] = { StemRole::unknown, StemRole::unknown, StemRole::unknown, StemRole::unknown };
+    StemRole modelOutputRoles[6] = { StemRole::unknown, StemRole::unknown, StemRole::unknown,
+                                     StemRole::unknown, StemRole::unknown, StemRole::unknown };
     bool computeResidual = false;
     StemRole residualRole = StemRole::unknown;
     double sampleRate = 44100.0;
-    int chunkSize = 352800;
-    int nFft = 2048;
-    int hopLength = 441;
-    int dimF = 1024;
-    int numOverlap = 2;
+    int chunkSize = 131072;
+    float overlapRatio = 0.5f;
 };
+
+using StemSelectionMask = uint32_t;
 
 inline juce::String stemRoleToString (StemRole role)
 {
@@ -85,18 +87,28 @@ inline juce::String stemRoleToString (StemRole role)
         case StemRole::bass:         return "bass";
         case StemRole::other:        return "other";
         case StemRole::vocals:       return "vocals";
+        case StemRole::guitar:       return "guitar";
+        case StemRole::piano:        return "piano";
         case StemRole::unknown:      return "unknown";
         case StemRole::instrumental: return "instrumental";
     }
     return "unknown";
 }
 
+StemRole stemRoleFromString (const juce::String& text);
 juce::String stemModelIdToString (StemModelId modelId);
+bool stemModelIdFromString (const juce::String& text, StemModelId& modelId);
 juce::String stemModelMenuLabel (StemModelId modelId);
 juce::String stemComputeDeviceToString (StemComputeDevice device);
 StemComputeDevice stemComputeDeviceFromString (const juce::String& text);
 const StemModelCatalogEntry* findStemModelCatalogEntry (StemModelId modelId);
 const std::array<StemModelCatalogEntry, 1>& getStemModelCatalog();
+juce::String getStemModelManifestFileName();
+juce::String getStemModelManifestDownloadUrl();
 juce::File getDefaultStemModelFolder();
+juce::File getStemModelManifestFile (const juce::File& modelFolder);
 juce::File resolveStemModelFile (const juce::File& modelFolder, StemModelId modelId);
+StemModelCatalogEntry getEffectiveStemModelCatalogEntry (StemModelId modelId, const juce::File& modelFolder);
 std::vector<StemModelId> scanInstalledStemModels (const juce::File& modelFolder);
+StemSelectionMask stemSelectionBitForIndex (int outputIndex);
+bool isStemOutputSelected (StemSelectionMask mask, int outputIndex);

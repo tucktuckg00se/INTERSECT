@@ -27,6 +27,10 @@ private:
 
     void close();
     int hitTestCell (juce::Point<int> pos) const;
+    void rebuildStemToggles();
+    void updateSelectedModelDisplay();
+    void updateSeparateButtonState();
+    StemSelectionMask getStemSelectionMask() const;
 
     IntersectProcessor& processor;
     int targetSampleId;
@@ -36,6 +40,8 @@ private:
     OptionCell outputCell;
 
     std::vector<StemModelId> installedModels;
+    std::vector<StemRole> availableRoles;
+    std::vector<std::unique_ptr<juce::ToggleButton>> stemToggleButtons;
     int selectedModelIndex = 0;
     StemComputeDevice selectedDevice = StemComputeDevice::cpu;
     juce::File customOutputFolder;
