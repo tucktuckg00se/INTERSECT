@@ -380,6 +380,7 @@ IntersectProcessor::IntersectProcessor()
 
 IntersectProcessor::~IntersectProcessor()
 {
+        cancelPendingUpdate();
 	    fileLoadPool.removeAllJobs (true, 5000);
 	    auto* pending = completedLoadData.exchange (nullptr, std::memory_order_acq_rel);
 	    delete pending;
@@ -480,6 +481,60 @@ void IntersectProcessor::setDroppedCommandWarning (uint32_t droppedCount, uint32
 const IntersectProcessor::UiStatusMessage& IntersectProcessor::getUiStatusMessage() const
 {
     return uiStatusMessages[(size_t) uiStatusMessageIndex.load (std::memory_order_acquire)];
+}
+
+void IntersectProcessor::handleAsyncUpdate()
+{
+    handleStemJobCompletionOnMessageThread();
+}
+
+void IntersectProcessor::handleStemJobCompletionOnMessageThread()
+{
+    stemCompletionQueued.store (false, std::memory_order_release);
+
+    const auto stemState = stemJob.getState();
+    if (stemState != StemJobState::completed
+        && stemState != StemJobState::failed
+        && stemState != StemJobState::cancelled)
+        return;
+
+    bool loadStateChanged = false;
+
+    if (stemState == StemJobState::completed)
+    {
+        const int sourceSampleId = stemJob.getSourceSampleId();
+        auto stemResult = stemJob.consumeResult();
+        if (! stemResult.stemFiles.empty())
+        {
+            auto* pending = new PendingStemImport();
+            pending->roles = std::move (stemResult.stemRoles);
+            pending->parentSourceSampleId = sourceSampleId;
+            auto* old = pendingStemImport.exchange (pending, std::memory_order_acq_rel);
+            delete old;
+
+            loadFilesAsync (stemResult.stemFiles, true);
+            setUiStatusMessage ("Stems imported", false);
+            loadStateChanged = true;
+        }
+    }
+    else if (stemState == StemJobState::cancelled)
+    {
+        (void) stemJob.consumeResult();
+        setUiStatusMessage ("Stem separation cancelled", true);
+    }
+    else if (stemState == StemJobState::failed)
+    {
+        auto stemResult = stemJob.consumeResult();
+        setUiStatusMessage (stemResult.errorMessage.isNotEmpty()
+                                ? stemResult.errorMessage
+                                : juce::String ("Stem separation failed"),
+                            true);
+    }
+
+    uiSnapshotDirty.store (true, std::memory_order_release);
+
+    if (loadStateChanged)
+        updateHostDisplay (ChangeDetails().withNonParameterStateChanged (true));
 }
 
 void IntersectProcessor::setPendingStateFile (const juce::File& file)
@@ -2938,45 +2993,6 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         }
     }
 
-    // Poll stem separation job for completion
-    {
-        const auto stemState = stemJob.getState();
-        if (stemState == StemJobState::completed)
-        {
-            const int sourceSampleId = stemJob.getSourceSampleId();
-            auto stemResult = stemJob.consumeResult();
-            if (! stemResult.stemFiles.empty())
-            {
-                // Store pending stem metadata for application after load completes
-                auto* pending = new PendingStemImport();
-                pending->roles = std::move (stemResult.stemRoles);
-                pending->parentSourceSampleId = sourceSampleId;
-                auto* old = pendingStemImport.exchange (pending, std::memory_order_acq_rel);
-                delete old;
-
-                loadFilesAsync (stemResult.stemFiles, true);
-                setUiStatusMessage ("Stems imported", false);
-            }
-            loadStateChanged = true;
-            uiSnapshotDirty.store (true, std::memory_order_release);
-        }
-        else if (stemState == StemJobState::cancelled)
-        {
-            (void) stemJob.consumeResult();
-            setUiStatusMessage ("Stem separation cancelled", true);
-            uiSnapshotDirty.store (true, std::memory_order_release);
-        }
-        else if (stemState == StemJobState::failed)
-        {
-            auto stemResult = stemJob.consumeResult();
-            setUiStatusMessage (stemResult.errorMessage.isNotEmpty()
-                                    ? stemResult.errorMessage
-                                    : juce::String ("Stem separation failed"),
-                                true);
-            uiSnapshotDirty.store (true, std::memory_order_release);
-        }
-    }
-
     if (loadStateChanged)
         updateHostDisplay (ChangeDetails().withNonParameterStateChanged (true));
 
@@ -3012,7 +3028,16 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             gestureSnapshotCaptured = false;
     }
 
-    if (stemJob.getState() != StemJobState::idle
+    const auto stemState = stemJob.getState();
+    if ((stemState == StemJobState::completed
+         || stemState == StemJobState::failed
+         || stemState == StemJobState::cancelled)
+        && ! stemCompletionQueued.exchange (true, std::memory_order_acq_rel))
+    {
+        triggerAsyncUpdate();
+    }
+
+    if (stemState != StemJobState::idle
         || stemModelDownloadJob.getState() == StemModelDownloadState::downloading)
         uiSnapshotDirty.store (true, std::memory_order_release);
 

@@ -18,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Restoring multi-sample projects and undoing back to an empty session no longer leaves stale sample data loaded
 - Release builds now bundle the ONNX Runtime files needed for stem separation, so copied VST3 and standalone builds can load outside the local build tree
 - Stem export now opens reliably from the sample lane, warning banners clear automatically, and Windows stem inference uses a more stable runtime configuration
+- Stem separation no longer crashes hosted VST3 builds in Ableton Live and REAPER when the export finishes and imports the new stem files
 
 ## [0.12.4] - 2026-04-12
 

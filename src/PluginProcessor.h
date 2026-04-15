@@ -17,7 +17,8 @@
 #include "params/ParamIds.h"
 #include "params/ParamLayout.h"
 
-class IntersectProcessor : public juce::AudioProcessor
+class IntersectProcessor : public juce::AudioProcessor,
+                           private juce::AsyncUpdater
 {
 public:
     IntersectProcessor();
@@ -416,6 +417,8 @@ private:
     int findSessionSampleIndexById (int sampleId) const;
     int generateSessionSampleId();
     void publishUiSliceSnapshot();
+    void handleAsyncUpdate() override;
+    void handleStemJobCompletionOnMessageThread();
     void setMissingFileInfo (const RtText<512>& fileName, const RtText<4096>& filePath);
     void clearMissingFileInfo();
     const MissingFileInfo& getMissingFileInfo() const;
@@ -487,6 +490,7 @@ private:
     StemComputeDevice stemComputeDevice = StemComputeDevice::cpu;
     StemModelDownloadJob stemModelDownloadJob;
     StemSeparationJob stemJob;
+    std::atomic<bool> stemCompletionQueued { false };
 
     // Stem metadata keyed by session sample ID.
     // Stored separately because DecodedSample is immutable (const shared_ptr).
