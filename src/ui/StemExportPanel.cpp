@@ -10,25 +10,27 @@ StemExportPanel::StemExportPanel (IntersectProcessor& p, int sampleId)
 
     modelCell.label = "MODEL";
     deviceCell.label = "DEVICE";
+    modeCell.label = "MODE";
     outputCell.label = "OUTPUT";
 
     deviceCell.displayValue = stemComputeDeviceToString (selectedDevice);
+    modeCell.displayValue = stemExportModeToString (selectedExportMode);
     outputCell.displayValue = "Beside sample";
     updateSelectedModelDisplay();
     rebuildStemToggles();
 
-    addAndMakeVisible (separateBtn);
+    addAndMakeVisible (startBtn);
     addAndMakeVisible (browseBtn);
     addAndMakeVisible (cancelBtn);
 
-    for (auto* btn : { &separateBtn, &browseBtn, &cancelBtn })
+    for (auto* btn : { &startBtn, &browseBtn, &cancelBtn })
     {
         btn->setColour (juce::TextButton::buttonColourId, getTheme().surface4);
         btn->setColour (juce::TextButton::textColourOnId, getTheme().text2);
         btn->setColour (juce::TextButton::textColourOffId, getTheme().text2);
     }
 
-    separateBtn.onClick = [this]
+    startBtn.onClick = [this]
     {
         if (installedModels.empty())
             return;
@@ -38,9 +40,11 @@ StemExportPanel::StemExportPanel (IntersectProcessor& p, int sampleId)
         processor.setStemComputeDevice (selectedDevice);
 
         if (useCustomFolder && customOutputFolder.isDirectory())
-            processor.startStemSeparation (targetSampleId, chosenModel, selectionMask, customOutputFolder);
+            processor.startStemSeparation (targetSampleId, chosenModel, selectionMask,
+                                           selectedExportMode, customOutputFolder);
         else
-            processor.startStemSeparation (targetSampleId, chosenModel, selectionMask);
+            processor.startStemSeparation (targetSampleId, chosenModel, selectionMask,
+                                           selectedExportMode);
 
         close();
     };
@@ -65,7 +69,7 @@ StemExportPanel::StemExportPanel (IntersectProcessor& p, int sampleId)
     };
 
     cancelBtn.onClick = [this] { close(); };
-    updateSeparateButtonState();
+    updateStartButtonState();
 }
 
 StemExportPanel::~StemExportPanel() = default;
@@ -104,6 +108,7 @@ void StemExportPanel::paint (juce::Graphics& g)
 
     drawCell (modelCell);
     drawCell (deviceCell);
+    drawCell (modeCell);
     drawCell (outputCell);
 
     // Stem toggles
@@ -154,11 +159,14 @@ void StemExportPanel::resized()
     deviceCell.bounds = { x, pad, 48, btnH };
     x += 48 + gap;
 
-    int separateW = 76;
+    modeCell.bounds = { x, pad, 76, btnH };
+    x += 76 + gap;
+
+    int startW = 64;
     int browseW = 24;
     int rightEdge = cancelBtn.getX() - gap;
-    int outputW = rightEdge - separateW - gap - browseW - gap - x;
-    outputW = juce::jmax (60, outputW);
+    int outputW = rightEdge - startW - gap - browseW - gap - x;
+    outputW = juce::jmax (90, outputW);
 
     outputCell.bounds = { x, pad, outputW, btnH };
     x += outputW + gap;
@@ -166,7 +174,7 @@ void StemExportPanel::resized()
     browseBtn.setBounds (x, pad, browseW, btnH);
     x += browseW + gap;
 
-    separateBtn.setBounds (x, pad, separateW, btnH);
+    startBtn.setBounds (x, pad, startW, btnH);
 
     // Layout stem toggle cells — align with paint() STEMS label (top 33 + label 10 + gap 3)
     auto toggleArea = getLocalBounds().withTrimmedTop (46).reduced (pad, 0);
@@ -193,7 +201,8 @@ int StemExportPanel::hitTestCell (juce::Point<int> pos) const
 {
     if (modelCell.bounds.contains (pos))  return 0;
     if (deviceCell.bounds.contains (pos)) return 1;
-    if (outputCell.bounds.contains (pos)) return 2;
+    if (modeCell.bounds.contains (pos))   return 2;
+    if (outputCell.bounds.contains (pos)) return 3;
     return -1;
 }
 
@@ -225,6 +234,14 @@ void StemExportPanel::mouseDown (const juce::MouseEvent& e)
     }
     else if (idx == 2)
     {
+        selectedExportMode = (selectedExportMode == StemExportMode::combine)
+                                 ? StemExportMode::separate
+                                 : StemExportMode::combine;
+        modeCell.displayValue = stemExportModeToString (selectedExportMode);
+        repaint();
+    }
+    else if (idx == 3)
+    {
         if (useCustomFolder)
         {
             useCustomFolder = false;
@@ -238,7 +255,7 @@ void StemExportPanel::mouseDown (const juce::MouseEvent& e)
     if (stemIdx >= 0)
     {
         stemToggles[(size_t) stemIdx].selected = ! stemToggles[(size_t) stemIdx].selected;
-        updateSeparateButtonState();
+        updateStartButtonState();
         repaint();
     }
 }
@@ -264,7 +281,7 @@ void StemExportPanel::rebuildStemToggles()
         }
     }
 
-    updateSeparateButtonState();
+    updateStartButtonState();
     resized();
     repaint();
 }
@@ -277,9 +294,9 @@ void StemExportPanel::updateSelectedModelDisplay()
         modelCell.displayValue = "No models";
 }
 
-void StemExportPanel::updateSeparateButtonState()
+void StemExportPanel::updateStartButtonState()
 {
-    separateBtn.setEnabled (! installedModels.empty() && getStemSelectionMask() != 0);
+    startBtn.setEnabled (! installedModels.empty() && getStemSelectionMask() != 0);
 }
 
 StemSelectionMask StemExportPanel::getStemSelectionMask() const

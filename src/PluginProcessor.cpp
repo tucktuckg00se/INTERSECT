@@ -441,6 +441,7 @@ void IntersectProcessor::setUiStatusMessage (const RtText<256>& text,
     status.text = text;
     status.isWarning = isWarning;
     status.source = source;
+    status.shownAtMs = juce::Time::currentTimeMillis();
     uiStatusMessageIndex.store (writeIndex, std::memory_order_release);
 }
 
@@ -942,6 +943,7 @@ void IntersectProcessor::cancelStemSeparation()
 void IntersectProcessor::startStemSeparation (int sampleId,
                                               StemModelId modelId,
                                               StemSelectionMask stemSelectionMask,
+                                              StemExportMode exportMode,
                                               const juce::File& outputFolder)
 {
     if (stemJob.getState() != StemJobState::idle)
@@ -1020,7 +1022,8 @@ void IntersectProcessor::startStemSeparation (int sampleId,
     auto jobDir = outputRoot.getChildFile (sourceName + "_" + stemModelIdToString (modelId) + "_" + timestamp);
 
     stemJob.start (regionAudio, sampleSnap->decodedSampleRate, sampleId,
-                   sourceName, modelId, catalogEntry, stemSelectionMask, stemComputeDevice, modelFile, jobDir);
+                   sourceName, modelId, catalogEntry, stemSelectionMask, exportMode,
+                   stemComputeDevice, modelFile, jobDir);
     uiSnapshotDirty.store (true, std::memory_order_release);
 }
 
@@ -2920,6 +2923,17 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         else if (downloadState == StemModelDownloadState::cancelled)
         {
             setUiStatusMessage (stemModelDownloadJob.consumeResultMessage(), true);
+            uiSnapshotDirty.store (true, std::memory_order_release);
+        }
+    }
+
+    {
+        const auto& status = getUiStatusMessage();
+        if (status.isWarning
+            && status.shownAtMs > 0
+            && juce::Time::currentTimeMillis() - status.shownAtMs >= 5000)
+        {
+            clearUiStatusMessage();
             uiSnapshotDirty.store (true, std::memory_order_release);
         }
     }

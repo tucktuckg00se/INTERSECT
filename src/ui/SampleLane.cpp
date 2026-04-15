@@ -74,11 +74,13 @@ std::vector<SampleLane::VisibleSample> SampleLane::buildVisibleSamples() const
         visible.selected = sample.sampleId == selectedId;
         visible.colour = getTheme().slicePalette[(15 - (i % 16) + 16) % 16];
         visible.label = sample.fileName.toString();
+        const bool jobRunning = isStemJobRunningForSample (ui, sample.sampleId);
         const int blockW = x2 - x1;
         const int buttonH = juce::jmax (12, getHeight() - 6);
         const int buttonY = (getHeight() - buttonH) / 2;
         const int deleteW = juce::jmin (16, juce::jmax (12, blockW / 6));
-        const int stemsW = juce::jmin (44, juce::jmax (18, blockW / 3));
+        const int cancelW = juce::jmin (54, juce::jmax (34, blockW / 2));
+        const int stemsW = jobRunning ? cancelW : juce::jmin (44, juce::jmax (18, blockW / 3));
         int right = x2 - 3;
         visible.deleteBounds = { right - deleteW, buttonY, deleteW, buttonH };
         right = visible.deleteBounds.getX() - 2;
@@ -188,11 +190,20 @@ void SampleLane::paint (juce::Graphics& g)
     for (const auto& sample : visible)
     {
         const bool jobRunning = isStemJobRunningForSample (ui, sample.sampleId);
-        const bool compactButton = sample.stemsBounds.getWidth() < 34;
-        drawButton (sample.stemsBounds,
-                    compactButton ? (jobRunning ? "C" : "S") : (jobRunning ? "CANCEL" : "STEMS"),
-                    (jobRunning ? getTheme().accent : getTheme().surface4).withAlpha (0.92f),
-                    getTheme().text2.withAlpha (0.92f));
+        if (jobRunning)
+        {
+            drawButton (sample.stemsBounds,
+                        "CANCEL",
+                        juce::Colours::black.withAlpha (0.18f),
+                        getTheme().text2.withAlpha (0.86f));
+        }
+        else
+        {
+            drawButton (sample.stemsBounds,
+                        sample.stemsBounds.getWidth() < 24 ? "S" : "STEMS",
+                        getTheme().surface4.withAlpha (0.92f),
+                        getTheme().text2.withAlpha (0.92f));
+        }
         drawButton (sample.deleteBounds,
                     "X",
                     juce::Colours::black.withAlpha (0.18f),
@@ -238,14 +249,14 @@ void SampleLane::paint (juce::Graphics& g)
 
 void SampleLane::mouseDown (const juce::MouseEvent& e)
 {
-    if (onInteraction != nullptr)
-        onInteraction();
-
     const auto visible = buildVisibleSamples();
     const auto pos = e.getPosition();
     const int hitId = hitTestSample (pos);
     const auto it = std::find_if (visible.begin(), visible.end(),
                                   [hitId] (const VisibleSample& sample) { return sample.sampleId == hitId; });
+
+    if (onInteraction != nullptr)
+        onInteraction();
 
     if (it != visible.end() && it->deleteBounds.contains (pos))
     {
@@ -271,7 +282,7 @@ void SampleLane::mouseDown (const juce::MouseEvent& e)
         }
         else
         {
-            if (stemExportPanel != nullptr)
+            if (stemExportPanel != nullptr && stemExportPanel->getTargetSampleId() == hitId)
                 dismissStemExportPanel();
             else
                 showStemExportPanel (hitId);

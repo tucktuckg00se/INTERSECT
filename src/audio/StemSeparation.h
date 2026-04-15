@@ -26,6 +26,12 @@ enum class StemComputeDevice
     gpu,
 };
 
+enum class StemExportMode
+{
+    combine = 0,
+    separate,
+};
+
 enum class StemJobState
 {
     idle = 0,
@@ -101,6 +107,8 @@ bool stemModelIdFromString (const juce::String& text, StemModelId& modelId);
 juce::String stemModelMenuLabel (StemModelId modelId);
 juce::String stemComputeDeviceToString (StemComputeDevice device);
 StemComputeDevice stemComputeDeviceFromString (const juce::String& text);
+juce::String stemExportModeToString (StemExportMode mode);
+StemExportMode stemExportModeFromString (const juce::String& text);
 const StemModelCatalogEntry* findStemModelCatalogEntry (StemModelId modelId);
 const std::array<StemModelCatalogEntry, 1>& getStemModelCatalog();
 juce::String getStemModelManifestFileName();

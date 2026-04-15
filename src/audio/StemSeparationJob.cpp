@@ -341,6 +341,7 @@ bool StemSeparationJob::start (const juce::AudioBuffer<float>& sourceAudio,
                                StemModelId modelId,
                                const StemModelCatalogEntry& catalogEntry,
                                StemSelectionMask stemSelectionMask,
+                               StemExportMode exportMode,
                                StemComputeDevice computeDevice,
                                const juce::File& modelPath,
                                const juce::File& outputDir)
@@ -355,6 +356,7 @@ bool StemSeparationJob::start (const juce::AudioBuffer<float>& sourceAudio,
     jobModelId = modelId;
     jobCatalogEntry = catalogEntry;
     jobStemSelectionMask = stemSelectionMask;
+    jobExportMode = exportMode;
     jobComputeDevice = computeDevice;
     jobModelPath = modelPath;
     jobOutputDir = outputDir;
@@ -444,8 +446,16 @@ void StemSeparationJob::run()
         state.store (StemJobState::separating, std::memory_order_release);
 
         Ort::SessionOptions sessionOptions;
+       #if JUCE_WINDOWS
+        sessionOptions.SetIntraOpNumThreads (juce::jlimit (1, 4, juce::SystemStats::getNumCpus()));
+        sessionOptions.SetExecutionMode (ExecutionMode::ORT_SEQUENTIAL);
+        sessionOptions.DisableMemPattern();
+        sessionOptions.DisableCpuMemArena();
+        sessionOptions.SetGraphOptimizationLevel (GraphOptimizationLevel::ORT_ENABLE_BASIC);
+       #else
         sessionOptions.SetIntraOpNumThreads (juce::jmax (1, juce::SystemStats::getNumCpus() - 1));
         sessionOptions.SetGraphOptimizationLevel (GraphOptimizationLevel::ORT_ENABLE_ALL);
+       #endif
 
         juce::String providerError;
         if (! configureExecutionProvider (sessionOptions, jobComputeDevice, providerError))
@@ -483,46 +493,87 @@ void StemSeparationJob::run()
         if (countSelectedStemOutputs (jobStemSelectionMask, (int) roles.size()) <= 0)
             throw std::runtime_error ("Select at least one stem");
 
-        juce::AudioBuffer<float> combinedStem (2, inferenceAudio.getNumSamples());
-        combinedStem.clear();
-
-        for (size_t i = 0; i < stemBuffers.size(); ++i)
-        {
-            if (threadShouldExit() || shouldCancel.load (std::memory_order_acquire))
-            {
-                state.store (StemJobState::cancelled, std::memory_order_release);
-                return;
-            }
-
-            if (! isStemOutputSelected (jobStemSelectionMask, (int) i))
-                continue;
-
-            for (int ch = 0; ch < 2; ++ch)
-                combinedStem.addFrom (ch, 0, stemBuffers[i], ch, 0, combinedStem.getNumSamples());
-
-            progress.store (0.7f + (0.15f * (float) (i + 1) / (float) stemBuffers.size()),
-                            std::memory_order_release);
-        }
-
         state.store (StemJobState::writing, std::memory_order_release);
 
-        auto resampledCombinedStem = resampleStereoBuffer (combinedStem, modelRate, jobSampleRate);
-        const auto stemName = buildCombinedStemName (roles, jobStemSelectionMask);
-        auto stemFile = jobOutputDir.getChildFile (jobSourceName + "_" + stemName + ".wav");
-
         juce::String writeError;
-        if (! writeWaveFile (stemFile, resampledCombinedStem, jobSampleRate, writeError))
-            throw std::runtime_error (writeError.toStdString());
+        if (jobExportMode == StemExportMode::separate)
+        {
+            int selectedStemCount = 0;
+            for (size_t i = 0; i < stemBuffers.size(); ++i)
+                if (isStemOutputSelected (jobStemSelectionMask, (int) i))
+                    ++selectedStemCount;
 
-        localResult.stemFiles.push_back (stemFile);
-        localResult.stemRoles.push_back (StemRole::unknown);
-        progress.store (1.0f, std::memory_order_release);
+            int writtenStemCount = 0;
+            for (size_t i = 0; i < stemBuffers.size(); ++i)
+            {
+                if (threadShouldExit() || shouldCancel.load (std::memory_order_acquire))
+                {
+                    state.store (StemJobState::cancelled, std::memory_order_release);
+                    return;
+                }
+
+                if (! isStemOutputSelected (jobStemSelectionMask, (int) i))
+                    continue;
+
+                auto resampledStem = resampleStereoBuffer (stemBuffers[i], modelRate, jobSampleRate);
+                const auto roleName = sanitisePathComponent (stemRoleToString (roles[i]));
+                auto stemFile = jobOutputDir.getChildFile (jobSourceName + "_" + roleName + ".wav");
+
+                if (! writeWaveFile (stemFile, resampledStem, jobSampleRate, writeError))
+                    throw std::runtime_error (writeError.toStdString());
+
+                localResult.stemFiles.push_back (stemFile);
+                localResult.stemRoles.push_back (roles[i]);
+                ++writtenStemCount;
+                progress.store (0.7f + (0.3f * (float) writtenStemCount / (float) juce::jmax (1, selectedStemCount)),
+                                std::memory_order_release);
+            }
+        }
+        else
+        {
+            juce::AudioBuffer<float> combinedStem (2, inferenceAudio.getNumSamples());
+            combinedStem.clear();
+
+            for (size_t i = 0; i < stemBuffers.size(); ++i)
+            {
+                if (threadShouldExit() || shouldCancel.load (std::memory_order_acquire))
+                {
+                    state.store (StemJobState::cancelled, std::memory_order_release);
+                    return;
+                }
+
+                if (! isStemOutputSelected (jobStemSelectionMask, (int) i))
+                    continue;
+
+                for (int ch = 0; ch < 2; ++ch)
+                    combinedStem.addFrom (ch, 0, stemBuffers[i], ch, 0, combinedStem.getNumSamples());
+
+                progress.store (0.7f + (0.15f * (float) (i + 1) / (float) stemBuffers.size()),
+                                std::memory_order_release);
+            }
+
+            auto resampledCombinedStem = resampleStereoBuffer (combinedStem, modelRate, jobSampleRate);
+            const auto stemName = buildCombinedStemName (roles, jobStemSelectionMask);
+            auto stemFile = jobOutputDir.getChildFile (jobSourceName + "_" + stemName + ".wav");
+
+            if (! writeWaveFile (stemFile, resampledCombinedStem, jobSampleRate, writeError))
+                throw std::runtime_error (writeError.toStdString());
+
+            localResult.stemFiles.push_back (stemFile);
+            localResult.stemRoles.push_back (StemRole::unknown);
+            progress.store (1.0f, std::memory_order_release);
+        }
 
         finalState = StemJobState::completed;
     }
     catch (const std::exception& e)
     {
         localResult.errorMessage = juce::String (e.what());
+        finalState = StemJobState::failed;
+    }
+    catch (...)
+    {
+        localResult.errorMessage = "Stem separation failed unexpectedly";
         finalState = StemJobState::failed;
     }
 

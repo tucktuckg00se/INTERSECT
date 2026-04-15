@@ -18,6 +18,7 @@ public:
                 StemModelId modelId,
                 const StemModelCatalogEntry& catalogEntry,
                 StemSelectionMask stemSelectionMask,
+                StemExportMode exportMode,
                 StemComputeDevice computeDevice,
                 const juce::File& modelPath,
                 const juce::File& outputDir);
@@ -50,6 +51,7 @@ private:
     StemModelId jobModelId = StemModelId::bsRoformerSw6stem;
     StemModelCatalogEntry jobCatalogEntry;
     StemSelectionMask jobStemSelectionMask = 0;
+    StemExportMode jobExportMode = StemExportMode::combine;
     StemComputeDevice jobComputeDevice = StemComputeDevice::cpu;
     juce::File jobModelPath;
     juce::File jobOutputDir;

@@ -203,6 +203,7 @@ public:
     void startStemSeparation (int sampleId,
                               StemModelId modelId,
                               StemSelectionMask stemSelectionMask,
+                              StemExportMode exportMode,
                               const juce::File& outputFolder = {});
     void cancelStemSeparation();
     void startStemModelDownload (const std::vector<StemModelId>& modelIds);
@@ -377,6 +378,7 @@ private:
         RtText<256> text;
         bool isWarning = false;
         Source source = Source::none;
+        int64_t shownAtMs = 0;
     };
 
     struct PendingSliceTimelineRemap

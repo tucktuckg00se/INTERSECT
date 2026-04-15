@@ -138,6 +138,25 @@ StemComputeDevice stemComputeDeviceFromString (const juce::String& text)
     return StemComputeDevice::cpu;
 }
 
+juce::String stemExportModeToString (StemExportMode mode)
+{
+    switch (mode)
+    {
+        case StemExportMode::combine:  return "Combine";
+        case StemExportMode::separate: return "Separate";
+    }
+
+    return "Combine";
+}
+
+StemExportMode stemExportModeFromString (const juce::String& text)
+{
+    if (text.trim().equalsIgnoreCase ("separate"))
+        return StemExportMode::separate;
+
+    return StemExportMode::combine;
+}
+
 const StemModelCatalogEntry* findStemModelCatalogEntry (StemModelId modelId)
 {
     for (const auto& entry : kStemModelCatalog)

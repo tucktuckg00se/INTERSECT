@@ -12,6 +12,7 @@ class StemExportPanel : public juce::Component
 public:
     StemExportPanel (IntersectProcessor& p, int sampleId);
     ~StemExportPanel() override;
+    int getTargetSampleId() const noexcept { return targetSampleId; }
 
     void paint (juce::Graphics& g) override;
     void resized() override;
@@ -37,7 +38,7 @@ private:
     int hitTestStemToggle (juce::Point<int> pos) const;
     void rebuildStemToggles();
     void updateSelectedModelDisplay();
-    void updateSeparateButtonState();
+    void updateStartButtonState();
     StemSelectionMask getStemSelectionMask() const;
 
     IntersectProcessor& processor;
@@ -45,6 +46,7 @@ private:
 
     OptionCell modelCell;
     OptionCell deviceCell;
+    OptionCell modeCell;
     OptionCell outputCell;
 
     std::vector<StemModelId> installedModels;
@@ -52,10 +54,11 @@ private:
     std::vector<StemToggle> stemToggles;
     int selectedModelIndex = 0;
     StemComputeDevice selectedDevice = StemComputeDevice::cpu;
+    StemExportMode selectedExportMode = StemExportMode::combine;
     juce::File customOutputFolder;
     bool useCustomFolder = false;
 
-    juce::TextButton separateBtn { "SEPARATE" };
+    juce::TextButton startBtn    { "START" };
     juce::TextButton browseBtn   { "..." };
     juce::TextButton cancelBtn   { "CANCEL" };
 
