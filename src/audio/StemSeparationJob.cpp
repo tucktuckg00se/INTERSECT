@@ -2,9 +2,12 @@
 
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <cmath>
+#include <mutex>
 
 #if INTERSECT_HAS_ONNX_RUNTIME
+#define ORT_API_MANUAL_INIT
  #include <onnxruntime_cxx_api.h>
+#undef ORT_API_MANUAL_INIT
 #endif
 
 namespace
@@ -92,8 +95,18 @@ juce::String sanitisePathComponent (juce::String text)
 
 #if INTERSECT_HAS_ONNX_RUNTIME
 
+void ensureOrtApiInitialized()
+{
+    static std::once_flag initOnce;
+    std::call_once (initOnce, []
+    {
+        Ort::InitApi();
+    });
+}
+
 Ort::Env& getOrtEnv()
 {
+    ensureOrtApiInitialized();
     static Ort::Env env (ORT_LOGGING_LEVEL_WARNING, "INTERSECT");
     return env;
 }
@@ -432,6 +445,8 @@ void StemSeparationJob::run()
 
     try
     {
+        ensureOrtApiInitialized();
+
         const double modelRate = jobCatalogEntry.sampleRate;
         juce::AudioBuffer<float> inferenceAudio = resampleStereoBuffer (audioBuffer, jobSampleRate, modelRate);
         if (inferenceAudio.getNumChannels() < 2)
