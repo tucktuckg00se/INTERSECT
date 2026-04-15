@@ -32,20 +32,37 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(INTERSECT_ORT_VERSION "1.23.2" CACHE STRING "ONNX Runtime version to download")
 set(INTERSECT_ORT_ROOT "" CACHE PATH "Path to a prebuilt ONNX Runtime package (skips auto-download)")
 
+# --- GPU execution provider options ---
+option(INTERSECT_GPU_DIRECTML "Enable DirectML execution provider (Windows)" OFF)
+option(INTERSECT_GPU_COREML   "Enable CoreML execution provider (macOS)"   OFF)
+option(INTERSECT_GPU_CUDA     "Enable CUDA execution provider (Linux)"     OFF)
+option(INTERSECT_GPU_ROCM     "Enable ROCm execution provider (Linux)"     OFF)
+
+if(INTERSECT_GPU_ROCM AND INTERSECT_ORT_ROOT STREQUAL "")
+    message(FATAL_ERROR
+        "INTERSECT_GPU_ROCM requires a custom INTERSECT_ORT_ROOT. "
+        "ONNX Runtime ${INTERSECT_ORT_VERSION} does not provide a prebuilt linux-x64 ROCm package.")
+endif()
+
 # --- Auto-download ONNX Runtime if no custom root is set ---
 if(INTERSECT_ORT_ROOT STREQUAL "")
     include(FetchContent)
     if(WIN32)
-        set(_ort_archive "onnxruntime-win-x64-${INTERSECT_ORT_VERSION}.zip")
-        set(_ort_dir "onnxruntime-win-x64-${INTERSECT_ORT_VERSION}")
+        if(INTERSECT_GPU_DIRECTML)
+            set(_ort_archive "Microsoft.ML.OnnxRuntime.DirectML.${INTERSECT_ORT_VERSION}.zip")
+            set(_ort_url "https://github.com/microsoft/onnxruntime/releases/download/v${INTERSECT_ORT_VERSION}/onnxruntime-directml-${INTERSECT_ORT_VERSION}-win-x64.zip")
+        else()
+            set(_ort_url "https://github.com/microsoft/onnxruntime/releases/download/v${INTERSECT_ORT_VERSION}/onnxruntime-win-x64-${INTERSECT_ORT_VERSION}.zip")
+        endif()
     elseif(APPLE)
-        set(_ort_archive "onnxruntime-osx-universal2-${INTERSECT_ORT_VERSION}.tgz")
-        set(_ort_dir "onnxruntime-osx-universal2-${INTERSECT_ORT_VERSION}")
+        set(_ort_url "https://github.com/microsoft/onnxruntime/releases/download/v${INTERSECT_ORT_VERSION}/onnxruntime-osx-universal2-${INTERSECT_ORT_VERSION}.tgz")
     else()
-        set(_ort_archive "onnxruntime-linux-x64-${INTERSECT_ORT_VERSION}.tgz")
-        set(_ort_dir "onnxruntime-linux-x64-${INTERSECT_ORT_VERSION}")
+        if(INTERSECT_GPU_CUDA)
+            set(_ort_url "https://github.com/microsoft/onnxruntime/releases/download/v${INTERSECT_ORT_VERSION}/onnxruntime-linux-x64-gpu-${INTERSECT_ORT_VERSION}.tgz")
+        else()
+            set(_ort_url "https://github.com/microsoft/onnxruntime/releases/download/v${INTERSECT_ORT_VERSION}/onnxruntime-linux-x64-${INTERSECT_ORT_VERSION}.tgz")
+        endif()
     endif()
-    set(_ort_url "https://github.com/microsoft/onnxruntime/releases/download/v${INTERSECT_ORT_VERSION}/${_ort_archive}")
 
     FetchContent_Declare(onnxruntime
         URL "${_ort_url}"
@@ -171,6 +188,10 @@ target_compile_definitions(Intersect PUBLIC
     JUCE_DISPLAY_SPLASH_SCREEN=0
     JUCE_USE_CUSTOM_PLUGIN_STANDALONE_APP=1
     INTERSECT_HAS_ONNX_RUNTIME=$<BOOL:${INTERSECT_HAS_ONNX_RUNTIME}>
+    INTERSECT_HAS_DIRECTML=$<BOOL:${INTERSECT_GPU_DIRECTML}>
+    INTERSECT_HAS_COREML=$<BOOL:${INTERSECT_GPU_COREML}>
+    INTERSECT_HAS_CUDA=$<BOOL:${INTERSECT_GPU_CUDA}>
+    INTERSECT_HAS_ROCM=$<BOOL:${INTERSECT_GPU_ROCM}>
 )
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
@@ -202,11 +223,18 @@ endif()
 if(INTERSECT_HAS_ONNX_RUNTIME)
     if(WIN32)
         target_link_libraries(Intersect PRIVATE "${INTERSECT_ORT_ROOT}/lib/onnxruntime.lib")
+        if(INTERSECT_GPU_DIRECTML AND EXISTS "${INTERSECT_ORT_ROOT}/lib/DirectML.lib")
+            target_link_libraries(Intersect PRIVATE "${INTERSECT_ORT_ROOT}/lib/DirectML.lib")
+        endif()
     elseif(APPLE)
         target_link_libraries(Intersect PRIVATE "${INTERSECT_ORT_ROOT}/lib/libonnxruntime.dylib")
-        set_target_properties(Intersect PROPERTIES BUILD_RPATH "${INTERSECT_ORT_ROOT}/lib")
+        set_target_properties(Intersect PROPERTIES
+            BUILD_RPATH "@loader_path;${INTERSECT_ORT_ROOT}/lib"
+            INSTALL_RPATH "@loader_path")
     else()
         target_link_libraries(Intersect PRIVATE "${INTERSECT_ORT_ROOT}/lib/libonnxruntime.so")
-        set_target_properties(Intersect PROPERTIES BUILD_RPATH "${INTERSECT_ORT_ROOT}/lib")
+        set_target_properties(Intersect PROPERTIES
+            BUILD_RPATH "\$ORIGIN;${INTERSECT_ORT_ROOT}/lib"
+            INSTALL_RPATH "\$ORIGIN")
     endif()
 endif()

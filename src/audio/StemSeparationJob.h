@@ -4,6 +4,8 @@
 #include <juce_core/juce_core.h>
 #include <atomic>
 
+juce::String getStemGpuAvailabilityError();
+
 class StemSeparationJob : private juce::Thread
 {
 public:

@@ -7,6 +7,14 @@
  #include <onnxruntime_cxx_api.h>
 #endif
 
+#if INTERSECT_HAS_DIRECTML
+ #include <onnxruntime/core/providers/dml/dml_provider_factory.h>
+#endif
+
+#if INTERSECT_HAS_COREML
+ #include <onnxruntime/core/providers/coreml/coreml_provider_factory.h>
+#endif
+
 namespace
 {
 
@@ -98,12 +106,71 @@ Ort::Env& getOrtEnv()
     return env;
 }
 
-bool configureExecutionProvider (Ort::SessionOptions&, StemComputeDevice requestedDevice, juce::String& errorMessage)
+bool configureExecutionProvider (Ort::SessionOptions& options, StemComputeDevice requestedDevice, juce::String& errorMessage)
 {
     if (requestedDevice == StemComputeDevice::cpu)
         return true;
 
-    errorMessage = "GPU inference is not available in this build";
+    juce::ignoreUnused (options);
+
+   #if INTERSECT_HAS_COREML
+    try
+    {
+        Ort::ThrowOnError (OrtSessionOptionsAppendExecutionProvider_CoreML (options, 0));
+        return true;
+    }
+    catch (const std::exception& e)
+    {
+        errorMessage = juce::String ("CoreML unavailable: ") + e.what();
+    }
+   #endif
+
+   #if INTERSECT_HAS_DIRECTML
+    try
+    {
+        // DirectML requires sequential execution and mem-patterns disabled.
+        options.DisableMemPattern();
+        options.SetExecutionMode (ExecutionMode::ORT_SEQUENTIAL);
+        Ort::ThrowOnError (OrtSessionOptionsAppendExecutionProvider_DML (options, 0));
+        return true;
+    }
+    catch (const std::exception& e)
+    {
+        errorMessage = juce::String ("DirectML unavailable: ") + e.what();
+    }
+   #endif
+
+   #if INTERSECT_HAS_CUDA
+    try
+    {
+        OrtCUDAProviderOptions cudaOptions {};
+        cudaOptions.device_id = 0;
+        options.AppendExecutionProvider_CUDA (cudaOptions);
+        return true;
+    }
+    catch (const std::exception& e)
+    {
+        errorMessage = juce::String ("CUDA unavailable: ") + e.what();
+    }
+   #endif
+
+   #if INTERSECT_HAS_ROCM
+    try
+    {
+        OrtROCMProviderOptions rocmOptions {};
+        rocmOptions.device_id = 0;
+        options.AppendExecutionProvider_ROCM (rocmOptions);
+        return true;
+    }
+    catch (const std::exception& e)
+    {
+        errorMessage = juce::String ("ROCm unavailable: ") + e.what();
+    }
+   #endif
+
+    if (errorMessage.isEmpty())
+        errorMessage = "GPU inference is not available in this build";
+
     return false;
 }
 
@@ -323,6 +390,31 @@ juce::String buildCombinedStemName (const std::vector<StemRole>& roles, StemSele
 
 } // namespace
 
+juce::String getStemGpuAvailabilityError()
+{
+    const auto providerName = getAvailableGpuProviderName();
+    const auto providerLabel = providerName.isNotEmpty() ? providerName : juce::String ("GPU");
+
+#if ! INTERSECT_HAS_ONNX_RUNTIME
+    return providerLabel + " export unavailable. ONNX Runtime is not bundled in this build.";
+#else
+    Ort::SessionOptions sessionOptions;
+    sessionOptions.SetIntraOpNumThreads (1);
+    sessionOptions.SetGraphOptimizationLevel (GraphOptimizationLevel::ORT_ENABLE_ALL);
+
+    juce::String errorMessage;
+    if (configureExecutionProvider (sessionOptions, StemComputeDevice::gpu, errorMessage))
+        return {};
+
+    if (errorMessage.isEmpty())
+        errorMessage = providerLabel + " is not available in this build.";
+
+    return providerLabel + " export unavailable. INTERSECT could not start the "
+         + providerLabel + " runtime on this system. Switch DEVICE to CPU or install the required "
+         + providerLabel + " runtime. Details: " + errorMessage;
+#endif
+}
+
 StemSeparationJob::StemSeparationJob()
     : juce::Thread ("StemSeparation")
 {
@@ -430,6 +522,7 @@ void StemSeparationJob::run()
 
     try
     {
+        juce::String fallbackWarning;
         const double modelRate = jobCatalogEntry.sampleRate;
         juce::AudioBuffer<float> inferenceAudio = resampleStereoBuffer (audioBuffer, jobSampleRate, modelRate);
         if (inferenceAudio.getNumChannels() < 2)
@@ -449,7 +542,13 @@ void StemSeparationJob::run()
 
         juce::String providerError;
         if (! configureExecutionProvider (sessionOptions, jobComputeDevice, providerError))
-            throw std::runtime_error (providerError.toStdString());
+        {
+            if (jobComputeDevice == StemComputeDevice::gpu)
+            {
+                fallbackWarning = "GPU unavailable, used CPU instead: " + providerError;
+                juce::Logger::writeToLog ("GPU provider failed, falling back to CPU: " + providerError);
+            }
+        }
 
        #if JUCE_WINDOWS
         const std::wstring modelPathStr = jobModelPath.getFullPathName().toWideCharPointer();
@@ -516,6 +615,7 @@ void StemSeparationJob::run()
 
         localResult.stemFiles.push_back (stemFile);
         localResult.stemRoles.push_back (StemRole::unknown);
+        localResult.warningMessage = fallbackWarning;
         progress.store (1.0f, std::memory_order_release);
 
         finalState = StemJobState::completed;

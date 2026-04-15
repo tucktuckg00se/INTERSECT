@@ -2,6 +2,18 @@
 #include "IntersectLookAndFeel.h"
 #include "../PluginProcessor.h"
 
+namespace
+{
+juce::String getStemDeviceDisplayValue (StemComputeDevice device)
+{
+    if (device != StemComputeDevice::gpu)
+        return stemComputeDeviceToString (device);
+
+    const auto providerName = getAvailableGpuProviderName();
+    return providerName.isNotEmpty() ? "GPU (" + providerName + ")" : "GPU";
+}
+}
+
 StemExportPanel::StemExportPanel (IntersectProcessor& p, int sampleId)
     : processor (p), targetSampleId (sampleId)
 {
@@ -12,7 +24,7 @@ StemExportPanel::StemExportPanel (IntersectProcessor& p, int sampleId)
     deviceCell.label = "DEVICE";
     outputCell.label = "OUTPUT";
 
-    deviceCell.displayValue = stemComputeDeviceToString (selectedDevice);
+    deviceCell.displayValue = getStemDeviceDisplayValue (selectedDevice);
     outputCell.displayValue = "Beside sample";
     updateSelectedModelDisplay();
     rebuildStemToggles();
@@ -151,8 +163,9 @@ void StemExportPanel::resized()
     modelCell.bounds = { x, pad, 130, btnH };
     x += 130 + gap;
 
-    deviceCell.bounds = { x, pad, 48, btnH };
-    x += 48 + gap;
+    constexpr int deviceCellWidth = 108;
+    deviceCell.bounds = { x, pad, deviceCellWidth, btnH };
+    x += deviceCellWidth + gap;
 
     int separateW = 76;
     int browseW = 24;
@@ -220,7 +233,7 @@ void StemExportPanel::mouseDown (const juce::MouseEvent& e)
         selectedDevice = (selectedDevice == StemComputeDevice::cpu)
                              ? StemComputeDevice::gpu
                              : StemComputeDevice::cpu;
-        deviceCell.displayValue = stemComputeDeviceToString (selectedDevice);
+        deviceCell.displayValue = getStemDeviceDisplayValue (selectedDevice);
         repaint();
     }
     else if (idx == 2)

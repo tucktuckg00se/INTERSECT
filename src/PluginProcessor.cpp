@@ -965,6 +965,15 @@ void IntersectProcessor::startStemSeparation (int sampleId,
         return;
     }
 
+    if (stemComputeDevice == StemComputeDevice::gpu)
+    {
+        if (const auto gpuError = getStemGpuAvailabilityError(); gpuError.isNotEmpty())
+        {
+            setUiStatusMessage (gpuError, true);
+            return;
+        }
+    }
+
     auto sampleSnap = sampleData.getSnapshot();
     if (sampleSnap == nullptr)
         return;
@@ -2931,6 +2940,7 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         {
             const int sourceSampleId = stemJob.getSourceSampleId();
             auto stemResult = stemJob.consumeResult();
+            const auto fallbackWarning = stemResult.warningMessage;
             if (! stemResult.stemFiles.empty())
             {
                 // Store pending stem metadata for application after load completes
@@ -2941,7 +2951,9 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 delete old;
 
                 loadFilesAsync (stemResult.stemFiles, true);
-                setUiStatusMessage ("Stems imported", false);
+                setUiStatusMessage (fallbackWarning.isNotEmpty() ? fallbackWarning
+                                                                : juce::String ("Stems imported"),
+                                    fallbackWarning.isNotEmpty());
             }
             loadStateChanged = true;
             uiSnapshotDirty.store (true, std::memory_order_release);

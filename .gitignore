@@ -1,6 +1,7 @@
 # Build
 build/
-build-linux/
+build-cuda/
+build-rocm/
 cmake-build-*/
 out/
 

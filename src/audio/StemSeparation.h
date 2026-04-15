@@ -51,6 +51,7 @@ struct StemJobResult
 {
     std::vector<juce::File> stemFiles;
     std::vector<StemRole> stemRoles;
+    juce::String warningMessage;
     juce::String errorMessage;
 };
 
@@ -101,6 +102,7 @@ bool stemModelIdFromString (const juce::String& text, StemModelId& modelId);
 juce::String stemModelMenuLabel (StemModelId modelId);
 juce::String stemComputeDeviceToString (StemComputeDevice device);
 StemComputeDevice stemComputeDeviceFromString (const juce::String& text);
+juce::String getAvailableGpuProviderName();
 const StemModelCatalogEntry* findStemModelCatalogEntry (StemModelId modelId);
 const std::array<StemModelCatalogEntry, 1>& getStemModelCatalog();
 juce::String getStemModelManifestFileName();

@@ -138,6 +138,21 @@ StemComputeDevice stemComputeDeviceFromString (const juce::String& text)
     return StemComputeDevice::cpu;
 }
 
+juce::String getAvailableGpuProviderName()
+{
+#if INTERSECT_HAS_COREML
+    return "CoreML";
+#elif INTERSECT_HAS_DIRECTML
+    return "DirectML";
+#elif INTERSECT_HAS_CUDA
+    return "CUDA";
+#elif INTERSECT_HAS_ROCM
+    return "ROCm";
+#else
+    return {};
+#endif
+}
+
 const StemModelCatalogEntry* findStemModelCatalogEntry (StemModelId modelId)
 {
     for (const auto& entry : kStemModelCatalog)
