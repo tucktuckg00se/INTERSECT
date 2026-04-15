@@ -100,13 +100,10 @@ juce::String HeaderBar::getTooltip()
         return {};
 
     const auto& ui = processor.getUiSliceSnapshot();
-    if (ui.sampleMissing)
-        return "Relink sample";
+    if (ui.hasStatusMessage && ui.statusIsWarning)
+        return "Copy message";
 
-    if (ui.sampleLoaded)
-        return "Replace sample";
-
-    return "Load sample";
+    return {};
 }
 
 void HeaderBar::resized()
@@ -188,17 +185,8 @@ void HeaderBar::paint (juce::Graphics& g)
     }
     else if (ui.sampleMissing)
     {
-        fileText = "MISSING: " + ui.sampleFileName.toString() + "  CLICK TO RELINK";
+        fileText = "MISSING: " + ui.sampleFileName.toString();
         g.setColour (juce::Colours::orange.brighter (0.1f));
-    }
-    else if (ui.sampleLoaded)
-    {
-        double srate = ui.sampleSampleRate;
-        if (srate <= 0.0)
-            srate = 44100.0;
-        const double lenSec = ui.sampleNumFrames / srate;
-        fileText = ui.sampleFileName.toString() + " (" + juce::String (lenSec, 2) + "s)";
-        g.setColour (juce::Colour (0xFF505868));
     }
     else
     {
@@ -215,10 +203,8 @@ void HeaderBar::mouseDown (const juce::MouseEvent& e)
     if (sampleInfoBounds.contains (e.getPosition()))
     {
         const auto& ui = processor.getUiSliceSnapshot();
-        if (ui.sampleMissing)
-            openRelinkBrowser();
-        else
-            openFileBrowser (false);
+        if (ui.hasStatusMessage && ui.statusIsWarning)
+            juce::SystemClipboard::copyTextToClipboard (ui.statusMessage.toString());
     }
 }
 

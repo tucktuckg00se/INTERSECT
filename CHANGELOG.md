@@ -12,9 +12,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 - Sample lane colors now run opposite the slice palette, labels truncate cleanly, and slice/sample lane blocks use a simpler filled style
+- Stem export now shows a `CANCEL` button while separation is running, and header status text copies warning/error messages instead of opening sample load dialogs
 
 ### Fixed
 - Restoring multi-sample projects and undoing back to an empty session no longer leaves stale sample data loaded
+- Release builds now bundle the ONNX Runtime files needed for stem separation, so copied VST3 and standalone builds can load outside the local build tree
 
 ## [0.12.4] - 2026-04-12
 

@@ -24,13 +24,17 @@ jobs:
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DINTERSECT_VERSION=${{ env.PLUGIN_VERSION }}
 
       - name: Build
-        run: cmake --build build --config Release
+        run: cmake --build build --config Release --target Intersect_All
 
       - name: Package
         run: |
+          ART_ROOT=build/Intersect_artefacts
+          if [ -d "$ART_ROOT/Release" ]; then
+            ART_ROOT="$ART_ROOT/Release"
+          fi
           mkdir staging
-          cp -r build/Intersect_artefacts/Release/VST3/INTERSECT.vst3 staging/
-          cp build/Intersect_artefacts/Release/Standalone/INTERSECT.exe staging/
+          cp -r "$ART_ROOT/VST3/INTERSECT.vst3" staging/
+          cp -a "$ART_ROOT/Standalone/." staging/
           cd staging && 7z a ../INTERSECT-${{ github.ref_name }}-Windows-x64.zip *
 
       - uses: actions/upload-artifact@v5
@@ -58,13 +62,17 @@ jobs:
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DINTERSECT_VERSION=${{ env.PLUGIN_VERSION }}
 
       - name: Build
-        run: cmake --build build --config Release
+        run: cmake --build build --config Release --target Intersect_All
 
       - name: Package
         run: |
+          ART_ROOT=build/Intersect_artefacts
+          if [ -d "$ART_ROOT/Release" ]; then
+            ART_ROOT="$ART_ROOT/Release"
+          fi
           mkdir staging
-          cp -r build/Intersect_artefacts/Release/VST3/INTERSECT.vst3 staging/
-          cp build/Intersect_artefacts/Release/Standalone/INTERSECT staging/
+          cp -r "$ART_ROOT/VST3/INTERSECT.vst3" staging/
+          cp -a "$ART_ROOT/Standalone/." staging/
           cd staging && zip -r ../INTERSECT-${{ github.ref_name }}-Linux-x64.zip .
 
       - uses: actions/upload-artifact@v5
@@ -87,20 +95,28 @@ jobs:
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=10.13 -DINTERSECT_VERSION=${{ env.PLUGIN_VERSION }}
 
       - name: Build
-        run: cmake --build build --config Release
+        run: cmake --build build --config Release --target Intersect_All
 
       - name: Codesign
         run: |
-          codesign --force --deep --sign - build/Intersect_artefacts/Release/AU/INTERSECT.component
-          codesign --force --deep --sign - build/Intersect_artefacts/Release/VST3/INTERSECT.vst3
-          codesign --force --deep --sign - build/Intersect_artefacts/Release/Standalone/INTERSECT.app
+          ART_ROOT=build/Intersect_artefacts
+          if [ -d "$ART_ROOT/Release" ]; then
+            ART_ROOT="$ART_ROOT/Release"
+          fi
+          codesign --force --deep --sign - "$ART_ROOT/AU/INTERSECT.component"
+          codesign --force --deep --sign - "$ART_ROOT/VST3/INTERSECT.vst3"
+          codesign --force --deep --sign - "$ART_ROOT/Standalone/INTERSECT.app"
 
       - name: Package
         run: |
+          ART_ROOT=build/Intersect_artefacts
+          if [ -d "$ART_ROOT/Release" ]; then
+            ART_ROOT="$ART_ROOT/Release"
+          fi
           mkdir staging
-          cp -r build/Intersect_artefacts/Release/VST3/INTERSECT.vst3 staging/
-          cp -r build/Intersect_artefacts/Release/Standalone/INTERSECT.app staging/
-          cp -r build/Intersect_artefacts/Release/AU/INTERSECT.component staging/
+          cp -r "$ART_ROOT/VST3/INTERSECT.vst3" staging/
+          cp -r "$ART_ROOT/Standalone/INTERSECT.app" staging/
+          cp -r "$ART_ROOT/AU/INTERSECT.component" staging/
           cd staging && zip -r ../INTERSECT-${{ github.ref_name }}-macOS-arm64.zip .
 
       - uses: actions/upload-artifact@v5
@@ -123,20 +139,28 @@ jobs:
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=10.13 -DINTERSECT_VERSION=${{ env.PLUGIN_VERSION }}
 
       - name: Build
-        run: cmake --build build --config Release
+        run: cmake --build build --config Release --target Intersect_All
 
       - name: Codesign
         run: |
-          codesign --force --deep --sign - build/Intersect_artefacts/Release/AU/INTERSECT.component
-          codesign --force --deep --sign - build/Intersect_artefacts/Release/VST3/INTERSECT.vst3
-          codesign --force --deep --sign - build/Intersect_artefacts/Release/Standalone/INTERSECT.app
+          ART_ROOT=build/Intersect_artefacts
+          if [ -d "$ART_ROOT/Release" ]; then
+            ART_ROOT="$ART_ROOT/Release"
+          fi
+          codesign --force --deep --sign - "$ART_ROOT/AU/INTERSECT.component"
+          codesign --force --deep --sign - "$ART_ROOT/VST3/INTERSECT.vst3"
+          codesign --force --deep --sign - "$ART_ROOT/Standalone/INTERSECT.app"
 
       - name: Package
         run: |
+          ART_ROOT=build/Intersect_artefacts
+          if [ -d "$ART_ROOT/Release" ]; then
+            ART_ROOT="$ART_ROOT/Release"
+          fi
           mkdir staging
-          cp -r build/Intersect_artefacts/Release/VST3/INTERSECT.vst3 staging/
-          cp -r build/Intersect_artefacts/Release/Standalone/INTERSECT.app staging/
-          cp -r build/Intersect_artefacts/Release/AU/INTERSECT.component staging/
+          cp -r "$ART_ROOT/VST3/INTERSECT.vst3" staging/
+          cp -r "$ART_ROOT/Standalone/INTERSECT.app" staging/
+          cp -r "$ART_ROOT/AU/INTERSECT.component" staging/
           cd staging && zip -r ../INTERSECT-${{ github.ref_name }}-macOS-x64.zip .
 
       - uses: actions/upload-artifact@v5

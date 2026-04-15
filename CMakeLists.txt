@@ -66,6 +66,27 @@ if(EXISTS "${INTERSECT_ORT_ROOT}/include/onnxruntime_cxx_api.h")
     endif()
 endif()
 
+set(INTERSECT_ORT_RUNTIME_LIBS "")
+if(INTERSECT_HAS_ONNX_RUNTIME)
+    if(WIN32)
+        file(GLOB INTERSECT_ORT_RUNTIME_LIBS
+            "${INTERSECT_ORT_ROOT}/*.dll"
+            "${INTERSECT_ORT_ROOT}/bin/*.dll"
+            "${INTERSECT_ORT_ROOT}/lib/*.dll"
+        )
+    elseif(APPLE)
+        file(GLOB INTERSECT_ORT_RUNTIME_LIBS
+            "${INTERSECT_ORT_ROOT}/lib/libonnxruntime*.dylib"
+        )
+    else()
+        file(GLOB INTERSECT_ORT_RUNTIME_LIBS
+            "${INTERSECT_ORT_ROOT}/lib/libonnxruntime*.so*"
+        )
+    endif()
+
+    list(REMOVE_DUPLICATES INTERSECT_ORT_RUNTIME_LIBS)
+endif()
+
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/JUCE JUCE)
 
 # --- Bungee (built as static library) ---
@@ -204,9 +225,48 @@ if(INTERSECT_HAS_ONNX_RUNTIME)
         target_link_libraries(Intersect PRIVATE "${INTERSECT_ORT_ROOT}/lib/onnxruntime.lib")
     elseif(APPLE)
         target_link_libraries(Intersect PRIVATE "${INTERSECT_ORT_ROOT}/lib/libonnxruntime.dylib")
-        set_target_properties(Intersect PROPERTIES BUILD_RPATH "${INTERSECT_ORT_ROOT}/lib")
     else()
         target_link_libraries(Intersect PRIVATE "${INTERSECT_ORT_ROOT}/lib/libonnxruntime.so")
-        set_target_properties(Intersect PROPERTIES BUILD_RPATH "${INTERSECT_ORT_ROOT}/lib")
+    endif()
+endif()
+
+function(intersect_bundle_onnx_runtime target_name)
+    if(NOT TARGET "${target_name}")
+        return()
+    endif()
+
+    if(WIN32)
+        set(_runtime_dest "$<TARGET_FILE_DIR:${target_name}>")
+    elseif(APPLE)
+        set(_runtime_dest "$<TARGET_FILE_DIR:${target_name}>/../Frameworks")
+        set_target_properties("${target_name}" PROPERTIES
+            BUILD_WITH_INSTALL_RPATH ON
+            INSTALL_RPATH "@loader_path/../Frameworks"
+        )
+    else()
+        set(_runtime_dest "$<TARGET_FILE_DIR:${target_name}>")
+        set_target_properties("${target_name}" PROPERTIES
+            BUILD_WITH_INSTALL_RPATH ON
+            BUILD_RPATH "$ORIGIN"
+            INSTALL_RPATH "$ORIGIN"
+        )
+    endif()
+
+    foreach(runtime_lib IN LISTS INTERSECT_ORT_RUNTIME_LIBS)
+        if(EXISTS "${runtime_lib}")
+            add_custom_command(TARGET "${target_name}" POST_BUILD
+                COMMAND "${CMAKE_COMMAND}" -E make_directory "${_runtime_dest}"
+                COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${runtime_lib}" "${_runtime_dest}"
+                VERBATIM
+            )
+        endif()
+    endforeach()
+endfunction()
+
+if(INTERSECT_HAS_ONNX_RUNTIME)
+    intersect_bundle_onnx_runtime(Intersect_VST3)
+    intersect_bundle_onnx_runtime(Intersect_Standalone)
+    if(APPLE)
+        intersect_bundle_onnx_runtime(Intersect_AU)
     endif()
 endif()

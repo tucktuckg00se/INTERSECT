@@ -84,7 +84,7 @@ xattr -cr /Applications/INTERSECT.app
 
 | Area | Function | Notes |
 | --- | --- | --- |
-| Sample name / status | Shows loaded file name, session count, and missing-file relink prompt | Click to load samples; missing-file text opens relink |
+| Status text | Shows warnings, errors, and missing-file notices | Click warning/error text to copy the message |
 | `UNDO` / `REDO` | History navigation | Same as `Ctrl/Cmd + Z` and `Ctrl/Cmd + Shift + Z` |
 | `PANIC` | Kills active voices immediately | Also stops lazy chop |
 | `LOAD` | Open file browser | Replaces the current session |
@@ -95,12 +95,24 @@ xattr -cr /Applications/INTERSECT.app
 
 | Area | Function | Notes |
 | --- | --- | --- |
-| Sample lane | Compact session-sample overview above the slice lane | Reflects selection and zoom; drag to reorder samples |
+| Sample lane | Compact session-sample overview above the slice lane | Reflects selection and zoom; drag to reorder samples; includes per-sample `STEMS` / `CANCEL` and delete buttons |
 | Slice lane | Compact slice-region overview above the waveform | Reflects selection and zoom |
 | Waveform | Main editing surface | Drag-and-drop loading/appending, slice selection, boundary editing, move/duplicate, preview |
 | Overlay hints | Contextual help and action prompts | Used by `ADD`, `AUTO`, and other actions |
 | Playback cursors | Voice-position display | Shows active playheads |
 | Transient preview markers | Auto Chop preview | Dashed markers shown before applying transient split |
+
+## Stem Separation
+
+1. Click a sample's `STEMS` button in the sample lane.
+2. Choose the model, output folder, device, and which stems to export.
+3. Start the export from the overlay panel.
+
+Notes:
+- Stem separation runs on the selected session sample and writes the exported stems to the chosen folder.
+- While a stem export is running, that sample's `STEMS` button changes to `CANCEL`.
+- `DEVICE` defaults to CPU. GPU can be selected when the build and local runtime support it.
+- If INTERSECT cannot use the selected GPU path, it warns before export so you can switch devices instead of silently exporting on CPU.
 
 ### Time / Zoom Bar
 
@@ -147,7 +159,7 @@ General behavior:
 
 | Control | Function | Notes |
 | --- | --- | --- |
-| Sample info text | Load / relink samples | Click the text area |
+| Status text | Copy warning/error message | Only active when a warning or error is being shown |
 | `UNDO / REDO` | History navigation | Buttons in the header |
 | `PANIC` | Kill active voices immediately | Also stops lazy chop |
 | `LOAD` | Open file chooser | Replaces the current session |

@@ -15,6 +15,15 @@ float measureTextWidth (const juce::Font& font, const juce::String& text)
     glyphs.addLineOfText (font, text, 0.0f, 0.0f);
     return glyphs.getBoundingBox (0, -1, true).getWidth();
 }
+
+bool isStemJobRunningForSample (const IntersectProcessor::UiSliceSnapshot& ui, int sampleId)
+{
+    return ui.stemJobSourceSampleId == sampleId
+           && ui.stemJobState != StemJobState::idle
+           && ui.stemJobState != StemJobState::completed
+           && ui.stemJobState != StemJobState::failed
+           && ui.stemJobState != StemJobState::cancelled;
+}
 }
 
 SampleLane::SampleLane (IntersectProcessor& p, WaveformView& wv) : processor (p), waveformView (wv) {}
@@ -96,6 +105,7 @@ void SampleLane::paint (juce::Graphics& g)
     g.fillAll (getTheme().surface0);
 
     const auto visible = buildVisibleSamples();
+    const auto& ui = processor.getUiSliceSnapshot();
     const int h = getHeight();
 
     g.setColour (getTheme().surface3.withAlpha (0.78f));
@@ -177,9 +187,11 @@ void SampleLane::paint (juce::Graphics& g)
 
     for (const auto& sample : visible)
     {
+        const bool jobRunning = isStemJobRunningForSample (ui, sample.sampleId);
+        const bool compactButton = sample.stemsBounds.getWidth() < 34;
         drawButton (sample.stemsBounds,
-                    sample.stemsBounds.getWidth() < 24 ? "S" : "STEMS",
-                    getTheme().surface4.withAlpha (0.92f),
+                    compactButton ? (jobRunning ? "C" : "S") : (jobRunning ? "CANCEL" : "STEMS"),
+                    (jobRunning ? getTheme().accent : getTheme().surface4).withAlpha (0.92f),
                     getTheme().text2.withAlpha (0.92f));
         drawButton (sample.deleteBounds,
                     "X",
@@ -189,7 +201,6 @@ void SampleLane::paint (juce::Graphics& g)
 
     // Draw stem separation progress bar on the source sample
     {
-        const auto& ui = processor.getUiSliceSnapshot();
         const auto stemState = ui.stemJobState;
         if (stemState == StemJobState::preparing
             || stemState == StemJobState::separating
@@ -252,11 +263,7 @@ void SampleLane::mouseDown (const juce::MouseEvent& e)
         repaint();
 
         const auto& ui = processor.getUiSliceSnapshot();
-        const bool jobRunning = ui.stemJobSourceSampleId == hitId
-                                && ui.stemJobState != StemJobState::idle
-                                && ui.stemJobState != StemJobState::completed
-                                && ui.stemJobState != StemJobState::failed
-                                && ui.stemJobState != StemJobState::cancelled;
+        const bool jobRunning = isStemJobRunningForSample (ui, hitId);
 
         if (jobRunning)
         {
