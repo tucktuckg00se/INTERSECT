@@ -5,7 +5,7 @@
 static constexpr int kBaseW        = 800;
 static constexpr int kBaseH        = 400;
 static constexpr float kHeaderH    = 28.0f;
-static constexpr float kSampleLaneH = 14.0f;
+static constexpr float kSampleLaneH = 20.0f;
 static constexpr float kSliceLaneH = 20.0f;
 static constexpr float kScrollbarH = 10.0f;
 static constexpr float kActionH    = 22.0f;
@@ -94,7 +94,7 @@ IntersectEditor::IntersectEditor (IntersectProcessor& p)
     : AudioProcessorEditor (p),
       processor (p),
       headerBar (p),
-      sampleLane (p),
+      sampleLane (p, waveformView),
       signalChainBar (p),
       sliceLane (p),
       waveformView (p),
@@ -553,6 +553,10 @@ void IntersectEditor::saveUserSettings (float scale, const juce::String& themeNa
     content << "nrpnChannel: "  << processor.midiEditState.channel.load (std::memory_order_relaxed) << "\n";
     content << "nrpnBlockCc: "  << (processor.midiEditState.consumeMidiEditCc.load (std::memory_order_relaxed) ? "true" : "false") << "\n";
     content << "middleC: " << middleCOctave << "\n";
+    const auto stemFolder = processor.getStemModelFolder();
+    if (stemFolder != juce::File())
+        content << "stemModelFolder: " << stemFolder.getFullPathName() << "\n";
+    content << "stemComputeDevice: " << stemComputeDeviceToString (processor.getStemComputeDevice()) << "\n";
     file.replaceWithText (content);
 }
 
@@ -598,6 +602,21 @@ void IntersectEditor::loadUserSettings()
                 int val = line.fromFirstOccurrenceOf (":", false, false).trim().getIntValue();
                 if (val == 3 || val == 4 || val == 5)
                     middleCOctave = val;
+            }
+            else if (line.startsWith ("stemModelFolder:"))
+            {
+                processor.setStemModelFolder (juce::File (line.fromFirstOccurrenceOf (":", false, false).trim()));
+            }
+            else if (line.startsWith ("stemComputeDevice:"))
+            {
+                processor.setStemComputeDevice (
+                    stemComputeDeviceFromString (line.fromFirstOccurrenceOf (":", false, false).trim()));
+            }
+            else if (line.startsWith ("stemModelPath:"))
+            {
+                auto legacyPath = juce::File (line.fromFirstOccurrenceOf (":", false, false).trim());
+                if (legacyPath.existsAsFile())
+                    processor.setStemModelFolder (legacyPath.getParentDirectory());
             }
         }
     }

@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_formats/juce_audio_formats.h>
+#include "StemSeparation.h"
 #include <atomic>
 #include <array>
 #include <memory>
@@ -35,6 +36,7 @@ public:
         int numFrames = 0;
         int sourceNumFrames = 0;
         double sourceSampleRate = 0.0;
+        StemMetadata stemMeta;
     };
 
     struct DecodedSample

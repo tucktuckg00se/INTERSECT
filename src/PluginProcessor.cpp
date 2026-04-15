@@ -213,6 +213,7 @@ static bool isCriticalCommand (IntersectProcessor::CommandType type)
         case IntersectProcessor::CmdPanic:
         case IntersectProcessor::CmdSelectSlice:
         case IntersectProcessor::CmdSetRootNote:
+        case IntersectProcessor::CmdStemSeparate:
             return true;
     }
 
@@ -384,6 +385,8 @@ IntersectProcessor::~IntersectProcessor()
 	    delete pending;
 	    auto* failed = completedLoadFailure.exchange (nullptr, std::memory_order_acq_rel);
 	    delete failed;
+	    auto* stemPending = pendingStemImport.exchange (nullptr, std::memory_order_acq_rel);
+	    delete stemPending;
 }
 
 GlobalParamSnapshot IntersectProcessor::loadGlobalParamSnapshot() const
@@ -853,6 +856,174 @@ void IntersectProcessor::deleteSessionSampleAsync (int sampleId)
     pushCommand (cmd);
 }
 
+void IntersectProcessor::setStemMeta (int sampleId, const StemMetadata& meta)
+{
+    for (int i = 0; i < stemMetaEntryCount; ++i)
+    {
+        if (stemMetaEntries[(size_t) i].sampleId == sampleId)
+        {
+            stemMetaEntries[(size_t) i].meta = meta;
+            return;
+        }
+    }
+    if (stemMetaEntryCount < SampleData::kMaxSessionSamples)
+    {
+        stemMetaEntries[(size_t) stemMetaEntryCount].sampleId = sampleId;
+        stemMetaEntries[(size_t) stemMetaEntryCount].meta = meta;
+        ++stemMetaEntryCount;
+    }
+}
+
+StemMetadata IntersectProcessor::getStemMeta (int sampleId) const
+{
+    for (int i = 0; i < stemMetaEntryCount; ++i)
+        if (stemMetaEntries[(size_t) i].sampleId == sampleId)
+            return stemMetaEntries[(size_t) i].meta;
+    return {};
+}
+
+juce::File IntersectProcessor::getStemModelFolder() const
+{
+    return stemModelFolder;
+}
+
+juce::File IntersectProcessor::getResolvedStemModelFolder() const
+{
+    return stemModelFolder == juce::File() ? getDefaultStemModelFolder() : stemModelFolder;
+}
+
+void IntersectProcessor::setStemModelFolder (const juce::File& modelFolder)
+{
+    stemModelFolder = modelFolder;
+}
+
+std::vector<StemModelId> IntersectProcessor::getInstalledStemModels() const
+{
+    return scanInstalledStemModels (getResolvedStemModelFolder());
+}
+
+bool IntersectProcessor::isStemModelInstalled (StemModelId modelId) const
+{
+    return resolveStemModelFile (getResolvedStemModelFolder(), modelId).existsAsFile();
+}
+
+void IntersectProcessor::startStemModelDownload (const std::vector<StemModelId>& modelIds)
+{
+    if (modelIds.empty())
+        return;
+
+    if (stemModelDownloadJob.getState() == StemModelDownloadState::downloading)
+    {
+        setUiStatusMessage ("Model download already in progress", true);
+        return;
+    }
+
+    if (! stemModelDownloadJob.start (getResolvedStemModelFolder(), modelIds))
+    {
+        setUiStatusMessage ("Unable to start model download", true);
+        return;
+    }
+
+    setUiStatusMessage ("Downloading stem models...", false);
+    uiSnapshotDirty.store (true, std::memory_order_release);
+}
+
+void IntersectProcessor::cancelStemModelDownload()
+{
+    stemModelDownloadJob.cancel();
+}
+
+void IntersectProcessor::cancelStemSeparation()
+{
+    if (stemJob.getState() != StemJobState::idle)
+        stemJob.cancel();
+}
+
+void IntersectProcessor::startStemSeparation (int sampleId,
+                                              StemModelId modelId,
+                                              StemSelectionMask stemSelectionMask,
+                                              const juce::File& outputFolder)
+{
+    if (stemJob.getState() != StemJobState::idle)
+    {
+        setUiStatusMessage ("Stem separation already in progress", true);
+        return;
+    }
+
+    const auto modelFolder = getResolvedStemModelFolder();
+    const auto catalogEntry = getEffectiveStemModelCatalogEntry (modelId, modelFolder);
+    const auto modelFile = modelFolder.getChildFile (catalogEntry.fileName);
+    if (! modelFile.existsAsFile())
+    {
+        setUiStatusMessage ("Selected stem model is not installed", true);
+        return;
+    }
+
+    if (stemSelectionMask == 0)
+    {
+        setUiStatusMessage ("Select at least one stem", true);
+        return;
+    }
+
+    auto sampleSnap = sampleData.getSnapshot();
+    if (sampleSnap == nullptr)
+        return;
+
+    // Find the session sample by ID
+    const SampleData::SessionSample* targetSample = nullptr;
+    for (const auto& sample : sampleSnap->sessionSamples)
+    {
+        if (sample.sampleId == sampleId)
+        {
+            targetSample = &sample;
+            break;
+        }
+    }
+
+    if (targetSample == nullptr)
+        return;
+
+    // Extract the audio region for this sample
+    const int startFrame = targetSample->startFrame;
+    const int numFrames = targetSample->numFrames;
+    const int numChannels = sampleSnap->buffer.getNumChannels();
+
+    juce::AudioBuffer<float> regionAudio (2, numFrames);
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        const int srcCh = std::min (ch, numChannels - 1);
+        regionAudio.copyFrom (ch, 0, sampleSnap->buffer, srcCh, startFrame, numFrames);
+    }
+
+    juce::File outputRoot = outputFolder;
+    if (outputRoot == juce::File())
+    {
+        const auto sourceFile = juce::File (targetSample->filePath);
+        if (! juce::File::isAbsolutePath (targetSample->filePath))
+        {
+            setUiStatusMessage ("Choose an export folder for this sample", true);
+            return;
+        }
+
+        outputRoot = sourceFile.getParentDirectory();
+        if (outputRoot == juce::File())
+        {
+            setUiStatusMessage ("Choose an export folder for this sample", true);
+            return;
+        }
+    }
+
+    auto sourceName = targetSample->fileName.upToLastOccurrenceOf (".", false, false);
+    if (sourceName.isEmpty())
+        sourceName = targetSample->fileName;
+    auto timestamp = juce::String (juce::Time::currentTimeMillis());
+    auto jobDir = outputRoot.getChildFile (sourceName + "_" + stemModelIdToString (modelId) + "_" + timestamp);
+
+    stemJob.start (regionAudio, sampleSnap->decodedSampleRate, sampleId,
+                   sourceName, modelId, catalogEntry, stemSelectionMask, stemComputeDevice, modelFile, jobDir);
+    uiSnapshotDirty.store (true, std::memory_order_release);
+}
+
 void IntersectProcessor::clearPendingSliceTimelineRemap()
 {
     pendingSliceTimelineRemap.active.store (false, std::memory_order_release);
@@ -1237,6 +1408,11 @@ void IntersectProcessor::publishUiSliceSnapshot()
     snap.hasStatusMessage = ! status.text.isEmpty();
     snap.statusIsWarning = status.isWarning;
     snap.statusMessage = status.text;
+    snap.stemJobState = stemJob.getState();
+    snap.stemJobProgress = stemJob.getProgress();
+    snap.stemJobSourceSampleId = stemJob.getSourceSampleId();
+    snap.stemDownloadState = stemModelDownloadJob.getState();
+    snap.stemDownloadProgress = stemModelDownloadJob.getProgress();
     if (sampleSnap != nullptr)
     {
         if (snap.numSessionSamples > 1)
@@ -1600,6 +1776,7 @@ void IntersectProcessor::handleCommand (const Command& cmd)
         case CmdRedo:
         case CmdPanic:
         case CmdSelectSlice:
+        case CmdStemSeparate:
             gestureSnapshotCaptured = false;
             break;
 
@@ -2175,6 +2352,10 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                                          std::memory_order_relaxed);
             break;
 
+        case CmdStemSeparate:
+            // Launched from message thread via startStemSeparation(); nothing to do here.
+            break;
+
         case CmdNone:
             break;
     }
@@ -2659,6 +2840,27 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     selectedSessionSampleId.store (-1, std::memory_order_relaxed);
                 }
 
+                // Apply pending stem metadata to newly imported session samples
+                {
+                    auto* pending = pendingStemImport.exchange (nullptr, std::memory_order_acq_rel);
+                    if (pending != nullptr)
+                    {
+                        const auto& sessionSamples = sampleData.getSessionSamples();
+                        const auto numNewStems = (int) pending->roles.size();
+                        const int totalSamples = (int) sessionSamples.size();
+                        const int firstStemIdx = totalSamples - numNewStems;
+                        for (int i = 0; i < numNewStems && firstStemIdx + i < totalSamples; ++i)
+                        {
+                            StemMetadata meta;
+                            meta.parentSourceSampleId = pending->parentSourceSampleId;
+                            meta.role = pending->roles[(size_t) i];
+                            meta.isGenerated = true;
+                            setStemMeta (sessionSamples[(size_t) (firstStemIdx + i)].sampleId, meta);
+                        }
+                        delete pending;
+                    }
+                }
+
                 if (! isStateRestoreLoad
                     && currentLoadKind == LoadKindReplace)
                     sliceManager.clearAll();
@@ -2702,6 +2904,65 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         }
     }
 
+    // Poll model downloads for completion
+    {
+        const auto downloadState = stemModelDownloadJob.getState();
+        if (downloadState == StemModelDownloadState::completed)
+        {
+            setUiStatusMessage (stemModelDownloadJob.consumeResultMessage(), false);
+            uiSnapshotDirty.store (true, std::memory_order_release);
+        }
+        else if (downloadState == StemModelDownloadState::failed)
+        {
+            setUiStatusMessage (stemModelDownloadJob.consumeResultMessage(), true);
+            uiSnapshotDirty.store (true, std::memory_order_release);
+        }
+        else if (downloadState == StemModelDownloadState::cancelled)
+        {
+            setUiStatusMessage (stemModelDownloadJob.consumeResultMessage(), true);
+            uiSnapshotDirty.store (true, std::memory_order_release);
+        }
+    }
+
+    // Poll stem separation job for completion
+    {
+        const auto stemState = stemJob.getState();
+        if (stemState == StemJobState::completed)
+        {
+            const int sourceSampleId = stemJob.getSourceSampleId();
+            auto stemResult = stemJob.consumeResult();
+            if (! stemResult.stemFiles.empty())
+            {
+                // Store pending stem metadata for application after load completes
+                auto* pending = new PendingStemImport();
+                pending->roles = std::move (stemResult.stemRoles);
+                pending->parentSourceSampleId = sourceSampleId;
+                auto* old = pendingStemImport.exchange (pending, std::memory_order_acq_rel);
+                delete old;
+
+                loadFilesAsync (stemResult.stemFiles, true);
+                setUiStatusMessage ("Stems imported", false);
+            }
+            loadStateChanged = true;
+            uiSnapshotDirty.store (true, std::memory_order_release);
+        }
+        else if (stemState == StemJobState::cancelled)
+        {
+            (void) stemJob.consumeResult();
+            setUiStatusMessage ("Stem separation cancelled", true);
+            uiSnapshotDirty.store (true, std::memory_order_release);
+        }
+        else if (stemState == StemJobState::failed)
+        {
+            auto stemResult = stemJob.consumeResult();
+            setUiStatusMessage (stemResult.errorMessage.isNotEmpty()
+                                    ? stemResult.errorMessage
+                                    : juce::String ("Stem separation failed"),
+                                true);
+            uiSnapshotDirty.store (true, std::memory_order_release);
+        }
+    }
+
     if (loadStateChanged)
         updateHostDisplay (ChangeDetails().withNonParameterStateChanged (true));
 
@@ -2736,6 +2997,10 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         if (blocksSinceGestureActivity > gestureTimeoutBlocks)
             gestureSnapshotCaptured = false;
     }
+
+    if (stemJob.getState() != StemJobState::idle
+        || stemModelDownloadJob.getState() == StemModelDownloadState::downloading)
+        uiSnapshotDirty.store (true, std::memory_order_release);
 
     if (uiSnapshotDirty.exchange (false, std::memory_order_acq_rel))
         publishUiSliceSnapshot();
@@ -2941,7 +3206,7 @@ void IntersectProcessor::getStateInformation (juce::MemoryBlock& destData)
 
     // Optional v24 extension block for fields added without changing the base version.
     stream.writeInt (kStateExtensionMagic);
-    stream.writeInt (4);
+    stream.writeInt (5);
     stream.writeInt (numSlices);
     for (int i = 0; i < numSlices; ++i)
         stream.writeInt (sliceManager.getSlice (i).repitchMode);
@@ -2980,6 +3245,16 @@ void IntersectProcessor::getStateInformation (juce::MemoryBlock& destData)
         stream.writeInt (s.sampleId);
         stream.writeInt (s.startInSample);
         stream.writeInt (s.endInSample);
+    }
+    // Extension v5: per-session-sample stem metadata
+    stream.writeInt (numSessionSamples);
+    for (int i = 0; i < numSessionSamples; ++i)
+    {
+        const auto& sample = sampleSnap->sessionSamples[(size_t) i];
+        auto meta = getStemMeta (sample.sampleId);
+        stream.writeInt (meta.parentSourceSampleId);
+        stream.writeInt (static_cast<int> (meta.role));
+        stream.writeBool (meta.isGenerated);
     }
 }
 
@@ -3292,6 +3567,31 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
                         }
                     }
                 }
+
+                if (extensionVersion >= 5)
+                {
+                    if (! requireBytes (4))
+                        return result;
+
+                    const int storedStemMeta = juce::jlimit (0, SampleData::kMaxSessionSamples,
+                                                              trialStream.readInt());
+                    for (int i = 0; i < storedStemMeta; ++i)
+                    {
+                        if (! requireBytes (9))  // int + int + bool
+                            return result;
+
+                        const int parentId = trialStream.readInt();
+                        const int roleInt = trialStream.readInt();
+                        const bool isGenerated = trialStream.readBool();
+                        if (i < (int) result.sessionSamples.size())
+                        {
+                            auto& meta = result.sessionSamples[(size_t) i].stemMeta;
+                            meta.parentSourceSampleId = parentId;
+                            meta.role = static_cast<StemRole> (juce::jlimit (0, 4, roleInt));
+                            meta.isGenerated = isGenerated;
+                        }
+                    }
+                }
             }
             else
             {
@@ -3383,6 +3683,17 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
 
     clearVoicesBeforeSampleSwap();
     sampleData.clear();
+
+    // Restore stem metadata from parsed session samples
+    stemMetaEntryCount = 0;
+    if (! postSliceResult->sessionSamples.empty())
+    {
+        for (const auto& sample : postSliceResult->sessionSamples)
+        {
+            if (sample.stemMeta.isGenerated)
+                setStemMeta (sample.sampleId, sample.stemMeta);
+        }
+    }
 
     std::vector<juce::File> restoreFiles;
     std::vector<int> restoreSampleIds;

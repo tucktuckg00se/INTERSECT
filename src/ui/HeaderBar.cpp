@@ -18,7 +18,14 @@ enum SettingsMenuItemId
     kMenuMidiNext,
     kMenuSponsor,
     kMenuThemeBase = 2000,
-    kMenuMiddleCBase = 3000  // +0=C3, +1=C4, +2=C5
+    kMenuMiddleCBase = 3000,  // +0=C3, +1=C4, +2=C5
+    kMenuStemFolder = 4000,
+    kMenuStemUseDefaultFolder,
+    kMenuStemComputeCpu,
+    kMenuStemComputeGpu,
+    kMenuStemDownloadMissing,
+    kMenuStemCancelDownloads,
+    kMenuStemDownloadBase = 4100,
 };
 
 float measureTextWidth (const juce::Font& font, const juce::String& text)
@@ -276,6 +283,48 @@ void HeaderBar::showSettingsPopup()
     menu.addSubMenu ("Middle C  C" + juce::String (currentMiddleC), middleCMenu);
     menu.addSubMenu (formatNrpnStatus (nrpnCh), nrpnMenu);
     menu.addSubMenu ("Themes  " + currentName, themesMenu);
+
+    const auto stemFolder = processor.getResolvedStemModelFolder();
+    const auto customStemFolder = processor.getStemModelFolder();
+    const auto installedModels = processor.getInstalledStemModels();
+    const bool downloadActive = processor.getUiSliceSnapshot().stemDownloadState == StemModelDownloadState::downloading;
+
+    juce::PopupMenu stemComputeMenu;
+    stemComputeMenu.setLookAndFeel (&getLookAndFeel());
+    const auto computeDevice = processor.getStemComputeDevice();
+    stemComputeMenu.addItem (kMenuStemComputeCpu, "CPU", true, computeDevice == StemComputeDevice::cpu);
+    stemComputeMenu.addItem (kMenuStemComputeGpu, "GPU", true, computeDevice == StemComputeDevice::gpu);
+
+    juce::PopupMenu stemDownloadMenu;
+    stemDownloadMenu.setLookAndFeel (&getLookAndFeel());
+    stemDownloadMenu.addSectionHeader ("Download Models");
+    stemDownloadMenu.addItem (kMenuStemDownloadMissing, "Download Missing");
+    stemDownloadMenu.addSeparator();
+    for (size_t i = 0; i < getStemModelCatalog().size(); ++i)
+    {
+        const auto& entry = getStemModelCatalog()[i];
+        const bool installed = processor.isStemModelInstalled (entry.id);
+        auto label = juce::String (entry.menuLabel);
+        if (installed)
+            label << "  (installed)";
+        stemDownloadMenu.addItem (kMenuStemDownloadBase + (int) i, label, ! installed);
+    }
+    if (downloadActive)
+    {
+        stemDownloadMenu.addSeparator();
+        stemDownloadMenu.addItem (kMenuStemCancelDownloads, "Cancel Active Download");
+    }
+
+    juce::PopupMenu stemMenu;
+    stemMenu.setLookAndFeel (&getLookAndFeel());
+    stemMenu.addSectionHeader ("Stem Separation");
+    stemMenu.addItem (kMenuStemFolder, "Model Folder: " + stemFolder.getFullPathName());
+    stemMenu.addItem (kMenuStemUseDefaultFolder, "Use Default Folder", customStemFolder != juce::File());
+    stemMenu.addSubMenu ("Compute  " + stemComputeDeviceToString (computeDevice), stemComputeMenu);
+    stemMenu.addSubMenu ("Download Models", stemDownloadMenu);
+    stemMenu.addItem (0x4fff, "Installed Models  " + juce::String ((int) installedModels.size()), false, false);
+    menu.addSubMenu ("Stem Separation", stemMenu);
+
     menu.addSeparator();
     menu.addSectionHeader ("Support");
     menu.addItem (kMenuSponsor, juce::CharPointer_UTF8 ("\xe2\x98\x95  Buy Me a Coffee"));
@@ -338,6 +387,59 @@ void HeaderBar::showSettingsPopup()
             else if (result >= kMenuThemeBase && result < kMenuThemeBase + themes.size())
             {
                 editor->applyTheme (themes[result - kMenuThemeBase]);
+            }
+            else if (result == kMenuStemFolder)
+            {
+                fileChooser = std::make_unique<juce::FileChooser> (
+                    "Select Stem Model Folder", processor.getResolvedStemModelFolder());
+                fileChooser->launchAsync (juce::FileBrowserComponent::openMode
+                                              | juce::FileBrowserComponent::canSelectDirectories,
+                    [this, editor, scale] (const juce::FileChooser& fc)
+                    {
+                        auto chosenFolder = fc.getResult();
+                        if (chosenFolder.isDirectory())
+                        {
+                            processor.setStemModelFolder (chosenFolder);
+                            editor->saveUserSettings (scale, getTheme().name);
+                        }
+                    });
+            }
+            else if (result == kMenuStemUseDefaultFolder)
+            {
+                processor.setStemModelFolder ({});
+                editor->saveUserSettings (scale, getTheme().name);
+            }
+            else if (result == kMenuStemComputeCpu)
+            {
+                processor.setStemComputeDevice (StemComputeDevice::cpu);
+                editor->saveUserSettings (scale, getTheme().name);
+            }
+            else if (result == kMenuStemComputeGpu)
+            {
+                processor.setStemComputeDevice (StemComputeDevice::gpu);
+                editor->saveUserSettings (scale, getTheme().name);
+            }
+            else if (result == kMenuStemDownloadMissing)
+            {
+                std::vector<StemModelId> missingModels;
+                for (const auto& entry : getStemModelCatalog())
+                    if (! processor.isStemModelInstalled (entry.id))
+                        missingModels.push_back (entry.id);
+
+                if (missingModels.empty())
+                    processor.showTransientStatusMessage ("All stem models are already installed", false);
+                else
+                    processor.startStemModelDownload (missingModels);
+            }
+            else if (result == kMenuStemCancelDownloads)
+            {
+                processor.cancelStemModelDownload();
+            }
+            else if (result >= kMenuStemDownloadBase
+                     && result < kMenuStemDownloadBase + (int) getStemModelCatalog().size())
+            {
+                const auto& entry = getStemModelCatalog()[(size_t) (result - kMenuStemDownloadBase)];
+                processor.startStemModelDownload ({ entry.id });
             }
         });
 }
