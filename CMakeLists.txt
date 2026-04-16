@@ -222,7 +222,7 @@ endif()
 
 if(INTERSECT_HAS_ONNX_RUNTIME)
     if(WIN32)
-        target_link_libraries(Intersect PRIVATE "${INTERSECT_ORT_ROOT}/lib/onnxruntime.lib")
+        target_compile_definitions(Intersect PRIVATE INTERSECT_WINDOWS_EXPLICIT_ORT_LOAD=1)
     elseif(APPLE)
         target_link_libraries(Intersect PRIVATE "${INTERSECT_ORT_ROOT}/lib/libonnxruntime.dylib")
     else()

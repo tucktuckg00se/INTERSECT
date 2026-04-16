@@ -3,8 +3,12 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <cmath>
 #include <mutex>
+#include <stdexcept>
 
 #if INTERSECT_HAS_ONNX_RUNTIME
+#if JUCE_WINDOWS
+ #include <windows.h>
+#endif
 #define ORT_API_MANUAL_INIT
  #include <onnxruntime_cxx_api.h>
 #undef ORT_API_MANUAL_INIT
@@ -100,7 +104,53 @@ void ensureOrtApiInitialized()
     static std::once_flag initOnce;
     std::call_once (initOnce, []
     {
+       #if JUCE_WINDOWS
+        HMODULE moduleHandle = nullptr;
+        if (! ::GetModuleHandleExW (GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
+                                    | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                                    reinterpret_cast<LPCWSTR> (&ensureOrtApiInitialized),
+                                    &moduleHandle)
+            || moduleHandle == nullptr)
+        {
+            throw std::runtime_error ("Failed to resolve INTERSECT module path for ONNX Runtime");
+        }
+
+        wchar_t modulePathBuffer[4096] {};
+        const DWORD modulePathLength = ::GetModuleFileNameW (moduleHandle,
+                                                             modulePathBuffer,
+                                                             (DWORD) std::size (modulePathBuffer));
+        if (modulePathLength == 0 || modulePathLength >= std::size (modulePathBuffer))
+            throw std::runtime_error ("Failed to resolve bundled ONNX Runtime path");
+
+        std::wstring ortDllPath (modulePathBuffer, modulePathLength);
+        const auto separator = ortDllPath.find_last_of (L"\\/");
+        if (separator == std::wstring::npos)
+            throw std::runtime_error ("Failed to resolve bundled ONNX Runtime folder");
+
+        ortDllPath.erase (separator + 1);
+        ortDllPath += L"onnxruntime.dll";
+
+        HMODULE ortModule = ::LoadLibraryExW (ortDllPath.c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
+        if (ortModule == nullptr)
+            throw std::runtime_error ("Failed to load bundled ONNX Runtime DLL");
+
+        using OrtGetApiBaseFn = const OrtApiBase* (ORT_API_CALL*)();
+        auto* getApiBase = reinterpret_cast<OrtGetApiBaseFn> (::GetProcAddress (ortModule, "OrtGetApiBase"));
+        if (getApiBase == nullptr)
+            throw std::runtime_error ("Bundled ONNX Runtime DLL is missing OrtGetApiBase");
+
+        const OrtApiBase* apiBase = getApiBase();
+        if (apiBase == nullptr)
+            throw std::runtime_error ("Failed to get ONNX Runtime API base");
+
+        const OrtApi* api = apiBase->GetApi (ORT_API_VERSION);
+        if (api == nullptr)
+            throw std::runtime_error ("Bundled ONNX Runtime DLL is incompatible with this build");
+
+        Ort::InitApi (api);
+       #else
         Ort::InitApi();
+       #endif
     });
 }
 
