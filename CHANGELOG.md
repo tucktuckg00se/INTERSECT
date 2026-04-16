@@ -6,15 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-04-15
+
 ### Added
 - Multi-sample sessions with APPEND loading, a dedicated sample lane, sample reordering, and sample deletion
 - Stem separation powered by BS-RoFormer: split any sample into vocals and instrumental via the STEM panel
 
 ### Changed
 - Sample lane colors now run opposite the slice palette, labels truncate cleanly, and slice/sample lane blocks use a simpler filled style
+- Stem export now shows a `CANCEL` button while separation is running, and header status text copies warning/error messages instead of opening sample load dialogs
 
 ### Fixed
 - Restoring multi-sample projects and undoing back to an empty session no longer leaves stale sample data loaded
+- Stem export now opens reliably from the sample lane, warning banners clear automatically, and copied release builds bundle the ONNX Runtime files they need
+- Hosted VST3 stem separation is now more stable in Ableton Live and REAPER on Windows by forcing INTERSECT to use its bundled ONNX Runtime instead of incompatible DAW-loaded versions
 
 ## [0.12.4] - 2026-04-12
 

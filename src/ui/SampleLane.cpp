@@ -15,6 +15,15 @@ float measureTextWidth (const juce::Font& font, const juce::String& text)
     glyphs.addLineOfText (font, text, 0.0f, 0.0f);
     return glyphs.getBoundingBox (0, -1, true).getWidth();
 }
+
+bool isStemJobRunningForSample (const IntersectProcessor::UiSliceSnapshot& ui, int sampleId)
+{
+    return ui.stemJobSourceSampleId == sampleId
+           && ui.stemJobState != StemJobState::idle
+           && ui.stemJobState != StemJobState::completed
+           && ui.stemJobState != StemJobState::failed
+           && ui.stemJobState != StemJobState::cancelled;
+}
 }
 
 SampleLane::SampleLane (IntersectProcessor& p, WaveformView& wv) : processor (p), waveformView (wv) {}
@@ -65,11 +74,13 @@ std::vector<SampleLane::VisibleSample> SampleLane::buildVisibleSamples() const
         visible.selected = sample.sampleId == selectedId;
         visible.colour = getTheme().slicePalette[(15 - (i % 16) + 16) % 16];
         visible.label = sample.fileName.toString();
+        const bool jobRunning = isStemJobRunningForSample (ui, sample.sampleId);
         const int blockW = x2 - x1;
         const int buttonH = juce::jmax (12, getHeight() - 6);
         const int buttonY = (getHeight() - buttonH) / 2;
         const int deleteW = juce::jmin (16, juce::jmax (12, blockW / 6));
-        const int stemsW = juce::jmin (44, juce::jmax (18, blockW / 3));
+        const int cancelW = juce::jmin (54, juce::jmax (34, blockW / 2));
+        const int stemsW = jobRunning ? cancelW : juce::jmin (44, juce::jmax (18, blockW / 3));
         int right = x2 - 3;
         visible.deleteBounds = { right - deleteW, buttonY, deleteW, buttonH };
         right = visible.deleteBounds.getX() - 2;
@@ -96,6 +107,7 @@ void SampleLane::paint (juce::Graphics& g)
     g.fillAll (getTheme().surface0);
 
     const auto visible = buildVisibleSamples();
+    const auto& ui = processor.getUiSliceSnapshot();
     const int h = getHeight();
 
     g.setColour (getTheme().surface3.withAlpha (0.78f));
@@ -177,10 +189,21 @@ void SampleLane::paint (juce::Graphics& g)
 
     for (const auto& sample : visible)
     {
-        drawButton (sample.stemsBounds,
-                    sample.stemsBounds.getWidth() < 24 ? "S" : "STEMS",
-                    getTheme().surface4.withAlpha (0.92f),
-                    getTheme().text2.withAlpha (0.92f));
+        const bool jobRunning = isStemJobRunningForSample (ui, sample.sampleId);
+        if (jobRunning)
+        {
+            drawButton (sample.stemsBounds,
+                        "CANCEL",
+                        juce::Colours::black.withAlpha (0.18f),
+                        getTheme().text2.withAlpha (0.86f));
+        }
+        else
+        {
+            drawButton (sample.stemsBounds,
+                        sample.stemsBounds.getWidth() < 24 ? "S" : "STEMS",
+                        getTheme().surface4.withAlpha (0.92f),
+                        getTheme().text2.withAlpha (0.92f));
+        }
         drawButton (sample.deleteBounds,
                     "X",
                     juce::Colours::black.withAlpha (0.18f),
@@ -189,7 +212,6 @@ void SampleLane::paint (juce::Graphics& g)
 
     // Draw stem separation progress bar on the source sample
     {
-        const auto& ui = processor.getUiSliceSnapshot();
         const auto stemState = ui.stemJobState;
         if (stemState == StemJobState::preparing
             || stemState == StemJobState::separating
@@ -227,14 +249,14 @@ void SampleLane::paint (juce::Graphics& g)
 
 void SampleLane::mouseDown (const juce::MouseEvent& e)
 {
-    if (onInteraction != nullptr)
-        onInteraction();
-
     const auto visible = buildVisibleSamples();
     const auto pos = e.getPosition();
     const int hitId = hitTestSample (pos);
     const auto it = std::find_if (visible.begin(), visible.end(),
                                   [hitId] (const VisibleSample& sample) { return sample.sampleId == hitId; });
+
+    if (onInteraction != nullptr)
+        onInteraction();
 
     if (it != visible.end() && it->deleteBounds.contains (pos))
     {
@@ -252,11 +274,7 @@ void SampleLane::mouseDown (const juce::MouseEvent& e)
         repaint();
 
         const auto& ui = processor.getUiSliceSnapshot();
-        const bool jobRunning = ui.stemJobSourceSampleId == hitId
-                                && ui.stemJobState != StemJobState::idle
-                                && ui.stemJobState != StemJobState::completed
-                                && ui.stemJobState != StemJobState::failed
-                                && ui.stemJobState != StemJobState::cancelled;
+        const bool jobRunning = isStemJobRunningForSample (ui, hitId);
 
         if (jobRunning)
         {
@@ -264,7 +282,7 @@ void SampleLane::mouseDown (const juce::MouseEvent& e)
         }
         else
         {
-            if (stemExportPanel != nullptr)
+            if (stemExportPanel != nullptr && stemExportPanel->getTargetSampleId() == hitId)
                 dismissStemExportPanel();
             else
                 showStemExportPanel (hitId);

@@ -17,7 +17,8 @@
 #include "params/ParamIds.h"
 #include "params/ParamLayout.h"
 
-class IntersectProcessor : public juce::AudioProcessor
+class IntersectProcessor : public juce::AudioProcessor,
+                           private juce::AsyncUpdater
 {
 public:
     IntersectProcessor();
@@ -203,6 +204,7 @@ public:
     void startStemSeparation (int sampleId,
                               StemModelId modelId,
                               StemSelectionMask stemSelectionMask,
+                              StemExportMode exportMode,
                               const juce::File& outputFolder = {});
     void cancelStemSeparation();
     void startStemModelDownload (const std::vector<StemModelId>& modelIds);
@@ -377,6 +379,7 @@ private:
         RtText<256> text;
         bool isWarning = false;
         Source source = Source::none;
+        int64_t shownAtMs = 0;
     };
 
     struct PendingSliceTimelineRemap
@@ -414,6 +417,8 @@ private:
     int findSessionSampleIndexById (int sampleId) const;
     int generateSessionSampleId();
     void publishUiSliceSnapshot();
+    void handleAsyncUpdate() override;
+    void handleStemJobCompletionOnMessageThread();
     void setMissingFileInfo (const RtText<512>& fileName, const RtText<4096>& filePath);
     void clearMissingFileInfo();
     const MissingFileInfo& getMissingFileInfo() const;
@@ -485,6 +490,7 @@ private:
     StemComputeDevice stemComputeDevice = StemComputeDevice::cpu;
     StemModelDownloadJob stemModelDownloadJob;
     StemSeparationJob stemJob;
+    std::atomic<bool> stemCompletionQueued { false };
 
     // Stem metadata keyed by session sample ID.
     // Stored separately because DecodedSample is immutable (const shared_ptr).

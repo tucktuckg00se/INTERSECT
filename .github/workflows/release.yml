@@ -24,17 +24,17 @@ jobs:
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DINTERSECT_VERSION=${{ env.PLUGIN_VERSION }} -DINTERSECT_GPU_DIRECTML=ON
 
       - name: Build
-        run: cmake --build build --config Release
+        run: cmake --build build --config Release --target Intersect_All
 
       - name: Package
         run: |
+          ART_ROOT=build/Intersect_artefacts
+          if [ -d "$ART_ROOT/Release" ]; then
+            ART_ROOT="$ART_ROOT/Release"
+          fi
           mkdir staging
-          cp -r build/Intersect_artefacts/Release/VST3/INTERSECT.vst3 staging/
-          cp build/Intersect_artefacts/Release/Standalone/INTERSECT.exe staging/
-          cp build/_deps/onnxruntime-src/lib/onnxruntime.dll staging/
-          cp build/_deps/onnxruntime-src/lib/DirectML.dll staging/
-          cp build/_deps/onnxruntime-src/lib/onnxruntime.dll staging/INTERSECT.vst3/Contents/x86_64-win/
-          cp build/_deps/onnxruntime-src/lib/DirectML.dll staging/INTERSECT.vst3/Contents/x86_64-win/
+          cp -r "$ART_ROOT/VST3/INTERSECT.vst3" staging/
+          cp -a "$ART_ROOT/Standalone/." staging/
           cd staging && 7z a ../INTERSECT-${{ github.ref_name }}-Windows-x64.zip *
 
       - uses: actions/upload-artifact@v5
@@ -62,15 +62,17 @@ jobs:
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DINTERSECT_VERSION=${{ env.PLUGIN_VERSION }}
 
       - name: Build
-        run: cmake --build build --config Release
+        run: cmake --build build --config Release --target Intersect_All
 
       - name: Package
         run: |
+          ART_ROOT=build/Intersect_artefacts
+          if [ -d "$ART_ROOT/Release" ]; then
+            ART_ROOT="$ART_ROOT/Release"
+          fi
           mkdir staging
-          cp -r build/Intersect_artefacts/Release/VST3/INTERSECT.vst3 staging/
-          cp build/Intersect_artefacts/Release/Standalone/INTERSECT staging/
-          cp build/_deps/onnxruntime-src/lib/libonnxruntime.so staging/
-          cp build/_deps/onnxruntime-src/lib/libonnxruntime.so staging/INTERSECT.vst3/Contents/x86_64-linux/
+          cp -r "$ART_ROOT/VST3/INTERSECT.vst3" staging/
+          cp -a "$ART_ROOT/Standalone/." staging/
           cd staging && zip -r ../INTERSECT-${{ github.ref_name }}-Linux-x64.zip .
 
       - uses: actions/upload-artifact@v5
@@ -98,19 +100,17 @@ jobs:
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DINTERSECT_VERSION=${{ env.PLUGIN_VERSION }} -DINTERSECT_GPU_CUDA=ON
 
       - name: Build
-        run: cmake --build build --config Release
+        run: cmake --build build --config Release --target Intersect_All
 
       - name: Package
         run: |
+          ART_ROOT=build/Intersect_artefacts
+          if [ -d "$ART_ROOT/Release" ]; then
+            ART_ROOT="$ART_ROOT/Release"
+          fi
           mkdir staging
-          cp -r build/Intersect_artefacts/Release/VST3/INTERSECT.vst3 staging/
-          cp build/Intersect_artefacts/Release/Standalone/INTERSECT staging/
-          cp build/_deps/onnxruntime-src/lib/libonnxruntime.so staging/
-          cp build/_deps/onnxruntime-src/lib/libonnxruntime_providers_shared.so staging/
-          cp build/_deps/onnxruntime-src/lib/libonnxruntime_providers_cuda.so staging/
-          cp build/_deps/onnxruntime-src/lib/libonnxruntime.so staging/INTERSECT.vst3/Contents/x86_64-linux/
-          cp build/_deps/onnxruntime-src/lib/libonnxruntime_providers_shared.so staging/INTERSECT.vst3/Contents/x86_64-linux/
-          cp build/_deps/onnxruntime-src/lib/libonnxruntime_providers_cuda.so staging/INTERSECT.vst3/Contents/x86_64-linux/
+          cp -r "$ART_ROOT/VST3/INTERSECT.vst3" staging/
+          cp -a "$ART_ROOT/Standalone/." staging/
           cd staging && zip -r ../INTERSECT-${{ github.ref_name }}-Linux-x64-CUDA.zip .
 
       - uses: actions/upload-artifact@v5
@@ -133,20 +133,28 @@ jobs:
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=10.13 -DINTERSECT_VERSION=${{ env.PLUGIN_VERSION }} -DINTERSECT_GPU_COREML=ON
 
       - name: Build
-        run: cmake --build build --config Release
+        run: cmake --build build --config Release --target Intersect_All
+
+      - name: Codesign
+        run: |
+          ART_ROOT=build/Intersect_artefacts
+          if [ -d "$ART_ROOT/Release" ]; then
+            ART_ROOT="$ART_ROOT/Release"
+          fi
+          codesign --force --deep --sign - "$ART_ROOT/AU/INTERSECT.component"
+          codesign --force --deep --sign - "$ART_ROOT/VST3/INTERSECT.vst3"
+          codesign --force --deep --sign - "$ART_ROOT/Standalone/INTERSECT.app"
 
       - name: Package
         run: |
+          ART_ROOT=build/Intersect_artefacts
+          if [ -d "$ART_ROOT/Release" ]; then
+            ART_ROOT="$ART_ROOT/Release"
+          fi
           mkdir staging
-          cp -r build/Intersect_artefacts/Release/VST3/INTERSECT.vst3 staging/
-          cp -r build/Intersect_artefacts/Release/Standalone/INTERSECT.app staging/
-          cp -r build/Intersect_artefacts/Release/AU/INTERSECT.component staging/
-          cp build/_deps/onnxruntime-src/lib/libonnxruntime.dylib staging/INTERSECT.vst3/Contents/MacOS/
-          cp build/_deps/onnxruntime-src/lib/libonnxruntime.dylib staging/INTERSECT.app/Contents/MacOS/
-          cp build/_deps/onnxruntime-src/lib/libonnxruntime.dylib staging/INTERSECT.component/Contents/MacOS/
-          codesign --force --deep --sign - staging/INTERSECT.component
-          codesign --force --deep --sign - staging/INTERSECT.vst3
-          codesign --force --deep --sign - staging/INTERSECT.app
+          cp -r "$ART_ROOT/VST3/INTERSECT.vst3" staging/
+          cp -r "$ART_ROOT/Standalone/INTERSECT.app" staging/
+          cp -r "$ART_ROOT/AU/INTERSECT.component" staging/
           cd staging && zip -r ../INTERSECT-${{ github.ref_name }}-macOS-arm64.zip .
 
       - uses: actions/upload-artifact@v5
@@ -169,20 +177,28 @@ jobs:
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=10.13 -DINTERSECT_VERSION=${{ env.PLUGIN_VERSION }} -DINTERSECT_GPU_COREML=ON
 
       - name: Build
-        run: cmake --build build --config Release
+        run: cmake --build build --config Release --target Intersect_All
+
+      - name: Codesign
+        run: |
+          ART_ROOT=build/Intersect_artefacts
+          if [ -d "$ART_ROOT/Release" ]; then
+            ART_ROOT="$ART_ROOT/Release"
+          fi
+          codesign --force --deep --sign - "$ART_ROOT/AU/INTERSECT.component"
+          codesign --force --deep --sign - "$ART_ROOT/VST3/INTERSECT.vst3"
+          codesign --force --deep --sign - "$ART_ROOT/Standalone/INTERSECT.app"
 
       - name: Package
         run: |
+          ART_ROOT=build/Intersect_artefacts
+          if [ -d "$ART_ROOT/Release" ]; then
+            ART_ROOT="$ART_ROOT/Release"
+          fi
           mkdir staging
-          cp -r build/Intersect_artefacts/Release/VST3/INTERSECT.vst3 staging/
-          cp -r build/Intersect_artefacts/Release/Standalone/INTERSECT.app staging/
-          cp -r build/Intersect_artefacts/Release/AU/INTERSECT.component staging/
-          cp build/_deps/onnxruntime-src/lib/libonnxruntime.dylib staging/INTERSECT.vst3/Contents/MacOS/
-          cp build/_deps/onnxruntime-src/lib/libonnxruntime.dylib staging/INTERSECT.app/Contents/MacOS/
-          cp build/_deps/onnxruntime-src/lib/libonnxruntime.dylib staging/INTERSECT.component/Contents/MacOS/
-          codesign --force --deep --sign - staging/INTERSECT.component
-          codesign --force --deep --sign - staging/INTERSECT.vst3
-          codesign --force --deep --sign - staging/INTERSECT.app
+          cp -r "$ART_ROOT/VST3/INTERSECT.vst3" staging/
+          cp -r "$ART_ROOT/Standalone/INTERSECT.app" staging/
+          cp -r "$ART_ROOT/AU/INTERSECT.component" staging/
           cd staging && zip -r ../INTERSECT-${{ github.ref_name }}-macOS-x64.zip .
 
       - uses: actions/upload-artifact@v5
