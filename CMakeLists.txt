@@ -29,20 +29,14 @@ project(Intersect)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-set(INTERSECT_ORT_VERSION "1.23.2" CACHE STRING "ONNX Runtime version to download")
+set(INTERSECT_ORT_VERSION "1.24.2" CACHE STRING "ONNX Runtime version to download")
 set(INTERSECT_ORT_ROOT "" CACHE PATH "Path to a prebuilt ONNX Runtime package (skips auto-download)")
 
 # --- GPU execution provider options ---
 option(INTERSECT_GPU_DIRECTML "Enable DirectML execution provider (Windows)" OFF)
 option(INTERSECT_GPU_COREML   "Enable CoreML execution provider (macOS)"   OFF)
 option(INTERSECT_GPU_CUDA     "Enable CUDA execution provider (Linux)"     OFF)
-option(INTERSECT_GPU_ROCM     "Enable ROCm execution provider (Linux)"     OFF)
-
-if(INTERSECT_GPU_ROCM AND INTERSECT_ORT_ROOT STREQUAL "")
-    message(FATAL_ERROR
-        "INTERSECT_GPU_ROCM requires a custom INTERSECT_ORT_ROOT. "
-        "ONNX Runtime ${INTERSECT_ORT_VERSION} does not provide a prebuilt linux-x64 ROCm package.")
-endif()
+option(INTERSECT_GPU_MIGRAPHX "Enable MIGraphX execution provider (Linux, AMD GPU)" OFF)
 
 # --- Auto-download ONNX Runtime if no custom root is set ---
 if(INTERSECT_ORT_ROOT STREQUAL "")
@@ -55,21 +49,49 @@ if(INTERSECT_ORT_ROOT STREQUAL "")
             set(_ort_url "https://github.com/microsoft/onnxruntime/releases/download/v${INTERSECT_ORT_VERSION}/onnxruntime-win-x64-${INTERSECT_ORT_VERSION}.zip")
         endif()
     elseif(APPLE)
-        set(_ort_url "https://github.com/microsoft/onnxruntime/releases/download/v${INTERSECT_ORT_VERSION}/onnxruntime-osx-universal2-${INTERSECT_ORT_VERSION}.tgz")
+        if(CMAKE_OSX_ARCHITECTURES STREQUAL "x86_64" OR (NOT CMAKE_OSX_ARCHITECTURES AND CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64"))
+            message(STATUS "macOS x86_64: ORT 1.24+ has no x64 package — stem separation disabled")
+        else()
+            set(_ort_url "https://github.com/microsoft/onnxruntime/releases/download/v${INTERSECT_ORT_VERSION}/onnxruntime-osx-arm64-${INTERSECT_ORT_VERSION}.tgz")
+        endif()
     else()
         if(INTERSECT_GPU_CUDA)
-            set(_ort_url "https://github.com/microsoft/onnxruntime/releases/download/v${INTERSECT_ORT_VERSION}/onnxruntime-linux-x64-gpu-${INTERSECT_ORT_VERSION}.tgz")
+            # Detect CUDA major version from libcudart to pick the right ORT GPU package
+            execute_process(
+                COMMAND ldconfig -p
+                OUTPUT_VARIABLE _ldconfig_out
+                ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE
+            )
+            set(_ort_cuda_suffix "gpu")
+            if(_ldconfig_out MATCHES "libcudart\\.so\\.([0-9]+)")
+                set(_cuda_major "${CMAKE_MATCH_1}")
+                message(STATUS "Detected CUDA major version: ${_cuda_major}")
+                if(_cuda_major GREATER_EQUAL 13)
+                    set(_ort_cuda_suffix "gpu_cuda13")
+                endif()
+            else()
+                message(STATUS "Could not detect CUDA version from ldconfig, defaulting to CUDA 12 ORT package")
+            endif()
+            set(_ort_url "https://github.com/microsoft/onnxruntime/releases/download/v${INTERSECT_ORT_VERSION}/onnxruntime-linux-x64-${_ort_cuda_suffix}-${INTERSECT_ORT_VERSION}.tgz")
+        elseif(INTERSECT_GPU_MIGRAPHX)
+            if(INTERSECT_ORT_ROOT STREQUAL "")
+                message(FATAL_ERROR
+                    "INTERSECT_GPU_MIGRAPHX requires a custom INTERSECT_ORT_ROOT. "
+                    "Set INTERSECT_ORT_ROOT to an ORT build with MIGraphX support.")
+            endif()
         else()
             set(_ort_url "https://github.com/microsoft/onnxruntime/releases/download/v${INTERSECT_ORT_VERSION}/onnxruntime-linux-x64-${INTERSECT_ORT_VERSION}.tgz")
         endif()
     endif()
 
-    FetchContent_Declare(onnxruntime
-        URL "${_ort_url}"
-        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-    )
-    FetchContent_MakeAvailable(onnxruntime)
-    set(INTERSECT_ORT_ROOT "${onnxruntime_SOURCE_DIR}")
+    if(DEFINED _ort_url AND NOT _ort_url STREQUAL "")
+        FetchContent_Declare(onnxruntime
+            URL "${_ort_url}"
+            DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+        )
+        FetchContent_MakeAvailable(onnxruntime)
+        set(INTERSECT_ORT_ROOT "${onnxruntime_SOURCE_DIR}")
+    endif()
 endif()
 
 set(INTERSECT_HAS_ONNX_RUNTIME OFF)
@@ -212,7 +234,7 @@ target_compile_definitions(Intersect PUBLIC
     INTERSECT_HAS_DIRECTML=$<BOOL:${INTERSECT_GPU_DIRECTML}>
     INTERSECT_HAS_COREML=$<BOOL:${INTERSECT_GPU_COREML}>
     INTERSECT_HAS_CUDA=$<BOOL:${INTERSECT_GPU_CUDA}>
-    INTERSECT_HAS_ROCM=$<BOOL:${INTERSECT_GPU_ROCM}>
+    INTERSECT_HAS_MIGRAPHX=$<BOOL:${INTERSECT_GPU_MIGRAPHX}>
 )
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")

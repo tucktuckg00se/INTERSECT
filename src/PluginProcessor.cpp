@@ -444,6 +444,7 @@ void IntersectProcessor::setUiStatusMessage (const RtText<256>& text,
     status.source = source;
     status.shownAtMs = juce::Time::currentTimeMillis();
     uiStatusMessageIndex.store (writeIndex, std::memory_order_release);
+    uiSnapshotDirty.store (true, std::memory_order_release);
 }
 
 void IntersectProcessor::clearUiStatusMessage()
@@ -3257,7 +3258,7 @@ void IntersectProcessor::getStateInformation (juce::MemoryBlock& destData)
 
     // Optional v24 extension block for fields added without changing the base version.
     stream.writeInt (kStateExtensionMagic);
-    stream.writeInt (5);
+    stream.writeInt (6);
     stream.writeInt (numSlices);
     for (int i = 0; i < numSlices; ++i)
         stream.writeInt (sliceManager.getSlice (i).repitchMode);
@@ -3307,6 +3308,8 @@ void IntersectProcessor::getStateInformation (juce::MemoryBlock& destData)
         stream.writeInt (static_cast<int> (meta.role));
         stream.writeBool (meta.isGenerated);
     }
+    // Extension v6: stem compute device preference
+    stream.writeInt (static_cast<int> (stemComputeDevice));
 }
 
 void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
@@ -3641,6 +3644,15 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
                             meta.role = static_cast<StemRole> (juce::jlimit (0, 4, roleInt));
                             meta.isGenerated = isGenerated;
                         }
+                    }
+                }
+
+                if (extensionVersion >= 6)
+                {
+                    if (requireBytes (4))
+                    {
+                        const int deviceInt = trialStream.readInt();
+                        stemComputeDevice = static_cast<StemComputeDevice> (juce::jlimit (0, 1, deviceInt));
                     }
                 }
             }

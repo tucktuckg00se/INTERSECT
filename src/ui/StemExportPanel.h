@@ -57,6 +57,7 @@ private:
     StemExportMode selectedExportMode = StemExportMode::combine;
     juce::File customOutputFolder;
     bool useCustomFolder = false;
+    bool ortAvailable = false;
 
     juce::TextButton startBtn    { "START" };
     juce::TextButton browseBtn   { "..." };

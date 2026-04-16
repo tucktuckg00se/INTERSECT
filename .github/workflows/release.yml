@@ -118,6 +118,50 @@ jobs:
           name: INTERSECT-Linux-x64-CUDA
           path: INTERSECT-${{ github.ref_name }}-Linux-x64-CUDA.zip
 
+  build-linux-migraphx:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libfreetype-dev libx11-dev libxrandr-dev libxcursor-dev libxinerama-dev libwebkit2gtk-4.1-dev libcurl4-openssl-dev
+
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Get version
+        shell: bash
+        run: echo "PLUGIN_VERSION=$(echo '${{ github.ref_name }}' | sed 's/^v//' | sed 's/-rc\.[0-9]*//')" >> $GITHUB_ENV
+
+      - name: Download MIGraphX ORT package
+        run: |
+          echo "TODO: Download prebuilt ORT+MIGraphX package from self-hosted repo"
+          echo "Once the onnxruntime-migraphx-build repo has a release, set ORT_ROOT here"
+          exit 1
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DINTERSECT_VERSION=${{ env.PLUGIN_VERSION }} -DINTERSECT_GPU_MIGRAPHX=ON -DINTERSECT_ORT_ROOT=${{ github.workspace }}/ort-migraphx
+
+      - name: Build
+        run: cmake --build build --config Release --target Intersect_All
+
+      - name: Package
+        run: |
+          ART_ROOT=build/Intersect_artefacts
+          if [ -d "$ART_ROOT/Release" ]; then
+            ART_ROOT="$ART_ROOT/Release"
+          fi
+          mkdir staging
+          cp -r "$ART_ROOT/VST3/INTERSECT.vst3" staging/
+          cp -a "$ART_ROOT/Standalone/." staging/
+          cd staging && zip -r ../INTERSECT-${{ github.ref_name }}-Linux-x64-MIGraphX.zip .
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: INTERSECT-Linux-x64-MIGraphX
+          path: INTERSECT-${{ github.ref_name }}-Linux-x64-MIGraphX.zip
+
   build-macos-arm64:
     runs-on: macos-latest
     steps:
@@ -207,7 +251,7 @@ jobs:
           path: INTERSECT-${{ github.ref_name }}-macOS-x64.zip
 
   release:
-    needs: [build-windows, build-linux, build-linux-cuda, build-macos-arm64, build-macos-x64]
+    needs: [build-windows, build-linux, build-linux-cuda, build-linux-migraphx, build-macos-arm64, build-macos-x64]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -244,5 +288,6 @@ jobs:
             artifacts/INTERSECT-Windows-x64/INTERSECT-${{ github.ref_name }}-Windows-x64.zip
             artifacts/INTERSECT-Linux-x64/INTERSECT-${{ github.ref_name }}-Linux-x64.zip
             artifacts/INTERSECT-Linux-x64-CUDA/INTERSECT-${{ github.ref_name }}-Linux-x64-CUDA.zip
+            artifacts/INTERSECT-Linux-x64-MIGraphX/INTERSECT-${{ github.ref_name }}-Linux-x64-MIGraphX.zip
             artifacts/INTERSECT-macOS-arm64/INTERSECT-${{ github.ref_name }}-macOS-arm64.zip
             artifacts/INTERSECT-macOS-x64/INTERSECT-${{ github.ref_name }}-macOS-x64.zip

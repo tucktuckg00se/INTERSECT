@@ -1,7 +1,7 @@
 # Build
 build/
 build-cuda/
-build-rocm/
+build-migraphx/
 cmake-build-*/
 out/
 

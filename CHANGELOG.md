@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- GPU acceleration for stem separation: automatically detects CUDA 13 or CUDA 12 on Linux, uses DirectML on Windows, and CoreML on macOS. The stem export panel now shows which GPU runtime is active and falls back to a clear error message if the runtime is unavailable
+- Experimental MIGraphX support for AMD GPUs on Linux (requires a custom ONNX Runtime build)
+
+### Changed
+- Updated ONNX Runtime to 1.24.2 on Windows and Linux for improved GPU compatibility; macOS stays on 1.23.2 for x64 support
+- On Intel macs, the stem separation panel now clearly shows that stem separation is not available instead of failing on START
+
+### Fixed
+- GPU stem separation errors now display in the header status bar instead of silently doing nothing
+- CUDA stem separation on Linux no longer fails with a logging error when the GPU is available
+
 ## [0.13.0] - 2026-04-15
 
 ### Added

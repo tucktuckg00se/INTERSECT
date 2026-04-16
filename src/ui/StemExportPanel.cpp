@@ -17,18 +17,32 @@ juce::String getStemDeviceDisplayValue (StemComputeDevice device)
 StemExportPanel::StemExportPanel (IntersectProcessor& p, int sampleId)
     : processor (p), targetSampleId (sampleId)
 {
+    ortAvailable = INTERSECT_HAS_ONNX_RUNTIME;
     installedModels = processor.getInstalledStemModels();
-    selectedDevice = processor.getStemComputeDevice();
+    selectedDevice = getAvailableGpuProviderName().isNotEmpty()
+                         ? processor.getStemComputeDevice()
+                         : StemComputeDevice::cpu;
 
     modelCell.label = "MODEL";
     deviceCell.label = "DEVICE";
     modeCell.label = "MODE";
     outputCell.label = "OUTPUT";
 
-    deviceCell.displayValue = getStemDeviceDisplayValue (selectedDevice);
-    modeCell.displayValue = stemExportModeToString (selectedExportMode);
-    outputCell.displayValue = "Beside sample";
-    updateSelectedModelDisplay();
+    if (ortAvailable)
+    {
+        deviceCell.displayValue = getStemDeviceDisplayValue (selectedDevice);
+        modeCell.displayValue = stemExportModeToString (selectedExportMode);
+        outputCell.displayValue = "Beside sample";
+        updateSelectedModelDisplay();
+    }
+    else
+    {
+        modelCell.displayValue = "Not available";
+        deviceCell.displayValue = "-";
+        modeCell.displayValue = "-";
+        outputCell.displayValue = "-";
+    }
+
     rebuildStemToggles();
 
     addAndMakeVisible (startBtn);
@@ -123,8 +137,16 @@ void StemExportPanel::paint (juce::Graphics& g)
     drawCell (modeCell);
     drawCell (outputCell);
 
-    // Stem toggles
-    if (! stemToggles.empty())
+    // Stem toggles / unavailable message
+    if (! ortAvailable)
+    {
+        auto msgArea = getLocalBounds().withTrimmedTop (33).reduced (4, 0);
+        g.setFont (IntersectLookAndFeel::makeFont (10.0f));
+        g.setColour (getTheme().text2.withAlpha (0.6f));
+        g.drawText ("Stem separation is not available on this platform",
+                     msgArea, juce::Justification::centredLeft);
+    }
+    else if (! stemToggles.empty())
     {
         auto toggleArea = getLocalBounds().withTrimmedTop (33).reduced (4, 0);
         g.setFont (IntersectLookAndFeel::makeFont (9.0f, true));
@@ -229,6 +251,9 @@ int StemExportPanel::hitTestStemToggle (juce::Point<int> pos) const
 
 void StemExportPanel::mouseDown (const juce::MouseEvent& e)
 {
+    if (! ortAvailable)
+        return;
+
     int idx = hitTestCell (e.getPosition());
 
     if (idx == 0 && installedModels.size() > 1)
@@ -237,7 +262,7 @@ void StemExportPanel::mouseDown (const juce::MouseEvent& e)
         updateSelectedModelDisplay();
         rebuildStemToggles();
     }
-    else if (idx == 1)
+    else if (idx == 1 && getAvailableGpuProviderName().isNotEmpty())
     {
         selectedDevice = (selectedDevice == StemComputeDevice::cpu)
                              ? StemComputeDevice::gpu
@@ -309,7 +334,7 @@ void StemExportPanel::updateSelectedModelDisplay()
 
 void StemExportPanel::updateStartButtonState()
 {
-    startBtn.setEnabled (! installedModels.empty() && getStemSelectionMask() != 0);
+    startBtn.setEnabled (ortAvailable && ! installedModels.empty() && getStemSelectionMask() != 0);
 }
 
 StemSelectionMask StemExportPanel::getStemSelectionMask() const

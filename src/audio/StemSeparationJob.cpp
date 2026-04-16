@@ -179,7 +179,7 @@ bool configureExecutionProvider (Ort::SessionOptions& options, StemComputeDevice
    #if INTERSECT_HAS_COREML
     try
     {
-        Ort::ThrowOnError (OrtSessionOptionsAppendExecutionProvider_CoreML (options, 0));
+        Ort::ThrowOnError (OrtSessionOptionsAppendExecutionProvider_CoreML (options, COREML_FLAG_USE_CPU_AND_GPU));
         return true;
     }
     catch (const std::exception& e)
@@ -217,17 +217,15 @@ bool configureExecutionProvider (Ort::SessionOptions& options, StemComputeDevice
     }
    #endif
 
-   #if INTERSECT_HAS_ROCM
+   #if INTERSECT_HAS_MIGRAPHX
     try
     {
-        OrtROCMProviderOptions rocmOptions {};
-        rocmOptions.device_id = 0;
-        options.AppendExecutionProvider_ROCM (rocmOptions);
+        Ort::ThrowOnError (OrtSessionOptionsAppendExecutionProvider_MIGraphX (options, 0));
         return true;
     }
     catch (const std::exception& e)
     {
-        errorMessage = juce::String ("ROCm unavailable: ") + e.what();
+        errorMessage = juce::String ("MIGraphX unavailable: ") + e.what();
     }
    #endif
 
@@ -461,20 +459,30 @@ juce::String getStemGpuAvailabilityError()
 #if ! INTERSECT_HAS_ONNX_RUNTIME
     return providerLabel + " export unavailable. ONNX Runtime is not bundled in this build.";
 #else
-    Ort::SessionOptions sessionOptions;
-    sessionOptions.SetIntraOpNumThreads (1);
-    sessionOptions.SetGraphOptimizationLevel (GraphOptimizationLevel::ORT_ENABLE_ALL);
+    try
+    {
+        ensureOrtApiInitialized();
+        (void) getOrtEnv();
 
-    juce::String errorMessage;
-    if (configureExecutionProvider (sessionOptions, StemComputeDevice::gpu, errorMessage))
-        return {};
+        Ort::SessionOptions sessionOptions;
+        sessionOptions.SetIntraOpNumThreads (1);
+        sessionOptions.SetGraphOptimizationLevel (GraphOptimizationLevel::ORT_ENABLE_ALL);
 
-    if (errorMessage.isEmpty())
-        errorMessage = providerLabel + " is not available in this build.";
+        juce::String errorMessage;
+        if (configureExecutionProvider (sessionOptions, StemComputeDevice::gpu, errorMessage))
+            return {};
 
-    return providerLabel + " export unavailable. INTERSECT could not start the "
-         + providerLabel + " runtime on this system. Switch DEVICE to CPU or install the required "
-         + providerLabel + " runtime. Details: " + errorMessage;
+        if (errorMessage.isEmpty())
+            errorMessage = providerLabel + " is not available in this build.";
+
+        return providerLabel + " export unavailable. INTERSECT could not start the "
+             + providerLabel + " runtime on this system. Switch DEVICE to CPU or install the required "
+             + providerLabel + " runtime. Details: " + errorMessage;
+    }
+    catch (const std::exception& e)
+    {
+        return providerLabel + " export unavailable: " + e.what();
+    }
 #endif
 }
 

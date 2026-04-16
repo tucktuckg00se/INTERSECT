@@ -146,8 +146,8 @@ juce::String getAvailableGpuProviderName()
     return "DirectML";
 #elif INTERSECT_HAS_CUDA
     return "CUDA";
-#elif INTERSECT_HAS_ROCM
-    return "ROCm";
+#elif INTERSECT_HAS_MIGRAPHX
+    return "MIGraphX";
 #else
     return {};
 #endif
