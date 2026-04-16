@@ -113,6 +113,7 @@ Notes:
 - While a stem export is running, that sample's `STEMS` button changes to `CANCEL`.
 - `DEVICE` defaults to CPU. GPU can be selected when the build and local runtime support it.
 - If INTERSECT cannot use the selected GPU path, it warns before export so you can switch devices instead of silently exporting on CPU.
+- Stem separation is compute-heavy. On older PCs, especially on CPU exports, startup and processing can be noticeably slower.
 
 ### Time / Zoom Bar
 

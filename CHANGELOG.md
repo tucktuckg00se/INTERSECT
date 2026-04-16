@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-04-15
+
 ### Added
 - Multi-sample sessions with APPEND loading, a dedicated sample lane, sample reordering, and sample deletion
 - Stem separation powered by BS-RoFormer: split any sample into vocals and instrumental via the STEM panel
@@ -16,11 +18,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 - Restoring multi-sample projects and undoing back to an empty session no longer leaves stale sample data loaded
-- Release builds now bundle the ONNX Runtime files needed for stem separation, so copied VST3 and standalone builds can load outside the local build tree
-- Stem export now opens reliably from the sample lane, warning banners clear automatically, and Windows stem inference uses a more stable runtime configuration
-- Stem separation no longer crashes hosted VST3 builds in Ableton Live and REAPER when the export finishes and imports the new stem files
-- Stem separation now initializes ONNX Runtime explicitly, preventing hosted plugin crashes during model startup on Windows and avoiding the same static-init risk on other platforms
-- Hosted Windows VST3 builds now force stem separation to use INTERSECT's bundled ONNX Runtime, avoiding crashes caused by incompatible `onnxruntime.dll` versions already loaded by the DAW
+- Stem export now opens reliably from the sample lane, warning banners clear automatically, and copied release builds bundle the ONNX Runtime files they need
+- Hosted VST3 stem separation is now more stable in Ableton Live and REAPER on Windows by forcing INTERSECT to use its bundled ONNX Runtime instead of incompatible DAW-loaded versions
 
 ## [0.12.4] - 2026-04-12
 
