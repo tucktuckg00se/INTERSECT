@@ -17,7 +17,11 @@ juce::String getStemDeviceDisplayValue (StemComputeDevice device)
 StemExportPanel::StemExportPanel (IntersectProcessor& p, int sampleId)
     : processor (p), targetSampleId (sampleId)
 {
-    ortAvailable = INTERSECT_HAS_ONNX_RUNTIME;
+    ortSupportedOnPlatform = INTERSECT_HAS_ONNX_RUNTIME;
+    ortBundleInstalled = ortSupportedOnPlatform
+                         && processor.getActiveOrtBundleDirectoryName().isNotEmpty();
+    ortAvailable = ortSupportedOnPlatform && ortBundleInstalled;
+
     installedModels = processor.getInstalledStemModels();
     selectedDevice = getAvailableGpuProviderName().isNotEmpty()
                          ? processor.getStemComputeDevice()
@@ -34,6 +38,13 @@ StemExportPanel::StemExportPanel (IntersectProcessor& p, int sampleId)
         modeCell.displayValue = stemExportModeToString (selectedExportMode);
         outputCell.displayValue = "Beside sample";
         updateSelectedModelDisplay();
+    }
+    else if (ortSupportedOnPlatform)
+    {
+        modelCell.displayValue = "Download required";
+        deviceCell.displayValue = "-";
+        modeCell.displayValue = "-";
+        outputCell.displayValue = "-";
     }
     else
     {
@@ -143,8 +154,10 @@ void StemExportPanel::paint (juce::Graphics& g)
         auto msgArea = getLocalBounds().withTrimmedTop (33).reduced (4, 0);
         g.setFont (IntersectLookAndFeel::makeFont (10.0f));
         g.setColour (getTheme().text2.withAlpha (0.6f));
-        g.drawText ("Stem separation is not available on this platform",
-                     msgArea, juce::Justification::centredLeft);
+        const auto message = ortSupportedOnPlatform
+            ? juce::String ("Download an ONNX Runtime bundle in SET \xe2\x86\x92 Stem Separation \xe2\x86\x92 ONNX Runtime to enable stem export.")
+            : juce::String ("Stem separation is not available on this platform");
+        g.drawText (message, msgArea, juce::Justification::centredLeft);
     }
     else if (! stemToggles.empty())
     {

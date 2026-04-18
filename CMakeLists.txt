@@ -29,101 +29,41 @@ project(Intersect)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-set(INTERSECT_ORT_VERSION "1.24.2" CACHE STRING "ONNX Runtime version to download")
-set(INTERSECT_ORT_ROOT "" CACHE PATH "Path to a prebuilt ONNX Runtime package (skips auto-download)")
+set(INTERSECT_ORT_VERSION "1.24.2" CACHE STRING "ONNX Runtime version the plugin is compiled against")
+set(INTERSECT_ORT_HEADERS_ROOT "" CACHE PATH "Optional path to a prebuilt ONNX Runtime package containing include/ (skips header download)")
 
-# --- GPU execution provider options ---
-option(INTERSECT_GPU_DIRECTML "Enable DirectML execution provider (Windows)" OFF)
-option(INTERSECT_GPU_COREML   "Enable CoreML execution provider (macOS)"   OFF)
-option(INTERSECT_GPU_CUDA     "Enable CUDA execution provider (Linux)"     OFF)
-option(INTERSECT_GPU_MIGRAPHX "Enable MIGraphX execution provider (Linux, AMD GPU)" OFF)
-
-# --- Auto-download ONNX Runtime if no custom root is set ---
-if(INTERSECT_ORT_ROOT STREQUAL "")
-    include(FetchContent)
-    if(WIN32)
-        if(INTERSECT_GPU_DIRECTML)
-            set(_ort_archive "Microsoft.ML.OnnxRuntime.DirectML.${INTERSECT_ORT_VERSION}.zip")
-            set(_ort_url "https://github.com/microsoft/onnxruntime/releases/download/v${INTERSECT_ORT_VERSION}/onnxruntime-directml-${INTERSECT_ORT_VERSION}-win-x64.zip")
-        else()
-            set(_ort_url "https://github.com/microsoft/onnxruntime/releases/download/v${INTERSECT_ORT_VERSION}/onnxruntime-win-x64-${INTERSECT_ORT_VERSION}.zip")
-        endif()
-    elseif(APPLE)
-        if(CMAKE_OSX_ARCHITECTURES STREQUAL "x86_64" OR (NOT CMAKE_OSX_ARCHITECTURES AND CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64"))
-            message(STATUS "macOS x86_64: ORT 1.24+ has no x64 package — stem separation disabled")
-        else()
-            set(_ort_url "https://github.com/microsoft/onnxruntime/releases/download/v${INTERSECT_ORT_VERSION}/onnxruntime-osx-arm64-${INTERSECT_ORT_VERSION}.tgz")
-        endif()
-    else()
-        if(INTERSECT_GPU_CUDA)
-            # Detect CUDA major version from libcudart to pick the right ORT GPU package
-            execute_process(
-                COMMAND ldconfig -p
-                OUTPUT_VARIABLE _ldconfig_out
-                ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE
-            )
-            set(_ort_cuda_suffix "gpu")
-            if(_ldconfig_out MATCHES "libcudart\\.so\\.([0-9]+)")
-                set(_cuda_major "${CMAKE_MATCH_1}")
-                message(STATUS "Detected CUDA major version: ${_cuda_major}")
-                if(_cuda_major GREATER_EQUAL 13)
-                    set(_ort_cuda_suffix "gpu_cuda13")
-                endif()
-            else()
-                message(STATUS "Could not detect CUDA version from ldconfig, defaulting to CUDA 12 ORT package")
-            endif()
-            set(_ort_url "https://github.com/microsoft/onnxruntime/releases/download/v${INTERSECT_ORT_VERSION}/onnxruntime-linux-x64-${_ort_cuda_suffix}-${INTERSECT_ORT_VERSION}.tgz")
-        elseif(INTERSECT_GPU_MIGRAPHX)
-            if(INTERSECT_ORT_ROOT STREQUAL "")
-                message(FATAL_ERROR
-                    "INTERSECT_GPU_MIGRAPHX requires a custom INTERSECT_ORT_ROOT. "
-                    "Set INTERSECT_ORT_ROOT to an ORT build with MIGraphX support.")
-            endif()
-        else()
-            set(_ort_url "https://github.com/microsoft/onnxruntime/releases/download/v${INTERSECT_ORT_VERSION}/onnxruntime-linux-x64-${INTERSECT_ORT_VERSION}.tgz")
-        endif()
+# ONNX Runtime is not shipped with the plugin. The user downloads a runtime bundle
+# (CPU or GPU) on demand via the in-plugin Stem Separation menu. At build time we
+# only need the C/C++ API headers so the plugin can compile; the shared library is
+# loaded at runtime from the user's chosen bundle path.
+set(INTERSECT_HAS_ONNX_RUNTIME OFF)
+set(_intersect_ort_supported ON)
+if(APPLE)
+    if(CMAKE_OSX_ARCHITECTURES STREQUAL "x86_64"
+       OR (NOT CMAKE_OSX_ARCHITECTURES AND CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64"))
+        message(STATUS "macOS x86_64: ORT 1.24+ has no x64 package — stem separation disabled")
+        set(_intersect_ort_supported OFF)
     endif()
+endif()
 
-    if(DEFINED _ort_url AND NOT _ort_url STREQUAL "")
-        FetchContent_Declare(onnxruntime
-            URL "${_ort_url}"
+if(_intersect_ort_supported)
+    if(INTERSECT_ORT_HEADERS_ROOT STREQUAL "")
+        include(FetchContent)
+        # Use the smallest official tarball just for headers. The CPU Linux package
+        # is ~8 MB and contains the full public include tree shared by every platform.
+        FetchContent_Declare(onnxruntime_headers
+            URL "https://github.com/microsoft/onnxruntime/releases/download/v${INTERSECT_ORT_VERSION}/onnxruntime-linux-x64-${INTERSECT_ORT_VERSION}.tgz"
             DOWNLOAD_EXTRACT_TIMESTAMP TRUE
         )
-        FetchContent_MakeAvailable(onnxruntime)
-        set(INTERSECT_ORT_ROOT "${onnxruntime_SOURCE_DIR}")
+        FetchContent_MakeAvailable(onnxruntime_headers)
+        set(INTERSECT_ORT_HEADERS_ROOT "${onnxruntime_headers_SOURCE_DIR}")
     endif()
-endif()
 
-set(INTERSECT_HAS_ONNX_RUNTIME OFF)
-if(EXISTS "${INTERSECT_ORT_ROOT}/include/onnxruntime_cxx_api.h")
-    if(WIN32 AND EXISTS "${INTERSECT_ORT_ROOT}/lib/onnxruntime.lib")
+    if(EXISTS "${INTERSECT_ORT_HEADERS_ROOT}/include/onnxruntime_cxx_api.h")
         set(INTERSECT_HAS_ONNX_RUNTIME ON)
-    elseif(APPLE AND EXISTS "${INTERSECT_ORT_ROOT}/lib/libonnxruntime.dylib")
-        set(INTERSECT_HAS_ONNX_RUNTIME ON)
-    elseif(UNIX AND EXISTS "${INTERSECT_ORT_ROOT}/lib/libonnxruntime.so")
-        set(INTERSECT_HAS_ONNX_RUNTIME ON)
-    endif()
-endif()
-
-set(INTERSECT_ORT_RUNTIME_LIBS "")
-if(INTERSECT_HAS_ONNX_RUNTIME)
-    if(WIN32)
-        file(GLOB INTERSECT_ORT_RUNTIME_LIBS
-            "${INTERSECT_ORT_ROOT}/*.dll"
-            "${INTERSECT_ORT_ROOT}/bin/*.dll"
-            "${INTERSECT_ORT_ROOT}/lib/*.dll"
-        )
-    elseif(APPLE)
-        file(GLOB INTERSECT_ORT_RUNTIME_LIBS
-            "${INTERSECT_ORT_ROOT}/lib/libonnxruntime*.dylib"
-        )
     else()
-        file(GLOB INTERSECT_ORT_RUNTIME_LIBS
-            "${INTERSECT_ORT_ROOT}/lib/libonnxruntime*.so*"
-        )
+        message(WARNING "INTERSECT_ORT_HEADERS_ROOT does not contain include/onnxruntime_cxx_api.h; stem separation will be disabled")
     endif()
-
-    list(REMOVE_DUPLICATES INTERSECT_ORT_RUNTIME_LIBS)
 endif()
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/JUCE JUCE)
@@ -199,6 +139,7 @@ target_sources(Intersect PRIVATE
     src/audio/LazyChopEngine.cpp
     src/audio/StemSeparation.cpp
     src/audio/StemModelDownloadJob.cpp
+    src/audio/OrtBundleDownloadJob.cpp
     src/params/ParamLayout.cpp
     src/ui/IntersectLookAndFeel.cpp
     src/ui/HeaderBar.cpp
@@ -222,7 +163,7 @@ target_include_directories(Intersect PRIVATE
 )
 
 if(INTERSECT_HAS_ONNX_RUNTIME)
-    target_include_directories(Intersect PRIVATE "${INTERSECT_ORT_ROOT}/include")
+    target_include_directories(Intersect PRIVATE "${INTERSECT_ORT_HEADERS_ROOT}/include")
 endif()
 
 target_compile_definitions(Intersect PUBLIC
@@ -231,10 +172,7 @@ target_compile_definitions(Intersect PUBLIC
     JUCE_DISPLAY_SPLASH_SCREEN=0
     JUCE_USE_CUSTOM_PLUGIN_STANDALONE_APP=1
     INTERSECT_HAS_ONNX_RUNTIME=$<BOOL:${INTERSECT_HAS_ONNX_RUNTIME}>
-    INTERSECT_HAS_DIRECTML=$<BOOL:${INTERSECT_GPU_DIRECTML}>
-    INTERSECT_HAS_COREML=$<BOOL:${INTERSECT_GPU_COREML}>
-    INTERSECT_HAS_CUDA=$<BOOL:${INTERSECT_GPU_CUDA}>
-    INTERSECT_HAS_MIGRAPHX=$<BOOL:${INTERSECT_GPU_MIGRAPHX}>
+    INTERSECT_ORT_VERSION="${INTERSECT_ORT_VERSION}"
 )
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
@@ -263,56 +201,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(Intersect PRIVATE CURL::libcurl)
 endif()
 
-if(INTERSECT_HAS_ONNX_RUNTIME)
-    if(WIN32)
-        target_compile_definitions(Intersect PRIVATE INTERSECT_WINDOWS_EXPLICIT_ORT_LOAD=1)
-        if(INTERSECT_GPU_DIRECTML AND EXISTS "${INTERSECT_ORT_ROOT}/lib/DirectML.lib")
-            target_link_libraries(Intersect PRIVATE "${INTERSECT_ORT_ROOT}/lib/DirectML.lib")
-        endif()
-    elseif(APPLE)
-        target_link_libraries(Intersect PRIVATE "${INTERSECT_ORT_ROOT}/lib/libonnxruntime.dylib")
-    else()
-        target_link_libraries(Intersect PRIVATE "${INTERSECT_ORT_ROOT}/lib/libonnxruntime.so")
-    endif()
-endif()
-
-function(intersect_bundle_onnx_runtime target_name)
-    if(NOT TARGET "${target_name}")
-        return()
-    endif()
-
-    if(WIN32)
-        set(_runtime_dest "$<TARGET_FILE_DIR:${target_name}>")
-    elseif(APPLE)
-        set(_runtime_dest "$<TARGET_FILE_DIR:${target_name}>/../Frameworks")
-        set_target_properties("${target_name}" PROPERTIES
-            BUILD_WITH_INSTALL_RPATH ON
-            INSTALL_RPATH "@loader_path/../Frameworks"
-        )
-    else()
-        set(_runtime_dest "$<TARGET_FILE_DIR:${target_name}>")
-        set_target_properties("${target_name}" PROPERTIES
-            BUILD_WITH_INSTALL_RPATH ON
-            BUILD_RPATH "$ORIGIN"
-            INSTALL_RPATH "$ORIGIN"
-        )
-    endif()
-
-    foreach(runtime_lib IN LISTS INTERSECT_ORT_RUNTIME_LIBS)
-        if(EXISTS "${runtime_lib}")
-            add_custom_command(TARGET "${target_name}" POST_BUILD
-                COMMAND "${CMAKE_COMMAND}" -E make_directory "${_runtime_dest}"
-                COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${runtime_lib}" "${_runtime_dest}"
-                VERBATIM
-            )
-        endif()
-    endforeach()
-endfunction()
-
-if(INTERSECT_HAS_ONNX_RUNTIME)
-    intersect_bundle_onnx_runtime(Intersect_VST3)
-    intersect_bundle_onnx_runtime(Intersect_Standalone)
-    if(APPLE)
-        intersect_bundle_onnx_runtime(Intersect_AU)
-    endif()
+if(INTERSECT_HAS_ONNX_RUNTIME AND UNIX AND NOT APPLE)
+    # dlopen() with RTLD_LAZY is called at runtime; link libdl for the symbol.
+    target_link_libraries(Intersect PRIVATE ${CMAKE_DL_LIBS})
 endif()

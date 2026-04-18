@@ -6,20 +6,15 @@
 #include <stdexcept>
 
 #if INTERSECT_HAS_ONNX_RUNTIME
-#if JUCE_WINDOWS
- #include <windows.h>
-#endif
-#define ORT_API_MANUAL_INIT
- #include <onnxruntime_cxx_api.h>
-#undef ORT_API_MANUAL_INIT
-#endif
-
-#if INTERSECT_HAS_DIRECTML
- #include <onnxruntime/core/providers/dml/dml_provider_factory.h>
-#endif
-
-#if INTERSECT_HAS_COREML
- #include <onnxruntime/core/providers/coreml/coreml_provider_factory.h>
+ #if JUCE_WINDOWS
+  #include <windows.h>
+ #else
+  #include <dlfcn.h>
+ #endif
+ #define ORT_API_MANUAL_INIT
+  #include <onnxruntime_cxx_api.h>
+ #undef ORT_API_MANUAL_INIT
+ #include <unordered_map>
 #endif
 
 namespace
@@ -107,64 +102,96 @@ juce::String sanitisePathComponent (juce::String text)
 
 #if INTERSECT_HAS_ONNX_RUNTIME
 
-void ensureOrtApiInitialized()
+struct OrtLoadState
 {
-    static std::once_flag initOnce;
-    std::call_once (initOnce, []
+    bool loaded = false;
+    juce::String errorMessage;
+};
+
+bool loadOrtSharedLibrary (const juce::File& libraryFile, juce::String& errorMessage)
+{
+    if (libraryFile == juce::File() || ! libraryFile.existsAsFile())
     {
-       #if JUCE_WINDOWS
-        HMODULE moduleHandle = nullptr;
-        if (! ::GetModuleHandleExW (GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
-                                    | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                                    reinterpret_cast<LPCWSTR> (&ensureOrtApiInitialized),
-                                    &moduleHandle)
-            || moduleHandle == nullptr)
-        {
-            throw std::runtime_error ("Failed to resolve INTERSECT module path for ONNX Runtime");
-        }
+        errorMessage = "No ONNX Runtime bundle installed. "
+                       "Download one in SET → Stem Separation → ONNX Runtime.";
+        return false;
+    }
 
-        wchar_t modulePathBuffer[4096] {};
-        const DWORD modulePathLength = ::GetModuleFileNameW (moduleHandle,
-                                                             modulePathBuffer,
-                                                             (DWORD) std::size (modulePathBuffer));
-        if (modulePathLength == 0 || modulePathLength >= std::size (modulePathBuffer))
-            throw std::runtime_error ("Failed to resolve bundled ONNX Runtime path");
+    using OrtGetApiBaseFn = const OrtApiBase* (ORT_API_CALL*)();
+    OrtGetApiBaseFn getApiBase = nullptr;
 
-        std::wstring ortDllPath (modulePathBuffer, modulePathLength);
-        const auto separator = ortDllPath.find_last_of (L"\\/");
-        if (separator == std::wstring::npos)
-            throw std::runtime_error ("Failed to resolve bundled ONNX Runtime folder");
+   #if JUCE_WINDOWS
+    const std::wstring path = libraryFile.getFullPathName().toWideCharPointer();
+    HMODULE module = ::LoadLibraryExW (path.c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
+    if (module == nullptr)
+    {
+        errorMessage = "Failed to load ONNX Runtime library: " + libraryFile.getFullPathName();
+        return false;
+    }
+    getApiBase = reinterpret_cast<OrtGetApiBaseFn> (::GetProcAddress (module, "OrtGetApiBase"));
+   #else
+    // RTLD_GLOBAL so that lazily-loaded provider .so/.dylib files can resolve
+    // their symbols back into the core runtime library.
+    const auto path = libraryFile.getFullPathName().toStdString();
+    void* handle = ::dlopen (path.c_str(), RTLD_NOW | RTLD_GLOBAL);
+    if (handle == nullptr)
+    {
+        const char* err = ::dlerror();
+        errorMessage = juce::String ("dlopen failed: ") + (err != nullptr ? err : "unknown error");
+        return false;
+    }
+    getApiBase = reinterpret_cast<OrtGetApiBaseFn> (::dlsym (handle, "OrtGetApiBase"));
+   #endif
 
-        ortDllPath.erase (separator + 1);
-        ortDllPath += L"onnxruntime.dll";
+    if (getApiBase == nullptr)
+    {
+        errorMessage = "OrtGetApiBase missing from " + libraryFile.getFileName();
+        return false;
+    }
 
-        HMODULE ortModule = ::LoadLibraryExW (ortDllPath.c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
-        if (ortModule == nullptr)
-            throw std::runtime_error ("Failed to load bundled ONNX Runtime DLL");
+    const OrtApiBase* apiBase = getApiBase();
+    if (apiBase == nullptr)
+    {
+        errorMessage = "OrtGetApiBase returned null";
+        return false;
+    }
 
-        using OrtGetApiBaseFn = const OrtApiBase* (ORT_API_CALL*)();
-        auto* getApiBase = reinterpret_cast<OrtGetApiBaseFn> (::GetProcAddress (ortModule, "OrtGetApiBase"));
-        if (getApiBase == nullptr)
-            throw std::runtime_error ("Bundled ONNX Runtime DLL is missing OrtGetApiBase");
+    const OrtApi* api = apiBase->GetApi (ORT_API_VERSION);
+    if (api == nullptr)
+    {
+        errorMessage = "ONNX Runtime at " + libraryFile.getFullPathName()
+                     + " is not compatible with the version this build of INTERSECT was compiled against";
+        return false;
+    }
 
-        const OrtApiBase* apiBase = getApiBase();
-        if (apiBase == nullptr)
-            throw std::runtime_error ("Failed to get ONNX Runtime API base");
+    Ort::InitApi (api);
+    return true;
+}
 
-        const OrtApi* api = apiBase->GetApi (ORT_API_VERSION);
-        if (api == nullptr)
-            throw std::runtime_error ("Bundled ONNX Runtime DLL is incompatible with this build");
+bool ensureOrtApiInitialized (juce::String& errorMessage)
+{
+    static OrtLoadState state;
+    static std::once_flag onceFlag;
 
-        Ort::InitApi (api);
-       #else
-        Ort::InitApi();
-       #endif
+    std::call_once (onceFlag, []
+    {
+        const auto root = getDefaultOrtRootFolder();
+        const auto libFile = resolveActiveOrtLibraryFile (root);
+        juce::String message;
+        state.loaded = loadOrtSharedLibrary (libFile, message);
+        state.errorMessage = message;
     });
+
+    if (! state.loaded)
+        errorMessage = state.errorMessage;
+
+    return state.loaded;
 }
 
 Ort::Env& getOrtEnv()
 {
-    ensureOrtApiInitialized();
+    juce::String unused;
+    (void) ensureOrtApiInitialized (unused);
     static Ort::Env env (ORT_LOGGING_LEVEL_WARNING, "INTERSECT");
     return env;
 }
@@ -174,65 +201,51 @@ bool configureExecutionProvider (Ort::SessionOptions& options, StemComputeDevice
     if (requestedDevice == StemComputeDevice::cpu)
         return true;
 
-    juce::ignoreUnused (options);
+    const auto providerName = getAvailableGpuProviderName();
+    if (providerName.isEmpty())
+    {
+        errorMessage = "Installed ONNX Runtime bundle is CPU-only — no GPU provider is available";
+        return false;
+    }
 
-   #if INTERSECT_HAS_COREML
     try
     {
-        Ort::ThrowOnError (OrtSessionOptionsAppendExecutionProvider_CoreML (options, COREML_FLAG_USE_CPU_AND_GPU));
+        // ORT's generic string-name AppendExecutionProvider only accepts a
+        // small whitelist (DML, QNN, XNNPACK, CoreML, ...). CUDA and MIGraphX
+        // are NOT in that list — they must go through their typed APIs.
+        if (providerName == "CUDA")
+        {
+            OrtCUDAProviderOptions cudaOptions;
+            cudaOptions.device_id = 0;
+            options.AppendExecutionProvider_CUDA (cudaOptions);
+        }
+        else if (providerName == "MIGraphX")
+        {
+            OrtMIGraphXProviderOptions migraphxOptions;
+            migraphxOptions.device_id = 0;
+            options.AppendExecutionProvider_MIGraphX (migraphxOptions);
+        }
+        else if (providerName == "DML")
+        {
+            // DirectML requires sequential execution and mem-patterns disabled.
+            options.DisableMemPattern();
+            options.SetExecutionMode (ExecutionMode::ORT_SEQUENTIAL);
+            std::unordered_map<std::string, std::string> providerOptions;
+            options.AppendExecutionProvider ("DML", providerOptions);
+        }
+        else
+        {
+            std::unordered_map<std::string, std::string> providerOptions;
+            options.AppendExecutionProvider (providerName.toStdString(), providerOptions);
+        }
+
         return true;
     }
     catch (const std::exception& e)
     {
-        errorMessage = juce::String ("CoreML unavailable: ") + e.what();
+        errorMessage = providerName + " unavailable: " + e.what();
+        return false;
     }
-   #endif
-
-   #if INTERSECT_HAS_DIRECTML
-    try
-    {
-        // DirectML requires sequential execution and mem-patterns disabled.
-        options.DisableMemPattern();
-        options.SetExecutionMode (ExecutionMode::ORT_SEQUENTIAL);
-        Ort::ThrowOnError (OrtSessionOptionsAppendExecutionProvider_DML (options, 0));
-        return true;
-    }
-    catch (const std::exception& e)
-    {
-        errorMessage = juce::String ("DirectML unavailable: ") + e.what();
-    }
-   #endif
-
-   #if INTERSECT_HAS_CUDA
-    try
-    {
-        OrtCUDAProviderOptions cudaOptions {};
-        cudaOptions.device_id = 0;
-        options.AppendExecutionProvider_CUDA (cudaOptions);
-        return true;
-    }
-    catch (const std::exception& e)
-    {
-        errorMessage = juce::String ("CUDA unavailable: ") + e.what();
-    }
-   #endif
-
-   #if INTERSECT_HAS_MIGRAPHX
-    try
-    {
-        Ort::ThrowOnError (OrtSessionOptionsAppendExecutionProvider_MIGraphX (options, 0));
-        return true;
-    }
-    catch (const std::exception& e)
-    {
-        errorMessage = juce::String ("MIGraphX unavailable: ") + e.what();
-    }
-   #endif
-
-    if (errorMessage.isEmpty())
-        errorMessage = "GPU inference is not available in this build";
-
-    return false;
 }
 
 // ── Waveform overlap-add inference ──────────────────────────────────────
@@ -457,11 +470,14 @@ juce::String getStemGpuAvailabilityError()
     const auto providerLabel = providerName.isNotEmpty() ? providerName : juce::String ("GPU");
 
 #if ! INTERSECT_HAS_ONNX_RUNTIME
-    return providerLabel + " export unavailable. ONNX Runtime is not bundled in this build.";
+    return providerLabel + " export unavailable. ONNX Runtime is not supported on this platform.";
 #else
     try
     {
-        ensureOrtApiInitialized();
+        juce::String initError;
+        if (! ensureOrtApiInitialized (initError))
+            return initError;
+
         (void) getOrtEnv();
 
         Ort::SessionOptions sessionOptions;
@@ -473,7 +489,7 @@ juce::String getStemGpuAvailabilityError()
             return {};
 
         if (errorMessage.isEmpty())
-            errorMessage = providerLabel + " is not available in this build.";
+            errorMessage = providerLabel + " is not available in the installed runtime bundle.";
 
         return providerLabel + " export unavailable. INTERSECT could not start the "
              + providerLabel + " runtime on this system. Switch DEVICE to CPU or install the required "
@@ -574,7 +590,7 @@ void StemSeparationJob::run()
     }
 
 #if ! INTERSECT_HAS_ONNX_RUNTIME
-    localResult.errorMessage = "ONNX Runtime is not bundled in this build";
+    localResult.errorMessage = "ONNX Runtime is not supported on this platform";
     {
         const juce::ScopedLock sl (resultLock);
         result = std::move (localResult);
@@ -595,7 +611,9 @@ void StemSeparationJob::run()
 
     try
     {
-        ensureOrtApiInitialized();
+        juce::String initError;
+        if (! ensureOrtApiInitialized (initError))
+            throw std::runtime_error (initError.toStdString());
 
         juce::String fallbackWarning;
         const double modelRate = jobCatalogEntry.sampleRate;

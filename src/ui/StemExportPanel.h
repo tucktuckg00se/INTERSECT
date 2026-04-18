@@ -58,6 +58,8 @@ private:
     juce::File customOutputFolder;
     bool useCustomFolder = false;
     bool ortAvailable = false;
+    bool ortSupportedOnPlatform = false;
+    bool ortBundleInstalled = false;
 
     juce::TextButton startBtn    { "START" };
     juce::TextButton browseBtn   { "..." };

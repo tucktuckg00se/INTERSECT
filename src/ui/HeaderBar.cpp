@@ -26,6 +26,9 @@ enum SettingsMenuItemId
     kMenuStemDownloadMissing,
     kMenuStemCancelDownloads,
     kMenuStemDownloadBase = 4100,
+    kMenuOrtCancelDownload = 4200,
+    kMenuOrtBundleDownloadBase = 4300,  // + index into getOrtBundlesForCurrentPlatform()
+    kMenuOrtBundleActivateBase = 4400,  // + index into getOrtBundlesForCurrentPlatform()
 };
 
 float measureTextWidth (const juce::Font& font, const juce::String& text)
@@ -301,6 +304,50 @@ void HeaderBar::showSettingsPopup()
         stemDownloadMenu.addItem (kMenuStemCancelDownloads, "Cancel Active Download");
     }
 
+    // ── ONNX Runtime bundle submenu ───────────────────────────────────
+    const auto platformBundles = getOrtBundlesForCurrentPlatform();
+    const auto installedBundles = processor.getInstalledOrtBundles();
+    const auto activeBundleDir = processor.getActiveOrtBundleDirectoryName();
+    const bool ortDownloadActive = processor.getOrtBundleDownloadJob().getState()
+                                        == StemModelDownloadState::downloading;
+
+    juce::PopupMenu ortMenu;
+    ortMenu.setLookAndFeel (&getLookAndFeel());
+    if (! platformBundles.empty())
+    {
+        juce::String activeLabel = "Active: (none)";
+        for (const auto& entry : platformBundles)
+            if (entry.directoryName == activeBundleDir)
+                activeLabel = "Active: " + entry.menuLabel;
+        ortMenu.addItem (0x4ffd, activeLabel, false, false);
+        ortMenu.addSeparator();
+    }
+
+    for (size_t i = 0; i < platformBundles.size(); ++i)
+    {
+        const auto& entry = platformBundles[i];
+        const bool installed = std::find (installedBundles.begin(), installedBundles.end(), entry.id)
+                                   != installedBundles.end();
+        const bool isActive = entry.directoryName == activeBundleDir;
+
+        juce::String label = entry.menuLabel;
+        if (installed && isActive)
+            label << "  (active)";
+        else if (installed)
+            label << "  (installed — click to activate)";
+        else
+            label << "  (download)";
+
+        const int baseId = installed ? kMenuOrtBundleActivateBase : kMenuOrtBundleDownloadBase;
+        ortMenu.addItem (baseId + (int) i, label, ! isActive);
+    }
+
+    if (ortDownloadActive)
+    {
+        ortMenu.addSeparator();
+        ortMenu.addItem (kMenuOrtCancelDownload, "Cancel Active Download");
+    }
+
     juce::PopupMenu stemMenu;
     stemMenu.setLookAndFeel (&getLookAndFeel());
     stemMenu.addSectionHeader ("Stem Separation");
@@ -308,6 +355,8 @@ void HeaderBar::showSettingsPopup()
     stemMenu.addItem (kMenuStemUseDefaultFolder, "Use Default Folder", customStemFolder != juce::File());
     stemMenu.addSubMenu ("Compute  " + stemComputeDeviceToString (computeDevice), stemComputeMenu);
     stemMenu.addSubMenu ("Download Models", stemDownloadMenu);
+    if (! platformBundles.empty())
+        stemMenu.addSubMenu ("ONNX Runtime", ortMenu);
     stemMenu.addItem (0x4fff, "Installed Models  " + juce::String ((int) installedModels.size()), false, false);
     menu.addSubMenu ("Stem Separation", stemMenu);
 
@@ -426,6 +475,26 @@ void HeaderBar::showSettingsPopup()
             {
                 const auto& entry = getStemModelCatalog()[(size_t) (result - kMenuStemDownloadBase)];
                 processor.startStemModelDownload ({ entry.id });
+            }
+            else if (result == kMenuOrtCancelDownload)
+            {
+                processor.cancelOrtBundleDownload();
+            }
+            else if (result >= kMenuOrtBundleDownloadBase
+                     && result < kMenuOrtBundleDownloadBase + 100)
+            {
+                const auto bundles = getOrtBundlesForCurrentPlatform();
+                const int idx = result - kMenuOrtBundleDownloadBase;
+                if (idx >= 0 && idx < (int) bundles.size())
+                    processor.startOrtBundleDownload (bundles[(size_t) idx].id);
+            }
+            else if (result >= kMenuOrtBundleActivateBase
+                     && result < kMenuOrtBundleActivateBase + 100)
+            {
+                const auto bundles = getOrtBundlesForCurrentPlatform();
+                const int idx = result - kMenuOrtBundleActivateBase;
+                if (idx >= 0 && idx < (int) bundles.size())
+                    processor.setActiveOrtBundle (bundles[(size_t) idx].id);
             }
         });
 }

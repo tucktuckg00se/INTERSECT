@@ -993,6 +993,63 @@ void IntersectProcessor::cancelStemModelDownload()
     stemModelDownloadJob.cancel();
 }
 
+juce::File IntersectProcessor::getOrtRootFolder() const
+{
+    return getDefaultOrtRootFolder();
+}
+
+std::vector<OrtBundleId> IntersectProcessor::getInstalledOrtBundles() const
+{
+    return scanInstalledOrtBundles (getOrtRootFolder());
+}
+
+juce::String IntersectProcessor::getActiveOrtBundleDirectoryName() const
+{
+    return readActiveOrtBundleDirectoryName (getOrtRootFolder());
+}
+
+bool IntersectProcessor::setActiveOrtBundle (OrtBundleId bundleId)
+{
+    if (const auto* entry = findOrtBundleCatalogEntry (bundleId))
+    {
+        if (writeActiveOrtBundleDirectoryName (getOrtRootFolder(), entry->directoryName))
+        {
+            setUiStatusMessage (juce::String ("Activated ") + entry->menuLabel
+                                + " (restart INTERSECT to use it)", false);
+            return true;
+        }
+    }
+    setUiStatusMessage ("Failed to activate ONNX Runtime bundle", true);
+    return false;
+}
+
+void IntersectProcessor::startOrtBundleDownload (OrtBundleId bundleId)
+{
+    if (ortBundleDownloadJob.getState() == StemModelDownloadState::downloading)
+    {
+        setUiStatusMessage ("ONNX Runtime download already in progress", true);
+        return;
+    }
+
+    if (! ortBundleDownloadJob.start (getOrtRootFolder(), bundleId, INTERSECT_ORT_VERSION))
+    {
+        setUiStatusMessage ("Unable to start ONNX Runtime download", true);
+        return;
+    }
+
+    if (const auto* entry = findOrtBundleCatalogEntry (bundleId))
+        setUiStatusMessage ("Downloading " + entry->menuLabel + "...", false);
+    else
+        setUiStatusMessage ("Downloading ONNX Runtime...", false);
+
+    uiSnapshotDirty.store (true, std::memory_order_release);
+}
+
+void IntersectProcessor::cancelOrtBundleDownload()
+{
+    ortBundleDownloadJob.cancel();
+}
+
 void IntersectProcessor::cancelStemSeparation()
 {
     if (stemJob.getState() != StemJobState::idle)
@@ -2991,6 +3048,26 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         else if (downloadState == StemModelDownloadState::cancelled)
         {
             setUiStatusMessage (stemModelDownloadJob.consumeResultMessage(), true);
+            uiSnapshotDirty.store (true, std::memory_order_release);
+        }
+    }
+
+    // Poll ORT bundle downloads for completion
+    {
+        const auto ortState = ortBundleDownloadJob.getState();
+        if (ortState == StemModelDownloadState::completed)
+        {
+            setUiStatusMessage (ortBundleDownloadJob.consumeResultMessage(), false);
+            uiSnapshotDirty.store (true, std::memory_order_release);
+        }
+        else if (ortState == StemModelDownloadState::failed)
+        {
+            setUiStatusMessage (ortBundleDownloadJob.consumeResultMessage(), true);
+            uiSnapshotDirty.store (true, std::memory_order_release);
+        }
+        else if (ortState == StemModelDownloadState::cancelled)
+        {
+            setUiStatusMessage (ortBundleDownloadJob.consumeResultMessage(), true);
             uiSnapshotDirty.store (true, std::memory_order_release);
         }
     }
