@@ -155,7 +155,7 @@ void StemExportPanel::paint (juce::Graphics& g)
         g.setFont (IntersectLookAndFeel::makeFont (10.0f));
         g.setColour (getTheme().text2.withAlpha (0.6f));
         const auto message = ortSupportedOnPlatform
-            ? juce::String ("Download an ONNX Runtime bundle in SET \xe2\x86\x92 Stem Separation \xe2\x86\x92 ONNX Runtime to enable stem export.")
+            ? juce::String ("Download an ONNX Runtime bundle in SET > Stem Separation > ONNX Runtime to enable stem export.")
             : juce::String ("Stem separation is not available on this platform");
         g.drawText (message, msgArea, juce::Justification::centredLeft);
     }

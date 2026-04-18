@@ -1,6 +1,7 @@
 #pragma once
 #include "StemSeparation.h"
 #include <atomic>
+#include <functional>
 
 class StemModelDownloadJob : private juce::Thread
 {
@@ -16,6 +17,12 @@ public:
     juce::String getStatusText() const;
     StemModelId getCurrentModelId() const { return currentModelId.load (std::memory_order_acquire); }
     juce::String consumeResultMessage();
+
+    // Invoked from the job's thread when run() returns. Set by the owner
+    // before start(); read only inside run(). Used to notify the owner that a
+    // terminal state (completed/failed/cancelled) has been reached so the
+    // audio thread does not have to poll.
+    std::function<void()> onTerminalState;
 
 private:
     void run() override;

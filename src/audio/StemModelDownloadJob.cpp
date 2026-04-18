@@ -126,6 +126,15 @@ juce::String StemModelDownloadJob::consumeResultMessage()
 
 void StemModelDownloadJob::run()
 {
+    // Fire onTerminalState when run() returns, regardless of which terminal
+    // branch wrote the state. Lets the owner (PluginProcessor) schedule its
+    // message-thread drain without the audio thread having to poll.
+    struct TerminalNotifier
+    {
+        std::function<void()>& cb;
+        ~TerminalNotifier() { if (cb) cb(); }
+    } notify { onTerminalState };
+
     if (const auto createResult = downloadFolder.createDirectory(); createResult.failed())
     {
         const juce::ScopedLock sl (lock);

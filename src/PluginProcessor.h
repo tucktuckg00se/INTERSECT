@@ -429,6 +429,7 @@ private:
     void publishUiSliceSnapshot();
     void handleAsyncUpdate() override;
     void handleStemJobCompletionOnMessageThread();
+    void handleDownloadCompletionsOnMessageThread();
     void setMissingFileInfo (const RtText<512>& fileName, const RtText<4096>& filePath);
     void clearMissingFileInfo();
     const MissingFileInfo& getMissingFileInfo() const;

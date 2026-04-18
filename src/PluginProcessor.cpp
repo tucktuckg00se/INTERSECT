@@ -375,6 +375,12 @@ IntersectProcessor::IntersectProcessor()
 	    filterEnvReleaseParam = apvts.getRawParameterValue (ParamIds::defaultFilterEnvRelease);
 	    filterEnvAmountParam = apvts.getRawParameterValue (ParamIds::defaultFilterEnvAmount);
 	    uiScaleParam = apvts.getRawParameterValue (ParamIds::uiScale);
+
+    // Download jobs signal completion from their own thread. Coalesced with
+    // stemJob's use of AsyncUpdater; handleAsyncUpdate drains all three.
+    stemModelDownloadJob.onTerminalState = [this] { triggerAsyncUpdate(); };
+    ortBundleDownloadJob.onTerminalState = [this] { triggerAsyncUpdate(); };
+
 	    publishUiSliceSnapshot();
 }
 
@@ -487,6 +493,25 @@ const IntersectProcessor::UiStatusMessage& IntersectProcessor::getUiStatusMessag
 void IntersectProcessor::handleAsyncUpdate()
 {
     handleStemJobCompletionOnMessageThread();
+    handleDownloadCompletionsOnMessageThread();
+}
+
+void IntersectProcessor::handleDownloadCompletionsOnMessageThread()
+{
+    // Runs on the message thread, so consumeResultMessage() locking is safe.
+    // No-op for any job not currently in a terminal state.
+    auto drain = [this] (auto& job)
+    {
+        const auto s = job.getState();
+        if (s == StemModelDownloadState::completed)
+            setUiStatusMessage (job.consumeResultMessage(), false);
+        else if (s == StemModelDownloadState::failed
+              || s == StemModelDownloadState::cancelled)
+            setUiStatusMessage (job.consumeResultMessage(), true);
+    };
+
+    drain (stemModelDownloadJob);
+    drain (ortBundleDownloadJob);
 }
 
 void IntersectProcessor::handleStemJobCompletionOnMessageThread()
@@ -3029,46 +3054,6 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 loadStateChanged = true;
                 uiSnapshotDirty.store (true, std::memory_order_release);
             }
-        }
-    }
-
-    // Poll model downloads for completion
-    {
-        const auto downloadState = stemModelDownloadJob.getState();
-        if (downloadState == StemModelDownloadState::completed)
-        {
-            setUiStatusMessage (stemModelDownloadJob.consumeResultMessage(), false);
-            uiSnapshotDirty.store (true, std::memory_order_release);
-        }
-        else if (downloadState == StemModelDownloadState::failed)
-        {
-            setUiStatusMessage (stemModelDownloadJob.consumeResultMessage(), true);
-            uiSnapshotDirty.store (true, std::memory_order_release);
-        }
-        else if (downloadState == StemModelDownloadState::cancelled)
-        {
-            setUiStatusMessage (stemModelDownloadJob.consumeResultMessage(), true);
-            uiSnapshotDirty.store (true, std::memory_order_release);
-        }
-    }
-
-    // Poll ORT bundle downloads for completion
-    {
-        const auto ortState = ortBundleDownloadJob.getState();
-        if (ortState == StemModelDownloadState::completed)
-        {
-            setUiStatusMessage (ortBundleDownloadJob.consumeResultMessage(), false);
-            uiSnapshotDirty.store (true, std::memory_order_release);
-        }
-        else if (ortState == StemModelDownloadState::failed)
-        {
-            setUiStatusMessage (ortBundleDownloadJob.consumeResultMessage(), true);
-            uiSnapshotDirty.store (true, std::memory_order_release);
-        }
-        else if (ortState == StemModelDownloadState::cancelled)
-        {
-            setUiStatusMessage (ortBundleDownloadJob.consumeResultMessage(), true);
-            uiSnapshotDirty.store (true, std::memory_order_release);
         }
     }
 
