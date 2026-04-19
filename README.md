@@ -33,7 +33,7 @@ Download the latest release zip from [Releases](https://github.com/tucktuckg00se
 
 A v0.14.0 release candidate with downloadable GPU runtime bundles is available for testing: **[INTERSECT v0.14.0-rc.1](https://github.com/tucktuckg00se/INTERSECT/releases/tag/v0.14.0-rc.1)**.
 
-This pre-release adds GPU stem separation via on-demand ONNX Runtime bundles. It has only been verified on macOS, Windows CPU, and Linux NVIDIA CUDA / CPU. If you try it on Windows DirectML, AMD MIGraphX, Intel macOS, or CoreML on Apple Silicon, please report your OS, GPU, runtime selection, and whether it worked on [issue #31](https://github.com/tucktuckg00se/INTERSECT/issues/31).
+This pre-release adds GPU stem separation via on-demand ONNX Runtime bundles. If you try it on Windows DirectML, AMD MIGraphX, Intel macOS, or CoreML on Apple Silicon, please report your OS, GPU, runtime selection, and any issues [issue #31](https://github.com/tucktuckg00se/INTERSECT/issues/31).
 
 ### Release package contents
 
