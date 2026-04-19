@@ -1,5 +1,7 @@
 # INTERSECT
 
+**Support development:** [Sponsor on GitHub](https://github.com/sponsors/tucktuckg00se) · [Buy me a coffee](https://buymeacoffee.com/tucktuckgoose)
+
 INTERSECT is a sample slicer instrument plugin (VST3/AU/Standalone) with multi-sample sessions, per-slice locking, slice note ranges, multiple time/pitch algorithms, and MIDI-triggered slice playback.
 
 ![INTERSECT screenshot](.github/assets/screenshot.png)
@@ -26,6 +28,12 @@ INTERSECT is a sample slicer instrument plugin (VST3/AU/Standalone) with multi-s
 ## Installation
 
 Download the latest release zip from [Releases](https://github.com/tucktuckg00se/INTERSECT/releases), then place plugin files in your system plugin folders.
+
+### Try the experimental GPU stem separation pre-release
+
+A v0.14.0 release candidate with downloadable GPU runtime bundles is available for testing: **[INTERSECT v0.14.0-rc.1](https://github.com/tucktuckg00se/INTERSECT/releases/tag/v0.14.0-rc.1)**.
+
+This pre-release adds GPU stem separation via on-demand ONNX Runtime bundles. It has only been verified on macOS, Windows CPU, and Linux NVIDIA CUDA / CPU. If you try it on Windows DirectML, AMD MIGraphX, Intel macOS, or CoreML on Apple Silicon, please report your OS, GPU, runtime selection, and whether it worked on [issue #31](https://github.com/tucktuckg00se/INTERSECT/issues/31).
 
 ### Release package contents
 
