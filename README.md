@@ -31,9 +31,9 @@ Download the latest release zip from [Releases](https://github.com/tucktuckg00se
 
 ### Try the experimental GPU stem separation pre-release
 
-A v0.14.0 release candidate with downloadable GPU runtime bundles is available for testing: **[INTERSECT v0.14.0-rc.1](https://github.com/tucktuckg00se/INTERSECT/releases/tag/v0.14.0-rc.1)**.
+A v0.14.0 release candidate with downloadable GPU runtime bundles is available for testing: **[INTERSECT v0.14.0-rc.2](https://github.com/tucktuckg00se/INTERSECT/releases/tag/v0.14.0-rc.2)**.
 
-This pre-release adds GPU stem separation via on-demand ONNX Runtime bundles. If you try it on Windows DirectML, AMD MIGraphX, Intel macOS, or CoreML on Apple Silicon, please report your OS, GPU, runtime selection, and any issues [issue #31](https://github.com/tucktuckg00se/INTERSECT/issues/31).
+This pre-release adds GPU stem separation via on-demand ONNX Runtime bundles. rc.2 rebuilds the Linux package on Ubuntu 22.04 for the documented glibc 2.35+ baseline. If you try it on Windows DirectML, AMD MIGraphX, Intel macOS, CoreML on Apple Silicon, or Linux Ubuntu 22.04+, please report your OS, GPU, runtime selection, and any issues [issue #31](https://github.com/tucktuckg00se/INTERSECT/issues/31).
   
   
 ### Release package contents
