@@ -49,12 +49,15 @@ endif()
 if(_intersect_ort_supported)
     if(INTERSECT_ORT_HEADERS_ROOT STREQUAL "")
         include(FetchContent)
+        set(_intersect_ort_fetch_args
+            URL "https://github.com/microsoft/onnxruntime/releases/download/v${INTERSECT_ORT_VERSION}/onnxruntime-linux-x64-${INTERSECT_ORT_VERSION}.tgz"
+        )
+        if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.24")
+            list(APPEND _intersect_ort_fetch_args DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+        endif()
         # Use the smallest official tarball just for headers. The CPU Linux package
         # is ~8 MB and contains the full public include tree shared by every platform.
-        FetchContent_Declare(onnxruntime_headers
-            URL "https://github.com/microsoft/onnxruntime/releases/download/v${INTERSECT_ORT_VERSION}/onnxruntime-linux-x64-${INTERSECT_ORT_VERSION}.tgz"
-            DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-        )
+        FetchContent_Declare(onnxruntime_headers ${_intersect_ort_fetch_args})
         FetchContent_MakeAvailable(onnxruntime_headers)
         set(INTERSECT_ORT_HEADERS_ROOT "${onnxruntime_headers_SOURCE_DIR}")
     endif()
