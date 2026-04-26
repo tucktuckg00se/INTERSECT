@@ -31,18 +31,21 @@ Download the latest release zip from [Releases](https://github.com/tucktuckg00se
 
 ### Try the experimental GPU stem separation pre-release
 
-A v0.14.0 release candidate with downloadable GPU runtime bundles is available for testing: **[INTERSECT v0.14.0-rc.1](https://github.com/tucktuckg00se/INTERSECT/releases/tag/v0.14.0-rc.1)**.
+A v0.14.0 release candidate with downloadable GPU runtime bundles is available for testing: **[INTERSECT v0.14.0-rc.2](https://github.com/tucktuckg00se/INTERSECT/releases/tag/v0.14.0-rc.2)**.
 
-This pre-release adds GPU stem separation via on-demand ONNX Runtime bundles. If you try it on Windows DirectML, AMD MIGraphX, Intel macOS, or CoreML on Apple Silicon, please report your OS, GPU, runtime selection, and any issues [issue #31](https://github.com/tucktuckg00se/INTERSECT/issues/31).
-
+This pre-release adds GPU stem separation via on-demand ONNX Runtime bundles. rc.2 rebuilds the Linux package on Ubuntu 22.04 for the documented glibc 2.35+ baseline. If you try it on Windows DirectML, AMD MIGraphX, Intel macOS, CoreML on Apple Silicon, or Linux Ubuntu 22.04+, please report your OS, GPU, runtime selection, and any issues [issue #31](https://github.com/tucktuckg00se/INTERSECT/issues/31).
+  
+  
 ### Release package contents
 
-| Platform | Minimum OS | Included binaries |
-| --- | --- | --- |
-| Windows x64 | Windows 10 | `INTERSECT.vst3`, `INTERSECT.exe` |
-| Linux x64 | Ubuntu 22.04  or equivalent (glibc 2.35+) | `INTERSECT.vst3`, `INTERSECT` (standalone) |
-| macOS arm64 | macOS 10.13 (High Sierra) | `INTERSECT.vst3`, `INTERSECT.component`, `INTERSECT.app` |
-| macOS x64 | macOS 10.13 (High Sierra) | `INTERSECT.vst3`, `INTERSECT.component`, `INTERSECT.app` |
+| Platform | Minimum OS | Stem separation | Included binaries |
+| --- | --- | --- | --- |
+| Windows x64 | Windows 10 | On-demand ONNX Runtime bundle (CPU or DirectML GPU) | `INTERSECT.vst3`, `INTERSECT.exe` |
+| Linux x64 | Ubuntu 22.04+ (glibc 2.35+) | On-demand ONNX Runtime bundle (CPU / NVIDIA CUDA / AMD MIGraphX) | `INTERSECT.vst3`, `INTERSECT` (standalone) |
+| macOS arm64 | macOS 10.13 (High Sierra) | On-demand ONNX Runtime bundle (CoreML) | `INTERSECT.vst3`, `INTERSECT.component`, `INTERSECT.app` |
+| macOS x64 | macOS 10.13 (High Sierra) | Not available | `INTERSECT.vst3`, `INTERSECT.component`, `INTERSECT.app` |
+
+Plugin zips are small (single-digit MB); the ONNX Runtime required for stem separation is downloaded on demand from inside the plugin — see [Stem separation setup](#stem-separation-setup).
 
 ### Plugin install paths
 
@@ -52,6 +55,32 @@ This pre-release adds GPU stem separation via on-demand ONNX Runtime bundles. If
 | AU | n/a | `~/Library/Audio/Plug-Ins/Components/` | n/a |
 
 After copying files, rescan plugins in your DAW.
+
+### Stem separation setup
+
+Stem separation requires two on-demand downloads performed from inside the plugin. Both live under **SET → Stem Separation** in the header bar.
+
+1. **ONNX Runtime bundle** — open **SET → Stem Separation → ONNX Runtime** and pick the bundle that matches your platform and (optionally) your GPU. Only one bundle is active at a time; installing a different one switches which runtime the plugin loads. Restart INTERSECT after the install completes so the new runtime is picked up.
+2. **Stem model** — open **SET → Stem Separation → Download Models** and pick a BS-RoFormer model.
+
+After both are installed, open a sample's `STEMS` button to export.
+
+### GPU runtime requirements (per ONNX Runtime bundle)
+
+- **Windows — DirectML** — no extra installs required. Works with any GPU vendor (NVIDIA, AMD, Intel) on Windows 10+ with a recent DirectX 12-capable driver.
+- **macOS arm64 — CoreML** — no extra installs required. Uses the built-in Apple Neural Engine / GPU.
+- **macOS x64 (Intel Mac)** — stem separation is not available. ONNX Runtime 1.24 dropped x86_64 macOS support.
+- **Linux — NVIDIA CUDA** — requires:
+  - NVIDIA proprietary driver
+  - CUDA runtime 12.x or 13.x (`libcudart.so.12` or `libcudart.so.13`) — pick the CUDA 12 or CUDA 13 bundle accordingly
+  - cuDNN 9 (`libcudnn.so.9`)
+
+  Install on Arch: `sudo pacman -S cuda cudnn`
+  Install on Ubuntu: `sudo apt install nvidia-cuda-toolkit libcudnn9-cuda-12` (adjust the cuDNN package name to match your CUDA version)
+- **Linux — AMD MIGraphX** — requires ROCm installed. See [AMD's ROCm install guide](https://rocm.docs.amd.com/projects/install-on-linux/en/latest/). Experimental.
+- **Linux — CPU** — no extra installs required.
+
+If a GPU runtime is missing or fails to load at export time, INTERSECT shows the error in the header status bar instead of silently failing; you can then switch `DEVICE` to CPU or install the missing runtime.
 
 ### macOS unsigned build note
 
@@ -122,6 +151,7 @@ Notes:
 - `DEVICE` defaults to CPU. GPU can be selected when the build and local runtime support it.
 - If INTERSECT cannot use the selected GPU path, it warns before export so you can switch devices instead of silently exporting on CPU.
 - Stem separation is compute-heavy. On older PCs, especially on CPU exports, startup and processing can be noticeably slower.
+- macOS x64 (Intel Mac) builds do not include stem separation due to a platform limitation in the underlying inference runtime. The stem panel on these builds shows a "Not available" state.
 
 ### Time / Zoom Bar
 
@@ -461,6 +491,10 @@ cmake -B build
 cmake --build build --config Release
 ```
 
+### ONNX Runtime
+
+The build does not bundle any ONNX Runtime shared library. Only the ORT C++ headers are pulled in at configure time (via CMake `FetchContent`) so the plugin compiles against the published ORT API. The shared library itself is downloaded at runtime via **SET → Stem Separation → ONNX Runtime** — see [Stem separation setup](#stem-separation-setup). This keeps each plugin zip small and lets users pick their GPU (CPU / CUDA / MIGraphX / DirectML / CoreML) without needing a separate build.
+
 ### Build outputs
 
 - VST3: `build/Intersect_artefacts/Release/VST3/INTERSECT.vst3`
@@ -472,12 +506,14 @@ cmake --build build --config Release
 
 ### Release workflow (repo maintainers)
 
-Pushing a tag matching `v*` triggers the GitHub Actions release workflow, which builds and packages:
+Pushing a tag matching `v*` triggers the GitHub Actions release workflow, which builds and packages four small plugin zips:
 
 - Windows x64
 - Linux x64
 - macOS arm64
-- macOS x64
+- macOS x64 (no stem separation — ONNX Runtime 1.24 dropped x86_64 macOS)
+
+ONNX Runtime bundles are published separately from the [intersect-ort-providers](https://github.com/tucktuckg00se/intersect-ort-providers) repo and downloaded on demand from the plugin.
 
 ## Dependencies
 
