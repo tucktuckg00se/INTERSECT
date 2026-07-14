@@ -16,6 +16,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 - Sample browser path text now follows the active theme immediately on plugin open and when switching themes.
 
+## [0.15.1] - 2026-06-10
+
+### Changed
+- Updated the JUCE submodule from the previous 8.0.12-based pin to the stable 8.0.13 release.
+
+### Fixed
+- Restored plugin UI rendering under Wine via the upstream JUCE 8.0.13 Wine functionality fix.
+
 ## [0.15.0] - 2026-05-12
 
 ### Added
