@@ -93,11 +93,15 @@ public:
     void processSample (const SampleData& sample, double sampleRate,
                         float& outL, float& outR);
 
-    // Block-based render APIs — preferred entry points from processBlock()
-    void renderMainBusBlock (const SampleData& sample,
-                             float* destL, float* destR, int numSamples);
-    void renderRoutedBlock (const SampleData& sample,
-                            float* busL[], float* busR[], int numBuses, int numSamples);
+    // Range-based render APIs — preferred entry points from processBlock().
+    // Accumulate into dest[startSample + s]; the destination is never cleared here,
+    // so a block can be rendered as several consecutive ranges split at MIDI events.
+    void renderMainBusRange (const SampleData& sample,
+                             float* destL, float* destR,
+                             int startSample, int numSamples);
+    void renderRoutedRange (const SampleData& sample,
+                            float* busL[], float* busR[], int numBuses,
+                            int startSample, int numSamples);
 
     void prepareToPlay (double sampleRate, int maxBlockSize);
     void setSampleRate (double sr);

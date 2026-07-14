@@ -405,7 +405,16 @@ private:
 
     void drainCommands();
     void handleCommand (const Command& cmd);
-    void processMidi (juce::MidiBuffer& midi);
+
+    // MIDI edit settings sampled once per block so every event in the block sees one value
+    struct MidiEditBlockSettings
+    {
+        bool enabled   = false;
+        int  channel   = 0;
+        bool consumeCc = false;
+    };
+    void processMidiEvent (const juce::MidiMessage& msg, const MidiEditBlockSettings& edit);
+    void filterConsumedMidiEditEvents (juce::MidiBuffer& midi, const MidiEditBlockSettings& edit);
     std::optional<MidiEditEvent> tryParseMidiEditMessage (const juce::MidiMessage& msg);
     void handleMidiEditEvent (const MidiEditEvent& event);
     void applyMidiEditZoomSteps (int steps);

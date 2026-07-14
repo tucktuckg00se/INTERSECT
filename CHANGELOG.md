@@ -15,6 +15,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 - Sample browser path text now follows the active theme immediately on plugin open and when switching themes.
+- Slices triggered via MIDI now start at their exact requested time. Previously every trigger was rounded to the start of the host's audio buffer, so repeated triggers drifted by several milliseconds each — most noticeable at larger buffer sizes and with 1SHOT playback ([#40](https://github.com/tucktuckg00se/INTERSECT/issues/40)).
+- Short MIDI notes that start and end within a single audio buffer now play; previously they were silent.
+- Lazy chop boundaries are now placed at the exact moment the key is pressed instead of snapping to the start of the audio buffer.
 
 ## [0.15.1] - 2026-06-10
 

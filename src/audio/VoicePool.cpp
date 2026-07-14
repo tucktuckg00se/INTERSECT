@@ -1674,38 +1674,39 @@ void VoicePool::processSample (const SampleData& sample, double sr,
     }
 }
 
-void VoicePool::renderMainBusBlock (const SampleData& sample,
-                                     float* destL, float* destR, int numSamples)
+void VoicePool::renderMainBusRange (const SampleData& sample,
+                                     float* destL, float* destR,
+                                     int startSample, int numSamples)
 {
-    // Zero destination
-    if (destL) std::fill_n (destL, numSamples, 0.0f);
-    if (destR) std::fill_n (destR, numSamples, 0.0f);
+    if (numSamples <= 0)
+        return;
 
-    auto renderVoiceBlock = [&] (int vi)
+    auto renderVoiceRange = [&] (int vi)
     {
         for (int s = 0; s < numSamples; ++s)
         {
             float vL = 0.0f, vR = 0.0f;
             processVoiceSample (vi, sample, sampleRate, vL, vR);
-            if (destL) destL[s] += vL;
-            if (destR) destR[s] += vR;
+            if (destL) destL[startSample + s] += vL;
+            if (destR) destR[startSample + s] += vR;
         }
     };
 
     for (int vi = 0; vi < maxActive; ++vi)
     {
         if (voices[vi].active)
-            renderVoiceBlock (vi);
+            renderVoiceRange (vi);
     }
 
     // Preview voice (LazyChopEngine / shift preview) — always on main bus
     constexpr int previewIdx = kPreviewVoiceIndex;
     if (previewIdx >= maxActive && voices[previewIdx].active)
-        renderVoiceBlock (previewIdx);
+        renderVoiceRange (previewIdx);
 }
 
-void VoicePool::renderRoutedBlock (const SampleData& sample,
-                                    float* busL[], float* busR[], int numBuses, int numSamples)
+void VoicePool::renderRoutedRange (const SampleData& sample,
+                                    float* busL[], float* busR[], int numBuses,
+                                    int startSample, int numSamples)
 {
     const int scratchSize = (int) std::min (scratchL.size(), scratchR.size());
     jassert (scratchSize > 0);
@@ -1722,8 +1723,8 @@ void VoicePool::renderRoutedBlock (const SampleData& sample,
     {
         for (int s = 0; s < chunkSamples; ++s)
         {
-            if (dstL) dstL[chunkStart + s] += scratchL[s];
-            if (dstR) dstR[chunkStart + s] += scratchR[s];
+            if (dstL) dstL[startSample + chunkStart + s] += scratchL[s];
+            if (dstR) dstR[startSample + chunkStart + s] += scratchR[s];
         }
     };
 

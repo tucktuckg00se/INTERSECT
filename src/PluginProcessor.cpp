@@ -2777,120 +2777,116 @@ void IntersectProcessor::clearMidiEditGestureState()
     midiEditState.activeBoundaryIsStart = true;
 }
 
-void IntersectProcessor::processMidi (juce::MidiBuffer& midi)
+void IntersectProcessor::processMidiEvent (const juce::MidiMessage& msg,
+                                           const MidiEditBlockSettings& edit)
 {
-    const bool editEnabled = midiEditState.enabled.load (std::memory_order_acquire);
-    const int  editChannel = midiEditState.channel.load (std::memory_order_relaxed);
-    const bool doConsume   = midiEditState.consumeMidiEditCc.load (std::memory_order_relaxed);
+    if (edit.enabled && msg.isController()
+        && (edit.channel == 0 || msg.getChannel() == edit.channel))
+    {
+        if (auto midiEditEvent = tryParseMidiEditMessage (msg))
+            handleMidiEditEvent (*midiEditEvent);
+    }
 
+    if (msg.isNoteOn())
+    {
+        int note = msg.getNoteNumber();
+        float velocity = (float) msg.getVelocity();
+
+        if (lazyChop.isActive())
+        {
+            // Any MIDI note places a chop boundary at the playhead
+            int newSliceIdx = lazyChop.onNote (note, voicePool, sliceManager);
+            if (newSliceIdx >= 0)
+            {
+                sliceManager.selectedSlice.store (newSliceIdx, std::memory_order_relaxed);
+                uiSnapshotDirty.store (true, std::memory_order_release);
+            }
+        }
+        else
+        {
+            const auto noteIndex = static_cast<size_t> (note);
+            heldNotes[noteIndex] = true;
+
+            // Build params once; all param loads happen here, not inside the slice loop.
+            const auto globals = loadGlobalParamSnapshot();
+            auto p = makeVoiceStartParams (globals, note, velocity, dawBpm.load());
+
+            const auto& sliceIndices = sliceManager.midiNoteToSlices (note);
+            for (int sliceIdx : sliceIndices)
+            {
+                if (! juce::isPositiveAndBelow (sliceIdx, sliceManager.getNumSlices()))
+                    continue;
+
+                if (midiSelectsSlice.load (std::memory_order_relaxed))
+                {
+                    const int previous = sliceManager.selectedSlice.load (std::memory_order_relaxed);
+                    sliceManager.selectedSlice.store (sliceIdx, std::memory_order_relaxed);
+                    selectedSessionSampleId.store (sliceManager.getSlice (sliceIdx).sampleId, std::memory_order_relaxed);
+                    if (previous != sliceIdx)
+                        uiSnapshotDirty.store (true, std::memory_order_release);
+                }
+
+                int voiceIdx = voicePool.allocate();
+
+                // Handle mute groups
+                const auto& s = sliceManager.getSlice (sliceIdx);
+                int mg = (int) sliceManager.resolveParam (sliceIdx, kLockMuteGroup,
+                                                          (float) s.muteGroup, (float) p.globalMuteGroup);
+                voicePool.muteGroup (mg, voiceIdx);
+
+                p.sliceIdx = sliceIdx;
+                p.sliceRootNote = s.sliceRootNote;
+                voicePool.startVoice (voiceIdx, p, sliceManager, sampleData);
+            }
+        }
+    }
+    else if (msg.isNoteOff())
+    {
+        int note = msg.getNoteNumber();
+        const auto noteIndex = static_cast<size_t> (note);
+        if (heldNotes[noteIndex])
+        {
+            heldNotes[noteIndex] = false;
+            voicePool.releaseNote (note);           // normal: respects oneShot
+        }
+        else
+        {
+            voicePool.releaseNoteForced (note);     // host sweep: kills even oneShot voices
+        }
+    }
+    else if (msg.isAllNotesOff())
+    {
+        voicePool.releaseAll();  // 50ms fade on all active voices
+        lazyChop.stop (voicePool, sliceManager);
+        std::fill (std::begin (heldNotes), std::end (heldNotes), false);
+    }
+    else if (msg.isAllSoundOff())
+    {
+        voicePool.killAll();     // 5ms hard kill on all active voices
+        lazyChop.stop (voicePool, sliceManager);
+        std::fill (std::begin (heldNotes), std::end (heldNotes), false);
+    }
+}
+
+void IntersectProcessor::filterConsumedMidiEditEvents (juce::MidiBuffer& midi,
+                                                       const MidiEditBlockSettings& edit)
+{
+    // Strip MIDI edit CCs from the buffer so they don't pass downstream
+    if (! (edit.enabled && edit.consumeCc))
+        return;
+
+    juce::MidiBuffer filtered;
     for (const auto metadata : midi)
     {
         const auto msg = metadata.getMessage();
-
-        if (editEnabled && msg.isController()
-            && (editChannel == 0 || msg.getChannel() == editChannel))
-        {
-            if (auto midiEditEvent = tryParseMidiEditMessage (msg))
-                handleMidiEditEvent (*midiEditEvent);
-        }
-
-        if (msg.isNoteOn())
-        {
-            int note = msg.getNoteNumber();
-            float velocity = (float) msg.getVelocity();
-
-            if (lazyChop.isActive())
-            {
-                // Any MIDI note places a chop boundary at the playhead
-                int newSliceIdx = lazyChop.onNote (note, voicePool, sliceManager);
-                if (newSliceIdx >= 0)
-                {
-                    sliceManager.selectedSlice.store (newSliceIdx, std::memory_order_relaxed);
-                    uiSnapshotDirty.store (true, std::memory_order_release);
-                }
-            }
-        else
-        {
-                const auto noteIndex = static_cast<size_t> (note);
-                heldNotes[noteIndex] = true;
-
-                // Build params once; all param loads happen here, not inside the slice loop.
-                const auto globals = loadGlobalParamSnapshot();
-                auto p = makeVoiceStartParams (globals, note, velocity, dawBpm.load());
-
-                const auto& sliceIndices = sliceManager.midiNoteToSlices (note);
-                for (int sliceIdx : sliceIndices)
-                {
-                    if (! juce::isPositiveAndBelow (sliceIdx, sliceManager.getNumSlices()))
-                        continue;
-
-                    if (midiSelectsSlice.load (std::memory_order_relaxed))
-                    {
-                        const int previous = sliceManager.selectedSlice.load (std::memory_order_relaxed);
-                        sliceManager.selectedSlice.store (sliceIdx, std::memory_order_relaxed);
-                        selectedSessionSampleId.store (sliceManager.getSlice (sliceIdx).sampleId, std::memory_order_relaxed);
-                        if (previous != sliceIdx)
-                            uiSnapshotDirty.store (true, std::memory_order_release);
-                    }
-
-                    int voiceIdx = voicePool.allocate();
-
-                    // Handle mute groups
-                    const auto& s = sliceManager.getSlice (sliceIdx);
-                    int mg = (int) sliceManager.resolveParam (sliceIdx, kLockMuteGroup,
-                                                              (float) s.muteGroup, (float) p.globalMuteGroup);
-                    voicePool.muteGroup (mg, voiceIdx);
-
-                    p.sliceIdx = sliceIdx;
-                    p.sliceRootNote = s.sliceRootNote;
-                    voicePool.startVoice (voiceIdx, p, sliceManager, sampleData);
-                }
-            }
-        }
-        else if (msg.isNoteOff())
-        {
-            int note = msg.getNoteNumber();
-            const auto noteIndex = static_cast<size_t> (note);
-            if (heldNotes[noteIndex])
-            {
-                heldNotes[noteIndex] = false;
-                voicePool.releaseNote (note);           // normal: respects oneShot
-            }
-            else
-            {
-                voicePool.releaseNoteForced (note);     // host sweep: kills even oneShot voices
-            }
-        }
-        else if (msg.isAllNotesOff())
-        {
-            voicePool.releaseAll();  // 50ms fade on all active voices
-            lazyChop.stop (voicePool, sliceManager);
-            std::fill (std::begin (heldNotes), std::end (heldNotes), false);
-        }
-        else if (msg.isAllSoundOff())
-        {
-            voicePool.killAll();     // 5ms hard kill on all active voices
-            lazyChop.stop (voicePool, sliceManager);
-            std::fill (std::begin (heldNotes), std::end (heldNotes), false);
-        }
+        const int cc = msg.getControllerNumber();
+        const bool strip = msg.isController()
+            && (edit.channel == 0 || msg.getChannel() == edit.channel)
+            && (cc == kNrpnCcMsb || cc == kNrpnCcLsb || cc == kNrpnCcIncr || cc == kNrpnCcDecr);
+        if (! strip)
+            filtered.addEvent (msg, metadata.samplePosition);
     }
-
-    // Strip MIDI edit CCs from the buffer so they don't pass downstream
-    if (editEnabled && doConsume)
-    {
-        juce::MidiBuffer filtered;
-        for (const auto metadata : midi)
-        {
-            const auto msg = metadata.getMessage();
-            const int cc = msg.getControllerNumber();
-            const bool strip = msg.isController()
-                && (editChannel == 0 || msg.getChannel() == editChannel)
-                && (cc == kNrpnCcMsb || cc == kNrpnCcLsb || cc == kNrpnCcIncr || cc == kNrpnCcDecr);
-            if (! strip)
-                filtered.addEvent (msg, metadata.samplePosition);
-        }
-        midi = std::move (filtered);
-    }
+    midi = std::move (filtered);
 }
 
 static inline float sanitiseSample (float x)
@@ -3086,7 +3082,67 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     // Update max active voices from param
     voicePool.setMaxActiveVoices ((int) maxVoicesParam->load());
 
-    processMidi (midi);
+    // Collect write pointers for all enabled output buses
+    std::array<float*, kMaxOutputBuses> busL {};
+    std::array<float*, kMaxOutputBuses> busR {};
+    int numActiveBuses = 0;
+
+    for (int b = 0; b < std::min (getBusCount (false), kMaxOutputBuses); ++b)
+    {
+        auto* bus = getBus (false, b);
+        if (bus != nullptr && bus->isEnabled())
+        {
+            const auto busIndex = static_cast<size_t> (b);
+            int chOff = getChannelIndexInProcessBlockBuffer (false, b, 0);
+            if (chOff < buffer.getNumChannels())
+            {
+                busL[busIndex] = buffer.getWritePointer (chOff);
+                busR[busIndex] = (chOff + 1 < buffer.getNumChannels())
+                              ? buffer.getWritePointer (chOff + 1) : nullptr;
+                if (b + 1 > numActiveBuses) numActiveBuses = b + 1;
+            }
+        }
+    }
+
+    const int numSamples = buffer.getNumSamples();
+
+    const bool canRender = sampleData.isLoaded();
+    if (! canRender && ! sampleMissing.load (std::memory_order_relaxed))
+        sampleAvailability.store ((int) SampleStateEmpty, std::memory_order_relaxed);
+
+    // Event-boundary timeline (issue #40): render audio up to each MIDI event's sample
+    // position, apply the event, then continue, so note-ons/offs and mute-group cuts land
+    // sample-accurately instead of snapping to the block start. MIDI bookkeeping still runs
+    // with no sample loaded; only the audio ranges are skipped.
+    auto renderAudioRange = [&] (int rangeStart, int rangeLength)
+    {
+        if (! canRender || rangeLength <= 0)
+            return;
+        if (numActiveBuses <= 1)
+            voicePool.renderMainBusRange (sampleData, busL[0], busR[0], rangeStart, rangeLength);
+        else
+            voicePool.renderRoutedRange (sampleData, busL.data(), busR.data(), numActiveBuses,
+                                         rangeStart, rangeLength);
+    };
+
+    const MidiEditBlockSettings midiEdit {
+        midiEditState.enabled.load (std::memory_order_acquire),
+        midiEditState.channel.load (std::memory_order_relaxed),
+        midiEditState.consumeMidiEditCc.load (std::memory_order_relaxed) };
+
+    int renderCursor = 0;
+    for (const auto metadata : midi)
+    {
+        // Hosts must supply ordered, in-range event positions; clamp defensively in release
+        jassert (metadata.samplePosition >= renderCursor && metadata.samplePosition <= numSamples);
+        const int eventPos = juce::jlimit (renderCursor, numSamples, metadata.samplePosition);
+        renderAudioRange (renderCursor, eventPos - renderCursor);
+        processMidiEvent (metadata.getMessage(), midiEdit);
+        renderCursor = eventPos;
+    }
+    renderAudioRange (renderCursor, numSamples - renderCursor);
+
+    filterConsumedMidiEditEvents (midi, midiEdit);
 
     if (midiEditState.gestureOpen && midiEditState.previewActive)
     {
@@ -3119,68 +3175,21 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     if (uiSnapshotDirty.exchange (false, std::memory_order_acq_rel))
         publishUiSliceSnapshot();
 
-    if (! sampleData.isLoaded())
-    {
-        if (! sampleMissing.load (std::memory_order_relaxed))
-            sampleAvailability.store ((int) SampleStateEmpty, std::memory_order_relaxed);
+    if (! canRender)
         return;
-    }
 
-    // Collect write pointers for all enabled output buses
-    std::array<float*, kMaxOutputBuses> busL {};
-    std::array<float*, kMaxOutputBuses> busR {};
-    int numActiveBuses = 0;
-
-    for (int b = 0; b < std::min (getBusCount (false), kMaxOutputBuses); ++b)
+    // Sanitise once after all ranges have been mixed: clamp / NaN-guard every active bus
+    // (bus 0 is the only populated slot on the single-stereo fast path)
+    const int busesToSanitise = juce::jmax (1, numActiveBuses);
+    for (int b = 0; b < busesToSanitise; ++b)
     {
-        auto* bus = getBus (false, b);
-        if (bus != nullptr && bus->isEnabled())
-        {
-            const auto busIndex = static_cast<size_t> (b);
-            int chOff = getChannelIndexInProcessBlockBuffer (false, b, 0);
-            if (chOff < buffer.getNumChannels())
-            {
-                busL[busIndex] = buffer.getWritePointer (chOff);
-                busR[busIndex] = (chOff + 1 < buffer.getNumChannels())
-                              ? buffer.getWritePointer (chOff + 1) : nullptr;
-                if (b + 1 > numActiveBuses) numActiveBuses = b + 1;
-            }
-        }
-    }
-
-    buffer.clear();
-
-    const int numSamples = buffer.getNumSamples();
-
-    if (numActiveBuses <= 1)
-    {
-        // Fast path: single stereo output — voice-first block render
-        voicePool.renderMainBusBlock (sampleData, busL[0], busR[0], numSamples);
-
-        // Sanitise once after all voices have been mixed
-        if (busL[0])
+        const auto busIndex = static_cast<size_t> (b);
+        if (busL[busIndex])
             for (int i = 0; i < numSamples; ++i)
-                busL[0][i] = sanitiseSample (busL[0][i]);
-        if (busR[0])
+                busL[busIndex][i] = sanitiseSample (busL[busIndex][i]);
+        if (busR[busIndex])
             for (int i = 0; i < numSamples; ++i)
-                busR[0][i] = sanitiseSample (busR[0][i]);
-    }
-    else
-    {
-        // Multi-out: voice-first block render with per-voice bus routing
-        voicePool.renderRoutedBlock (sampleData, busL.data(), busR.data(), numActiveBuses, numSamples);
-
-        // Clamp / NaN-guard every active bus after accumulation
-        for (int b = 0; b < numActiveBuses; ++b)
-        {
-            const auto busIndex = static_cast<size_t> (b);
-            if (busL[busIndex])
-                for (int i = 0; i < numSamples; ++i)
-                    busL[busIndex][i] = sanitiseSample (busL[busIndex][i]);
-            if (busR[busIndex])
-                for (int i = 0; i < numSamples; ++i)
-                    busR[busIndex][i] = sanitiseSample (busR[busIndex][i]);
-        }
+                busR[busIndex][i] = sanitiseSample (busR[busIndex][i]);
     }
 
     // Pass through MIDI
