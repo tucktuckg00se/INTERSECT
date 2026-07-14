@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.15.2] - 2026-07-13
+
 ### Changed
 - Documented Flatpak DAW library-path settings for CUDA ONNX Runtime bundles when hosted plugins cannot load CUDA provider libraries.
 - Replaced the single-page README with a slim landing page plus a full documentation site at <https://tucktuckg00se.github.io/INTERSECT/> covering installation, workflow, interface, controls reference, NRPN routing, themes, and building from source.
