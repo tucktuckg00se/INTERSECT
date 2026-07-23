@@ -28,6 +28,7 @@ public:
     void saveUserSettings (float scale, const juce::String& themeName);
     void setMiddleCOctave (int octave);
     int getMiddleCOctave() const { return middleCOctave; }
+    float getEffectiveUiScale() const noexcept { return lastAppliedScale; }
 
 private:
     enum class DeleteTarget
@@ -42,11 +43,17 @@ private:
     void loadUserSettings();
     void setSampleBrowserVisible (bool shouldBeVisible);
     void loadBrowserFiles (const std::vector<juce::File>& files);
+    float computeEffectiveScale (float desiredScale) const;
+    bool updateUiTransform();
+    void applyLogicalSize();
 
     IntersectProcessor& processor;
     int middleCOctave = 4;
-    float lastScale = 1.0f;   // last applied scale value, compared each tick
-    bool scaleDirty = true;   // forces scale application on first timer tick
+    float lastScale = 1.0f;          // last desired scale persisted to settings
+    float lastAppliedScale = 1.0f;   // effective (auto-fitted) scale currently in the transform
+    float lastFitDesired = -1.0f;    // guard cache: forces first fit on first post-attach tick
+    juce::Point<int> lastFitScreenPos;
+    int fitCheckCounter = 0;
     float lastZoom = -1.0f;
     float lastScroll = -1.0f;
     float lastGlobalFadeCrossfade = -1.0f;

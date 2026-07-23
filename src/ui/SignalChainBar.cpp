@@ -2082,14 +2082,8 @@ void SignalChainBar::showSetBpmPopup (bool sliceScope)
     menu.addItem (8, "1/8 Note");
     menu.addItem (9, "1/16 Note");
 
-    auto* topLevel = getTopLevelComponent();
-    const float menuScale = IntersectLookAndFeel::getMenuScale();
-    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this)
-                            .withDeletionCheck (*this)
-                            .withParentComponent (topLevel)
-                            .withMaximumNumColumns (1)
-                            .withMinimumWidth ((int) std::round (156.0f * menuScale))
-                            .withStandardItemHeight ((int) std::round (24.0f * menuScale)),
+    menu.showMenuAsync (IntersectLookAndFeel::makeEditorMenuOptions (*this, 156, 24)
+                            .withTargetComponent (this),
         [this, sliceScope] (int result)
         {
             if (result <= 0 || result > 9)

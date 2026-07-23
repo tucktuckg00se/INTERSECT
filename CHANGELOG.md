@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- The SET settings menu and SET BPM menu now open reliably in Windows hosts such as REAPER at UI scales other than 1.0, and opening a menu no longer slowly grows the plugin window (#41).
+- The interface now renders at the largest scale that fully fits the current display, so the right side is no longer cut off at high UI scales or with the FILES browser open; the SET menu shows the fitted scale when it differs from the chosen one.
+- Toggling the FILES browser no longer changes the window height by a small amount.
+
 ## [0.15.2] - 2026-07-13
 
 ### Changed

@@ -599,9 +599,8 @@ void SampleBrowserPanel::showLocationMenu (int row, juce::Point<int> position)
     else if (item.file.isDirectory() && ! hasBookmark (item.file))
         menu.addItem (kAddBookmark, "Add Bookmark");
 
-    menu.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea ({ position, { 1, 1 } })
-                                                   .withParentComponent (getTopLevelComponent())
-                                                   .withDeletionCheck (*this),
+    menu.showMenuAsync (IntersectLookAndFeel::makeEditorMenuOptions (*this)
+                            .withTargetScreenArea ({ position, { 1, 1 } }),
         [this, item] (int result)
         {
             if (result == kAddBookmark)
@@ -625,9 +624,8 @@ void SampleBrowserPanel::showFileMenu (int row, juce::Point<int> position)
     if (! hasBookmark (item.file))
         menu.addItem (kAddBookmark, "Add Bookmark");
 
-    menu.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea ({ position, { 1, 1 } })
-                                                   .withParentComponent (getTopLevelComponent())
-                                                   .withDeletionCheck (*this),
+    menu.showMenuAsync (IntersectLookAndFeel::makeEditorMenuOptions (*this)
+                            .withTargetScreenArea ({ position, { 1, 1 } }),
         [this, item] (int result)
         {
             if (result == kAddBookmark)

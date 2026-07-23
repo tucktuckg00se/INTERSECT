@@ -38,9 +38,12 @@ float measureTextWidth (const juce::Font& font, const juce::String& text)
     return glyphs.getBoundingBox (0, -1, true).getWidth();
 }
 
-juce::String formatScaleStatus (float scale)
+juce::String formatScaleStatus (float desired, float effective)
 {
-    return "UI Scale  " + juce::String (scale, 2) + "x";
+    auto text = "UI Scale  " + juce::String (desired, 2) + "x";
+    if (effective < desired - 0.005f)
+        text << "  (fits " << juce::String (effective, 2) << "x)";
+    return text;
 }
 
 juce::String formatNrpnStatus (int channel)
@@ -229,6 +232,7 @@ void HeaderBar::showSettingsPopup()
     const bool blockCc     = processor.midiEditState.consumeMidiEditCc.load (std::memory_order_relaxed);
     const int  nrpnCh      = processor.midiEditState.channel.load (std::memory_order_relaxed);
     const float currentScale = processor.apvts.getRawParameterValue (ParamIds::uiScale)->load();
+    const float effectiveScale = editor->getEffectiveUiScale();
     const int currentMiddleC = editor->getMiddleCOctave();
 
     juce::PopupMenu middleCMenu;
@@ -259,7 +263,7 @@ void HeaderBar::showSettingsPopup()
     juce::PopupMenu menu;
     menu.setLookAndFeel (&getLookAndFeel());
     menu.addSectionHeader ("INTERSECT  v" + juce::String (JucePlugin_VersionString));
-    menu.addItem (kMenuScaleStatus, formatScaleStatus (currentScale), false, false);
+    menu.addItem (kMenuScaleStatus, formatScaleStatus (currentScale, effectiveScale), false, false);
     menu.addItem (kMenuScaleUp, "Scale Up", currentScale < 3.0f);
     menu.addItem (kMenuScaleDown, "Scale Down", currentScale > 0.5f);
     menu.addSeparator();
@@ -358,14 +362,8 @@ void HeaderBar::showSettingsPopup()
     menu.addSectionHeader ("Support");
     menu.addItem (kMenuSponsor, juce::CharPointer_UTF8 ("\xe2\x98\x95  Buy Me a Coffee"));
 
-    auto* topLevel = getTopLevelComponent();
-    float ms = IntersectLookAndFeel::getMenuScale();
-    auto options = juce::PopupMenu::Options().withTargetComponent (&settingsBtn)
-                                              .withDeletionCheck (*this)
-                                              .withParentComponent (topLevel)
-                                              .withMinimumWidth ((int) std::round (220.0f * ms))
-                                              .withMaximumNumColumns (1)
-                                              .withStandardItemHeight ((int) std::round (24.0f * ms));
+    auto options = IntersectLookAndFeel::makeEditorMenuOptions (*this, 220, 24)
+                       .withTargetComponent (&settingsBtn);
 
     menu.showMenuAsync (options,
         [this, editor, themes] (int result)

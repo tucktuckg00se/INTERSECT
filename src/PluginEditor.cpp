@@ -10,8 +10,16 @@ static constexpr float kSliceLaneH = 20.0f;
 static constexpr float kScrollbarH = 10.0f;
 static constexpr float kActionH    = 22.0f;
 static constexpr float kWaveformMinH = 180.0f;
-static constexpr float kCollapsedSignalChainH = 114.0f;
+static constexpr float kCollapsedSignalChainH = 94.0f;   // must match SignalChainBar kCollapsedHeight
+static constexpr float kExpandedSignalChainH = 180.0f;   // must match SignalChainBar kExpandedHeight
 static constexpr int kSampleBrowserW = 260;
+
+// Auto-fit: reserve for host FX-window chrome around the plugin view, in
+// JUCE-logical px (chrome is roughly constant in logical units across DPI).
+static constexpr float kHostChromeReserveW = 20.0f;  // side borders + slack
+static constexpr float kHostChromeReserveH = 56.0f;  // title bar + borders + host header strip
+static constexpr float kMinEffectiveScale  = 0.4f;   // usability floor on tiny displays
+static constexpr float kScaleEpsilon       = 0.005f; // half a 0.01 quantisation step
 
 static juce::File getSettingsDir()
 {
@@ -127,11 +135,7 @@ IntersectEditor::IntersectEditor (IntersectProcessor& p)
         saveUserSettings (scale, getTheme().name);
     };
 
-    signalChainBar.onHeightChanged = [this]
-    {
-        float delta = signalChainBar.getDesiredHeight() - kCollapsedSignalChainH;
-        setSize (kBaseW + (sampleBrowserVisible ? kSampleBrowserW : 0), kBaseH + (int) delta);
-    };
+    signalChainBar.onHeightChanged = [this] { applyLogicalSize(); };
 
     // Write default theme files if they don't exist
     ensureDefaultThemes();
@@ -148,7 +152,8 @@ IntersectEditor::IntersectEditor (IntersectProcessor& p)
     }
 
     setWantsKeyboardFocus (true);
-    setSize (kBaseW + (sampleBrowserVisible ? kSampleBrowserW : 0), kBaseH);
+    applyLogicalSize();
+    updateUiTransform();   // host's first getSize sees the restored scale; refitted post-attach
     lastUiSnapshotVersion = processor.getUiSliceSnapshotVersion();
     lastGlobalFadeCrossfade = processor.apvts.getRawParameterValue (ParamIds::defaultCrossfade)->load();
     lastGlobalFadeLoopMode = juce::roundToInt (processor.apvts.getRawParameterValue (ParamIds::defaultLoop)->load());
@@ -361,11 +366,63 @@ void IntersectEditor::setSampleBrowserVisible (bool shouldBeVisible)
     sampleBrowserVisible = shouldBeVisible;
     sampleBrowser.setVisible (sampleBrowserVisible);
 
-    const float delta = signalChainBar.getDesiredHeight() - kCollapsedSignalChainH;
-    setSize (kBaseW + (sampleBrowserVisible ? kSampleBrowserW : 0), kBaseH + (int) delta);
+    applyLogicalSize();
 
     float scale = processor.apvts.getRawParameterValue (ParamIds::uiScale)->load();
     saveUserSettings (scale, getTheme().name);
+}
+
+float IntersectEditor::computeEffectiveScale (float desiredScale) const
+{
+    // Fit against the MAXIMAL layout (FILES open + signal chain expanded) so panel
+    // toggles never change the rendered scale — only scale choice or display do.
+    constexpr float maxLogicalW = (float) (kBaseW + kSampleBrowserW);
+    constexpr float maxLogicalH = kBaseH + (kExpandedSignalChainH - kCollapsedSignalChainH);
+
+    const auto* display = juce::Desktop::getInstance().getDisplays().getDisplayForRect (getScreenBounds());
+    if (display == nullptr)
+        return desiredScale;
+
+    const float availW = (float) display->userBounds.getWidth()  - kHostChromeReserveW;
+    const float availH = (float) display->userBounds.getHeight() - kHostChromeReserveH;
+    if (availW <= 0.0f || availH <= 0.0f)
+        return desiredScale;
+
+    float fit = juce::jmin (desiredScale, availW / maxLogicalW, availH / maxLogicalH);
+    fit = std::floor (fit * 100.0f) / 100.0f;   // quantise DOWN: never overflows, tick-stable
+    return juce::jmax (kMinEffectiveScale, fit);
+}
+
+bool IntersectEditor::updateUiTransform()
+{
+    // Cheap guard: skip the display lookup unless an input changed (desired scale,
+    // or on-screen position — catches monitor drags, for which embedded plugin
+    // windows get no OS event). A ~1 Hz slow revalidation catches in-place display
+    // config changes (resolution/DPI edits).
+    const float desired  = processor.apvts.getRawParameterValue (ParamIds::uiScale)->load();
+    const auto screenPos = getScreenBounds().getPosition();
+    const bool slowTick  = (++fitCheckCounter % 30 == 0);
+    if (! slowTick && desired == lastFitDesired && screenPos == lastFitScreenPos)
+        return false;
+    lastFitDesired = desired;
+    lastFitScreenPos = screenPos;
+
+    const float effective = computeEffectiveScale (desired);
+    if (std::abs (effective - lastAppliedScale) <= kScaleEpsilon)
+        return false;
+
+    lastAppliedScale = effective;
+    setTransform (juce::AffineTransform::scale (effective));
+    return true;
+}
+
+void IntersectEditor::applyLogicalSize()
+{
+    const float delta = signalChainBar.getDesiredHeight() - kCollapsedSignalChainH;
+    const int w = kBaseW + (sampleBrowserVisible ? kSampleBrowserW : 0);
+    const int h = kBaseH + (int) delta;
+    setSize (w, h);
+    setResizeLimits (w, h, w, h);   // pin logical size; min==max keeps canResize false
 }
 
 void IntersectEditor::loadBrowserFiles (const std::vector<juce::File>& files)
@@ -417,17 +474,17 @@ void IntersectEditor::timerCallback()
         viewportChanged = true;
     }
 
-    // Check if scale changed; scaleDirty forces application on first timer tick
-    float scale = processor.apvts.getRawParameterValue (ParamIds::uiScale)->load();
-    if (scaleDirty || scale != lastScale)
+    // Persist the *desired* scale when the param changes; the transform uses the
+    // effective (auto-fitted) scale so the window always fits the current display.
+    const float desiredScale = processor.apvts.getRawParameterValue (ParamIds::uiScale)->load();
+    if (desiredScale != lastScale)
     {
-        scaleDirty = false;
-        lastScale = scale;
-        setTransform (juce::AffineTransform::scale (scale));
-        IntersectLookAndFeel::setMenuScale (scale);
-        saveUserSettings (scale, getTheme().name);
+        lastScale = desiredScale;
+        saveUserSettings (desiredScale, getTheme().name);
         uiChanged = true;
     }
+    if (updateUiTransform())
+        uiChanged = true;
 
     const float globalCrossfade = processor.apvts.getRawParameterValue (ParamIds::defaultCrossfade)->load();
     const int globalLoopMode = juce::roundToInt (processor.apvts.getRawParameterValue (ParamIds::defaultLoop)->load());

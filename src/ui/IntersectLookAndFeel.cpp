@@ -1,5 +1,6 @@
 #include "IntersectLookAndFeel.h"
 #include "BinaryData.h"
+#include <juce_audio_processors/juce_audio_processors.h>
 
 static ThemeData globalTheme = ThemeData::darkTheme();
 
@@ -18,7 +19,6 @@ void setTheme (const ThemeData& t) { globalTheme = t; }
 
 juce::Typeface::Ptr IntersectLookAndFeel::sRegularTypeface;
 juce::Typeface::Ptr IntersectLookAndFeel::sBoldTypeface;
-float IntersectLookAndFeel::sMenuScale = 1.0f;
 
 IntersectLookAndFeel::IntersectLookAndFeel()
 {
@@ -170,16 +170,15 @@ void IntersectLookAndFeel::drawPopupMenuItem (juce::Graphics& g, const juce::Rec
 {
     if (isSeparator)
     {
-        auto line = area.reduced ((int) std::round (12.0f * sMenuScale), 0);
+        auto line = area.reduced (12, 0);
         line = line.withHeight (1).withY (area.getCentreY());
         g.setColour (getTheme().surface5.withAlpha (0.9f));
         g.fillRect (line);
         return;
     }
 
-    auto row = area.reduced ((int) std::round (6.0f * sMenuScale),
-                             (int) std::round (2.0f * sMenuScale));
-    const float highlightRadius = 4.0f * sMenuScale;
+    auto row = area.reduced (6, 2);
+    const float highlightRadius = 4.0f;
 
     if (isHighlighted && isActive)
     {
@@ -190,14 +189,13 @@ void IntersectLookAndFeel::drawPopupMenuItem (juce::Graphics& g, const juce::Rec
         g.drawRoundedRectangle (row.toFloat(), highlightRadius, 1.0f);
     }
 
-    auto glyphBounds = row.removeFromLeft ((int) std::round (18.0f * sMenuScale));
-    auto arrowBounds = hasSubMenu ? row.removeFromRight ((int) std::round (14.0f * sMenuScale)) : juce::Rectangle<int>();
-    auto textBounds = row.reduced ((int) std::round (6.0f * sMenuScale), 0);
+    auto glyphBounds = row.removeFromLeft (18);
+    auto arrowBounds = hasSubMenu ? row.removeFromRight (14) : juce::Rectangle<int>();
+    auto textBounds = row.reduced (6, 0);
 
     if (isTicked)
     {
-        auto dotBounds = glyphBounds.withSizeKeepingCentre ((int) std::round (8.0f * sMenuScale),
-                                                            (int) std::round (8.0f * sMenuScale));
+        auto dotBounds = glyphBounds.withSizeKeepingCentre (8, 8);
         g.setColour (getTheme().accent.withAlpha (isActive ? 1.0f : 0.45f));
         g.fillEllipse (dotBounds.toFloat());
     }
@@ -210,10 +208,10 @@ void IntersectLookAndFeel::drawPopupMenuItem (juce::Graphics& g, const juce::Rec
     if (hasSubMenu && arrowBounds.getWidth() > 0)
     {
         juce::Path arrow;
-        const float x = (float) arrowBounds.getX() + 4.0f * sMenuScale;
+        const float x = (float) arrowBounds.getX() + 4.0f;
         const float y = (float) arrowBounds.getCentreY();
-        const float w = 4.0f * sMenuScale;
-        const float h = 5.0f * sMenuScale;
+        const float w = 4.0f;
+        const float h = 5.0f;
         arrow.startNewSubPath (x, y - h);
         arrow.lineTo (x + w, y);
         arrow.lineTo (x, y + h);
@@ -230,17 +228,17 @@ void IntersectLookAndFeel::drawPopupMenuSectionHeader (juce::Graphics& g,
                                                         const juce::Rectangle<int>& area,
                                                         const juce::String& sectionName)
 {
-    auto bounds = area.reduced ((int) std::round (12.0f * sMenuScale), 0);
-    auto labelFont = makeFont (8.75f * sMenuScale, true);
+    auto bounds = area.reduced (12, 0);
+    auto labelFont = makeFont (8.75f, true);
     const auto labelText = sectionName.toUpperCase();
     const int labelWidth = juce::roundToInt (measureTextWidth (labelFont, labelText));
 
     g.setFont (labelFont);
     g.setColour (getTheme().text0.brighter (0.08f).withAlpha (0.92f));
-    g.drawText (labelText, bounds.removeFromLeft (labelWidth + (int) std::round (8.0f * sMenuScale)),
+    g.drawText (labelText, bounds.removeFromLeft (labelWidth + 8),
                 juce::Justification::bottomLeft, true);
 
-    auto ruleBounds = bounds.withHeight (1).withY (area.getBottom() - (int) std::round (5.0f * sMenuScale));
+    auto ruleBounds = bounds.withHeight (1).withY (area.getBottom() - 5);
     if (ruleBounds.getWidth() > 0)
     {
         g.setColour (getTheme().surface5.withAlpha (0.8f));
@@ -250,7 +248,29 @@ void IntersectLookAndFeel::drawPopupMenuSectionHeader (juce::Graphics& g,
 
 juce::Font IntersectLookAndFeel::getPopupMenuFont()
 {
-    return makeFont (12.0f * sMenuScale);
+    return makeFont (12.0f);
+}
+
+juce::PopupMenu::Options IntersectLookAndFeel::makeEditorMenuOptions (juce::Component& owner,
+                                                                      int minimumWidth,
+                                                                      int standardItemHeight)
+{
+    juce::Component* parent = owner.findParentComponentOfClass<juce::AudioProcessorEditor>();
+    jassert (parent != nullptr); // all menu-owning components live inside the editor
+    if (parent == nullptr)
+        parent = owner.getTopLevelComponent();
+
+    auto options = juce::PopupMenu::Options()
+                       .withParentComponent (parent)
+                       .withDeletionCheck (owner)
+                       .withMaximumNumColumns (1);
+
+    if (minimumWidth > 0)
+        options = options.withMinimumWidth (minimumWidth);
+    if (standardItemHeight > 0)
+        options = options.withStandardItemHeight (standardItemHeight);
+
+    return options;
 }
 
 void IntersectLookAndFeel::fillTextEditorBackground (juce::Graphics& g, int width, int height, juce::TextEditor& textEditor)

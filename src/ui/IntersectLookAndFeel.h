@@ -29,8 +29,13 @@ public:
     void fillTextEditorBackground (juce::Graphics&, int width, int height, juce::TextEditor&) override;
     void drawTextEditorOutline (juce::Graphics&, int width, int height, juce::TextEditor&) override;
 
-    static void setMenuScale (float s) { sMenuScale = s; }
-    static float getMenuScale() { return sMenuScale; }
+    // Standard options for popup menus opened by components inside the plugin editor.
+    // Parents the menu to the editor so it inherits the UI-scale transform and never
+    // adds children to the host wrapper window (issue #41: opening a menu grew the
+    // plugin window and dismissed the menu in some Windows hosts).
+    static juce::PopupMenu::Options makeEditorMenuOptions (juce::Component& owner,
+                                                           int minimumWidth = 0,
+                                                           int standardItemHeight = 0);
 
     void drawTooltip (juce::Graphics&, const juce::String& text, int width, int height) override;
     juce::Rectangle<int> getTooltipBounds (const juce::String& text, juce::Point<int> screenPos,
@@ -50,7 +55,6 @@ public:
 private:
     static juce::Typeface::Ptr sRegularTypeface;
     static juce::Typeface::Ptr sBoldTypeface;
-    static float sMenuScale;
 
     juce::Typeface::Ptr regularTypeface;
     juce::Typeface::Ptr boldTypeface;
