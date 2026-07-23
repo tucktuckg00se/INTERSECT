@@ -14,10 +14,10 @@ public:
     void paint (juce::Graphics& g) override;
     void resized() override;
     void mouseDown (const juce::MouseEvent& e) override;
+    void adjustScale (float delta);
 
 private:
     void showSettingsPopup();
-    void adjustScale (float delta);
     void openRelinkBrowser();
 
     IntersectProcessor& processor;

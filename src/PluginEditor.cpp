@@ -239,6 +239,18 @@ bool IntersectEditor::keyPressed (const juce::KeyPress& key)
         return true;
     }
 
+    // Ctrl+= / Ctrl+- - UI scale up / down
+    if (mods.isCommandDown() && (code == '=' || code == '+' || code == juce::KeyPress::numberPadAdd))
+    {
+        headerBar.adjustScale (0.25f);
+        return true;
+    }
+    if (mods.isCommandDown() && (code == '-' || code == juce::KeyPress::numberPadSubtract))
+    {
+        headerBar.adjustScale (-0.25f);
+        return true;
+    }
+
     // Ignore other Command/Alt combos and let host/OS handle them.
     if (mods.isCommandDown() || mods.isAltDown())
         return false;

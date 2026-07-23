@@ -54,7 +54,7 @@ stemComputeDevice: cuda
 
 | Key | Type | Values | Purpose |
 | --- | --- | --- | --- |
-| `uiScale` | float | 0.5 to 3.0 (in 0.25 steps) | Editor scale factor. Mirrors the `uiScale` APVTS parameter on load. |
+| `uiScale` | float | 0.5 to 3.0 (in 0.25 steps) | Desired editor scale factor. Mirrors the `uiScale` APVTS parameter on load. The plugin renders at the largest scale that fully fits your display, so on small monitors the on-screen size may be smaller than this value — the `SET` menu then shows it as "fits …x". |
 | `theme` | string | filename stem of a theme in your `themes/` folder | Active theme. Falls back to `dark` if the named file isn't present. |
 | `nrpnEnabled` | bool | `true` / `false` | Master toggle for NRPN slice editing. |
 | `nrpnChannel` | int | 0 to 16 (0 = omni) | MIDI channel filter for NRPN editing. |

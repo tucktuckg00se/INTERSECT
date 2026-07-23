@@ -164,6 +164,8 @@ All three parameter cells support drag-to-edit (drag up/down) and double-click t
 | --- | --- |
 | `Ctrl/Cmd + Z` | Undo |
 | `Ctrl/Cmd + Shift + Z` | Redo |
+| `Ctrl/Cmd + =` | UI scale up (0.25 steps) |
+| `Ctrl/Cmd + -` | UI scale down (0.25 steps) |
 | `Shift + A` | Toggle `ADD` mode |
 | `Shift + Z` | Toggle `LAZY` / `STOP` |
 | `Shift + C` | Toggle Auto Chop panel |

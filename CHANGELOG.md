@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Keyboard shortcuts Ctrl/Cmd + = and Ctrl/Cmd + - step the UI scale up and down.
+
 ### Fixed
 - The SET settings menu and SET BPM menu now open reliably in Windows hosts such as REAPER at UI scales other than 1.0, and opening a menu no longer slowly grows the plugin window (#41).
 - The interface now renders at the largest scale that fully fits the current display, so the right side is no longer cut off at high UI scales or with the FILES browser open; the SET menu shows the fitted scale when it differs from the chosen one.
