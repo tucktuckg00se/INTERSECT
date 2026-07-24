@@ -37,6 +37,7 @@ public:
         int sourceNumFrames = 0;
         double sourceSampleRate = 0.0;
         StemMetadata stemMeta;
+        float sampleBpm = 0.0f;  // 0 = unset (inherit defaultBpm); carrier for undo/state only
     };
 
     struct DecodedSample

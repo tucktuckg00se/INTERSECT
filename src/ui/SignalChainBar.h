@@ -96,6 +96,9 @@ private:
         bool isVisuallyDimmed = false;
         bool drawTrailingDivider = false;
         bool isSliceScopeCell = false;
+        // BPM cell bound to the selected session sample's per-sample BPM (writes
+        // go through CmdSetSampleBpm, not the APVTS defaultBpm parameter).
+        bool isSampleBpmCell = false;
     };
 
     struct ModuleLayout
@@ -124,6 +127,13 @@ private:
         bool sliceScope = false;
         float sampleRate = 44100.0f;
         int middleCOctave = 4;
+        // Selected session sample and its per-sample BPM (0 = unset → inherit
+        // defaultBpm). selectedSliceSampleBpm is the BPM of the sample owning
+        // the selected slice (may differ from the selected sample).
+        int selectedSampleId = -1;
+        bool hasSelectedSample = false;
+        float selectedSampleBpm = 0.0f;
+        float selectedSliceSampleBpm = 0.0f;
     };
 
     void rebuildLayout();

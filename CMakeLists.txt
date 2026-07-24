@@ -157,6 +157,8 @@ target_sources(Intersect PRIVATE
     src/ui/AutoChopPanel.cpp
     src/ui/StemExportPanel.cpp
     src/audio/StemSeparationJob.cpp
+    src/audio/BpmDetector.cpp
+    minibpm/src/MiniBpm.cpp
 )
 
 target_include_directories(Intersect PRIVATE

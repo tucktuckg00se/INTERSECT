@@ -12,6 +12,7 @@
 #include "audio/StemModelDownloadJob.h"
 #include "audio/OrtBundleDownloadJob.h"
 #include "audio/StemSeparationJob.h"
+#include "audio/BpmDetector.h"
 #include "UndoManager.h"
 #include "params/GlobalParamSnapshot.h"
 #include "params/ParamUndoState.h"
@@ -79,6 +80,9 @@ public:
         CmdSelectSlice,
         CmdSetRootNote,
         CmdStemSeparate,
+        // intParam1 = sampleId, floatParam1 = bpm (0 clears → inherit),
+        // intParam2 = 1 suppresses undo capture (auto-detect writes).
+        CmdSetSampleBpm,
     };
 
     enum LoadKind
@@ -198,10 +202,38 @@ public:
     std::atomic<bool> pendingEndGesture { false };
 
     void loadFileAsync (const juce::File& file);
-    void loadFilesAsync (const std::vector<juce::File>& files, bool append);
+    // allowAutoBpm gates auto-detect-on-import; only genuine user imports pass
+    // true (stem-generated loads pass false).
+    void loadFilesAsync (const std::vector<juce::File>& files, bool append, bool allowAutoBpm = true);
     void relinkFileAsync (const juce::File& file);
     void reorderSessionSampleAsync (int sourceSampleId, int targetIndex);
     void deleteSessionSampleAsync (int sampleId);
+
+    // Per-sample BPM (0 = unset → inherit defaultBpm). Runtime authority is an
+    // atomic side table keyed by session sample id; SessionSample::sampleBpm is
+    // only a carrier for undo snapshots and state save/load.
+    float getSampleBpm (int sampleId) const;
+    float effectiveSampleBpm (int sampleId, float fallback) const;
+
+    // Automatic BPM detection.
+    void startBpmDetectionForSample (int sampleId, bool manual);
+    bool isBpmDetectionRunningFor (int sampleId) const { return bpmDetector.isPendingOrRunning (sampleId); }
+    // Message thread. Writes the per-sample BPM through the command FIFO.
+    // captureUndo=false suppresses the undo snapshot (auto-import writes).
+    void applyDetectedBpm (int sampleId, double bpm, bool captureUndo);
+
+    // Whether newly imported samples are auto-analysed. Persisted in
+    // settings.yaml by the editor; defaults off until settings load.
+    std::atomic<bool> autoBpmOnImport { false };
+
+    // Message thread. A manual detection result awaiting the candidates popup.
+    struct BpmCandidatesPopup
+    {
+        int sampleId = -1;
+        double bestBpm = 0.0;
+        std::vector<double> candidates;  // ranked best-first
+    };
+    std::optional<BpmCandidatesPopup> takeBpmCandidatesPopup();
     void startStemSeparation (int sampleId,
                               StemModelId modelId,
                               StemSelectionMask stemSelectionMask,
@@ -238,6 +270,7 @@ public:
             int sampleId = 0;
             int startSample = 0;
             int numFrames = 0;
+            float sampleBpm = 0.0f;  // 0 = unset (inherits defaultBpm)
             RtText<256> fileName;
         };
 
@@ -524,6 +557,38 @@ private:
     int stemMetaEntryCount = 0;
     void setStemMeta (int sampleId, const StemMetadata& meta);
     StemMetadata getStemMeta (int sampleId) const;
+
+    // Per-sample BPM side table (see public getSampleBpm). Atomic fields because
+    // the audio thread reads it per note-on while the message thread refills it
+    // during state restore. Steady-state writes go through CmdSetSampleBpm.
+    struct SampleBpmEntry
+    {
+        std::atomic<int> sampleId { -1 };
+        std::atomic<float> bpm { 0.0f };
+    };
+    std::array<SampleBpmEntry, SampleData::kMaxSessionSamples> sampleBpmEntries {};
+    std::atomic<int> sampleBpmEntryCount { 0 };
+    void setSampleBpm (int sampleId, float bpm);
+    void clearAllSampleBpm();
+    // Audio thread only (walks the active session-sample list).
+    float effectiveBpmAtFrame (int frame, float fallback) const;
+
+    BpmDetector bpmDetector;
+    void handleBpmDetectionCompletionsOnMessageThread();
+    // Manual result awaiting the editor's candidates popup. Written and read
+    // only on the message thread (handleAsyncUpdate + editor timer).
+    std::optional<BpmCandidatesPopup> pendingBpmPopup;
+
+    // Auto-detect-on-import arming. loadFilesAsync arms the new sample ids
+    // against the load token; the audio thread flags the token once the decode
+    // is applied (so the samples exist), and handleAsyncUpdate enqueues them.
+    // Only genuine user imports arm — restore/relink/reorder/stem/samplerate
+    // reloads bypass loadFilesAsync and never arm.
+    std::atomic<int> autoBpmArmedToken { 0 };   // 0 = none
+    std::atomic<int> autoBpmFireToken { 0 };    // set by audio thread on apply
+    std::vector<int> autoBpmArmedIds;           // message-thread only
+    void armAutoBpmDetection (bool allowAutoBpm, int loadToken, const std::vector<int>& newSampleIds);
+    void enqueueArmedAutoBpmDetections();
 
     // Pending stem metadata to apply after the import load completes
     struct PendingStemImport

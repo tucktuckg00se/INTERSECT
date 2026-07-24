@@ -381,7 +381,12 @@ int SignalChainBar::countEffectiveModuleOverrides (Module module,
     switch (module)
     {
         case Module::TimePitch:
-            count += checkFloat (kLockBpm, slice.bpm, globals.bpm);
+        {
+            // A locked slice BPM is an override relative to its inherited value
+            // (its sample's BPM when set, else the default).
+            const float sampleBpm = processor.getSampleBpm (slice.sampleId);
+            count += checkFloat (kLockBpm, slice.bpm, sampleBpm > 0.0f ? sampleBpm : globals.bpm);
+        }
             count += checkFloat (kLockPitch, slice.pitchSemitones, globals.pitchSemitones);
             count += checkFloat (kLockCentsDetune, slice.centsDetune, globals.centsDetune);
             count += checkInt (kLockAlgorithm, slice.algorithm, globals.algorithm);
@@ -570,6 +575,21 @@ void SignalChainBar::rebuildLayout()
         : 44100.0f;
     input.selectedSlice = input.hasValidSlice ? &ui.slices[(size_t) ui.selectedSlice] : nullptr;
     input.middleCOctave = middleCOctave;
+
+    // Resolve the selected session sample's per-sample BPM (SAMPLE-tab BPM cell)
+    // and the BPM of the sample owning the selected slice (slice-scope display).
+    input.selectedSampleId = ui.selectedSessionSampleId;
+    for (int i = 0; i < ui.numSessionSamples; ++i)
+    {
+        const auto& s = ui.sessionSamples[(size_t) i];
+        if (s.sampleId == ui.selectedSessionSampleId)
+        {
+            input.hasSelectedSample = true;
+            input.selectedSampleBpm = s.sampleBpm;
+        }
+        if (input.selectedSlice != nullptr && s.sampleId == input.selectedSlice->sampleId)
+            input.selectedSliceSampleBpm = s.sampleBpm;
+    }
 
     contextTitle.clear();
     contextSubtitle.clear();
@@ -905,7 +925,7 @@ void SignalChainBar::rebuildContextBar (const LayoutInput& input)
 
         contextRow.performLayout (contextArea.toFloat());
 
-        addTabCell (toIntBounds (contextRow.items[0].currentBounds), "GLOBAL", TabTarget::Global, ! input.sliceScope, true);
+        addTabCell (toIntBounds (contextRow.items[0].currentBounds), "SAMPLE", TabTarget::Global, ! input.sliceScope, true);
         addTabCell (toIntBounds (contextRow.items[2].currentBounds), sliceTabText, TabTarget::Slice, input.sliceScope, input.hasValidSlice);
 
         contextInfoBounds = toIntBounds (contextRow.items[timeItemIndex].currentBounds);
@@ -962,7 +982,7 @@ void SignalChainBar::rebuildContextBar (const LayoutInput& input)
     contextRow.items.add (juce::FlexItem().withWidth (10.0f));  // trailing pad
     contextRow.performLayout (contextArea.toFloat());
 
-    addTabCell (toIntBounds (contextRow.items[0].currentBounds), "GLOBAL", TabTarget::Global, ! input.sliceScope, true);
+    addTabCell (toIntBounds (contextRow.items[0].currentBounds), "SAMPLE", TabTarget::Global, ! input.sliceScope, true);
     addTabCell (toIntBounds (contextRow.items[2].currentBounds), sliceTabText, TabTarget::Slice, input.sliceScope, input.hasValidSlice);
 
     contextInfoBounds = toIntBounds (contextRow.items[infoItemIndex].currentBounds);
@@ -1002,9 +1022,15 @@ void SignalChainBar::rebuildTimePitchModule (const LayoutInput& input,
     setBpmCell.isEnabled = input.sliceScope ? input.hasValidSlice : input.sampleLoaded;
     addParamCell (setBpmCell);
 
+    // A slice inherits its owner sample's BPM (when set) before the default;
+    // the SAMPLE-tab cell shows the selected sample's effective BPM.
+    const float sliceInheritedBpm = (input.selectedSliceSampleBpm > 0.0f)
+        ? input.selectedSliceSampleBpm : globals.bpm;
+    const bool sampleBpmSet = input.hasSelectedSample && input.selectedSampleBpm > 0.0f;
+    const float sampleEffectiveBpm = sampleBpmSet ? input.selectedSampleBpm : globals.bpm;
     const auto [resolvedBpm, bpmLocked] = input.sliceScope
-        ? resolveLockedValue (selectedSlice, kLockBpm, selectedSlice->bpm, globals.bpm)
-        : std::pair<float, bool> { globals.bpm, false };
+        ? resolveLockedValue (selectedSlice, kLockBpm, selectedSlice->bpm, sliceInheritedBpm)
+        : std::pair<float, bool> { sampleEffectiveBpm, false };
     const auto [resolvedPitch, pitchLocked] = input.sliceScope
         ? resolveLockedValue (selectedSlice, kLockPitch, selectedSlice->pitchSemitones, globals.pitchSemitones)
         : std::pair<float, bool> { globals.pitchSemitones, false };
@@ -1059,6 +1085,15 @@ void SignalChainBar::rebuildTimePitchModule (const LayoutInput& input,
     cell.label = "BPM";
     cell.valueText = formatTrimmed (resolvedBpm, 2);
     cell.drawTrailingDivider = true;
+    // In SAMPLE scope with a sample selected, the BPM cell edits that sample's
+    // per-sample BPM (not the shared defaultBpm parameter). The lock highlight
+    // signals an explicit per-sample value; clearing it restores inheritance.
+    if (! input.sliceScope && input.hasSelectedSample)
+    {
+        cell.isSampleBpmCell = true;
+        cell.globalParamId = {};
+        cell.isLocked = sampleBpmSet;
+    }
     addParamCell (cell);
 
     cell = {};
@@ -1760,7 +1795,7 @@ void SignalChainBar::paint (juce::Graphics& g)
         {
             g.setFont (IntersectLookAndFeel::makeFont (7.0f, true));
             g.setColour (getTheme().text0.withAlpha (0.4f));
-            g.drawText (isSliceStrip ? "SLICE" : "GLOBAL",
+            g.drawText (isSliceStrip ? "SLICE" : "SAMPLE",
                         stripBounds.getX() + 2, stripBounds.getY() + 1, 36, 10,
                         juce::Justification::centredLeft);
         }
@@ -1943,7 +1978,7 @@ void SignalChainBar::drawParamCell (juce::Graphics& g, const Cell& cell) const
 
     if (cell.valueText.isNotEmpty())
     {
-        const bool isOverride = cell.isLocked && (isSliceScopeActive() || cell.isSliceScopeCell)
+        const bool isOverride = cell.isLocked && (isSliceScopeActive() || cell.isSliceScopeCell || cell.isSampleBpmCell)
             && ! cell.isHeaderControl && ! cell.isContextInline;
         auto valueColour = getTheme().text1;
         if (! isOverride && cell.isBoolean)
@@ -1993,6 +2028,22 @@ void SignalChainBar::applyCellValue (const Cell& cell, float storedValue, bool o
         cmd.sliceIdx = processor.sliceManager.selectedSlice.load();
         processor.pushCommand (cmd);
         layoutDirty = true;
+        return;
+    }
+
+    if (cell.isSampleBpmCell)
+    {
+        const int sampleId = processor.getUiSliceSnapshot().selectedSessionSampleId;
+        if (sampleId >= 0)
+        {
+            IntersectProcessor::Command cmd;
+            cmd.type = IntersectProcessor::CmdSetSampleBpm;
+            cmd.intParam1 = sampleId;
+            cmd.floatParam1 = storedValue;
+            cmd.intParam2 = 0;  // capture undo (coalesced within a drag gesture)
+            processor.pushCommand (cmd);
+            layoutDirty = true;
+        }
         return;
     }
 
@@ -2081,13 +2132,28 @@ void SignalChainBar::showSetBpmPopup (bool sliceScope)
     menu.addItem (7, "1/4 Note");
     menu.addItem (8, "1/8 Note");
     menu.addItem (9, "1/16 Note");
+    if (! sliceScope)
+    {
+        menu.addSeparator();
+        menu.addItem (10, "Detect BPM");
+    }
 
     menu.showMenuAsync (IntersectLookAndFeel::makeEditorMenuOptions (*this, 156, 24)
                             .withTargetComponent (this),
         [this, sliceScope] (int result)
         {
-            if (result <= 0 || result > 9)
+            if (result <= 0 || result > 10)
                 return;
+
+            const int selectedSampleId = processor.getUiSliceSnapshot().selectedSessionSampleId;
+
+            // Detect BPM: hand off to the background detector (manual → popup).
+            if (result == 10)
+            {
+                if (selectedSampleId >= 0)
+                    processor.startBpmDetectionForSample (selectedSampleId, /*manual*/ true);
+                return;
+            }
 
             const float bars[] = { 0.0f, 16.0f, 8.0f, 4.0f, 2.0f, 1.0f, 0.5f, 0.25f, 0.125f, 0.0625f };
             const float barCount = bars[result];
@@ -2103,8 +2169,20 @@ void SignalChainBar::showSetBpmPopup (bool sliceScope)
             }
             else if (processor.sampleData.isLoaded())
             {
+                const auto sampleSnap = processor.sampleData.getSnapshot();
+
+                // Default to the selected session sample's extent (not the whole
+                // concatenated timeline); a selected slice overrides that.
                 int startSmp = 0;
                 int endSmp = processor.sampleData.getNumFrames();
+                if (sampleSnap != nullptr)
+                    for (const auto& s : sampleSnap->sessionSamples)
+                        if (s.sampleId == selectedSampleId)
+                        {
+                            startSmp = s.startFrame;
+                            endSmp = s.startFrame + s.numFrames;
+                            break;
+                        }
 
                 const int sel = processor.sliceManager.selectedSlice.load();
                 if (sel >= 0 && sel < processor.sliceManager.getNumSlices())
@@ -2114,18 +2192,12 @@ void SignalChainBar::showSetBpmPopup (bool sliceScope)
                     endSmp = s.endSample;
                 }
 
-                const auto sampleSnap = processor.sampleData.getSnapshot();
                 const float sampleRate = (sampleSnap != nullptr && sampleSnap->decodedSampleRate > 0.0)
                     ? (float) sampleSnap->decodedSampleRate
                     : 44100.0f;
                 const float newBpm = GrainEngine::calcStretchBpm (startSmp, endSmp, barCount, sampleRate);
-                if (auto* bpmParam = processor.apvts.getParameter (ParamIds::defaultBpm))
-                {
-                    processor.enqueueUiUndoSnapshot();
-                    bpmParam->beginChangeGesture();
-                    bpmParam->setValueNotifyingHost (bpmParam->convertTo0to1 (newBpm));
-                    bpmParam->endChangeGesture();
-                }
+                if (selectedSampleId >= 0)
+                    processor.applyDetectedBpm (selectedSampleId, newBpm, /*captureUndo*/ true);
                 layoutDirty = true;
             }
 
@@ -2413,6 +2485,29 @@ void SignalChainBar::mouseDown (const juce::MouseEvent& e)
             }
         }
 
+        // Sample-BPM override clear: restore inheritance from defaultBpm.
+        if (cell.isSampleBpmCell && cell.isLocked)
+        {
+            auto labelBounds = juce::Rectangle<int> (cell.bounds.getX() + 3, cell.bounds.getY(),
+                                                     cell.bounds.getWidth() - 6, 10);
+            if (e.mods.isPopupMenu() || labelBounds.contains (pos))
+            {
+                const int sampleId = processor.getUiSliceSnapshot().selectedSessionSampleId;
+                if (sampleId >= 0)
+                {
+                    IntersectProcessor::Command cmd;
+                    cmd.type = IntersectProcessor::CmdSetSampleBpm;
+                    cmd.intParam1 = sampleId;
+                    cmd.floatParam1 = 0.0f;  // unset → inherit
+                    cmd.intParam2 = 0;       // capture undo
+                    processor.pushCommand (cmd);
+                    layoutDirty = true;
+                }
+                repaint();
+                return;
+            }
+        }
+
         if (! cell.isEnabled || cell.isReadOnly)
             return;
 
@@ -2434,7 +2529,7 @@ void SignalChainBar::mouseDown (const juce::MouseEvent& e)
         dragStartY = pos.y;
         dragStartInteractionValue = storedToInteraction (cell, cell.currentValue);
 
-        if (cellIsSlice)
+        if (cellIsSlice || cell.isSampleBpmCell)
         {
             IntersectProcessor::Command gestureCmd;
             gestureCmd.type = IntersectProcessor::CmdBeginGesture;

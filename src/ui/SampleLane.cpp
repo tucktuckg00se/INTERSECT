@@ -81,12 +81,17 @@ std::vector<SampleLane::VisibleSample> SampleLane::buildVisibleSamples() const
         const int deleteW = juce::jmin (16, juce::jmax (12, blockW / 6));
         const int cancelW = juce::jmin (54, juce::jmax (34, blockW / 2));
         const int stemsW = jobRunning ? cancelW : juce::jmin (44, juce::jmax (18, blockW / 3));
+        const int bpmW = juce::jmin (34, juce::jmax (18, blockW / 4));
         int right = x2 - 3;
         visible.deleteBounds = { right - deleteW, buttonY, deleteW, buttonH };
         right = visible.deleteBounds.getX() - 2;
         visible.stemsBounds = { right - stemsW, buttonY, stemsW, buttonH };
-        visible.deleteBounds = visible.deleteBounds.getIntersection ({ x1 + 1, buttonY, juce::jmax (1, blockW - 2), buttonH });
-        visible.stemsBounds = visible.stemsBounds.getIntersection ({ x1 + 1, buttonY, juce::jmax (1, blockW - 2), buttonH });
+        right = visible.stemsBounds.getX() - 2;
+        visible.bpmBounds = { right - bpmW, buttonY, bpmW, buttonH };
+        const juce::Rectangle<int> clip { x1 + 1, buttonY, juce::jmax (1, blockW - 2), buttonH };
+        visible.deleteBounds = visible.deleteBounds.getIntersection (clip);
+        visible.stemsBounds = visible.stemsBounds.getIntersection (clip);
+        visible.bpmBounds = visible.bpmBounds.getIntersection (clip);
         out.push_back (std::move (visible));
     }
 
@@ -163,7 +168,7 @@ void SampleLane::paint (juce::Graphics& g)
                 labelX = end + 1;
         }
 
-        const int maxLabelRight = juce::jmin (sample.stemsBounds.getX() - 2, getWidth());
+        const int maxLabelRight = juce::jmin (sample.bpmBounds.getX() - 2, getWidth());
         const int availableLabelW = juce::jmax (1, maxLabelRight - labelX - 2);
         if (availableLabelW >= 8)
         {
@@ -208,6 +213,18 @@ void SampleLane::paint (juce::Graphics& g)
                     "X",
                     juce::Colours::black.withAlpha (0.18f),
                     getTheme().text2.withAlpha (0.86f));
+
+        if (! sample.bpmBounds.isEmpty())
+        {
+            const bool detecting = processor.isBpmDetectionRunningFor (sample.sampleId);
+            drawButton (sample.bpmBounds,
+                        detecting ? juce::String ("...")
+                                  : (sample.bpmBounds.getWidth() < 24 ? juce::String ("B")
+                                                                      : juce::String ("BPM")),
+                        detecting ? getTheme().accent.withAlpha (0.55f)
+                                  : getTheme().surface4.withAlpha (0.92f),
+                        getTheme().text2.withAlpha (0.92f));
+        }
     }
 
     // Draw stem separation progress bar on the source sample
@@ -263,6 +280,15 @@ void SampleLane::mouseDown (const juce::MouseEvent& e)
         processor.selectedSessionSampleId.store (hitId, std::memory_order_relaxed);
         processor.markUiSnapshotDirty();
         processor.deleteSessionSampleAsync (hitId);
+        repaint();
+        return;
+    }
+
+    if (it != visible.end() && ! it->bpmBounds.isEmpty() && it->bpmBounds.contains (pos))
+    {
+        processor.selectedSessionSampleId.store (hitId, std::memory_order_relaxed);
+        processor.markUiSnapshotDirty();
+        processor.startBpmDetectionForSample (hitId, /*manual*/ true);
         repaint();
         return;
     }
@@ -335,6 +361,83 @@ void SampleLane::mouseUp (const juce::MouseEvent&)
     dragTargetIndex = -1;
     dragging = false;
     repaint();
+}
+
+juce::String SampleLane::getTooltip()
+{
+    const auto pos = getMouseXYRelative();
+    const auto visible = buildVisibleSamples();
+    for (const auto& sample : visible)
+    {
+        if (! sample.bpmBounds.isEmpty() && sample.bpmBounds.contains (pos))
+            return processor.isBpmDetectionRunningFor (sample.sampleId)
+                       ? "Detecting BPM..."
+                       : "Detect BPM and set Sample BPM";
+        if (sample.stemsBounds.contains (pos))
+            return "Separate stems";
+        if (sample.deleteBounds.contains (pos))
+            return "Remove sample";
+    }
+    return {};
+}
+
+void SampleLane::showBpmCandidatesPopup (int sampleId, double bestBpm, const std::vector<double>& candidates)
+{
+    if (bestBpm <= 0.0)
+        return;
+
+    // Assemble a deduplicated, ordered candidate list: best, then half/double,
+    // then any remaining MiniBPM candidates.
+    std::vector<double> values;
+    auto addValue = [&values] (double v)
+    {
+        if (v < 20.0 || v > 999.0)
+            return;
+        const double rounded = std::round (v * 100.0) / 100.0;
+        for (double existing : values)
+            if (std::abs (existing - rounded) < 0.05)
+                return;
+        values.push_back (rounded);
+    };
+
+    addValue (bestBpm);
+    addValue (bestBpm * 2.0);
+    addValue (bestBpm * 0.5);
+    for (double c : candidates)
+        addValue (c);
+
+    juce::PopupMenu menu;
+    menu.addSectionHeader ("Detected BPM");
+    for (size_t i = 0; i < values.size(); ++i)
+    {
+        juce::String label = juce::String (values[i], 2);
+        if (i == 0)
+            label += "  (best)";
+        else if (std::abs (values[i] - std::round (bestBpm * 2.0 * 100.0) / 100.0) < 0.05)
+            label += "  (x2)";
+        else if (std::abs (values[i] - std::round (bestBpm * 0.5 * 100.0) / 100.0) < 0.05)
+            label += "  (1/2)";
+        menu.addItem ((int) i + 1, label);
+    }
+
+    // Anchor at the sample block if still visible, else at the lane.
+    juce::Rectangle<int> target = getScreenBounds();
+    const auto visible = buildVisibleSamples();
+    for (const auto& sample : visible)
+        if (sample.sampleId == sampleId && ! sample.bpmBounds.isEmpty())
+        {
+            target = localAreaToGlobal (sample.bpmBounds);
+            break;
+        }
+
+    auto* proc = &processor;
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (target),
+                        [proc, sampleId, values] (int result)
+                        {
+                            if (result <= 0 || result > (int) values.size())
+                                return;
+                            proc->applyDetectedBpm (sampleId, values[(size_t) (result - 1)], /*captureUndo*/ true);
+                        });
 }
 
 void SampleLane::showStemExportPanel (int sampleId)

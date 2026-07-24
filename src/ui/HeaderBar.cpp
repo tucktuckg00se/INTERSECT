@@ -16,6 +16,7 @@ enum SettingsMenuItemId
     kMenuSetMidiOmni,
     kMenuMidiPrev,
     kMenuMidiNext,
+    kMenuAutoBpmOnImport,
     kMenuSponsor,
     kMenuThemeBase = 2000,
     kMenuMiddleCBase = 3000,  // +0=C3, +1=C4, +2=C5
@@ -269,6 +270,8 @@ void HeaderBar::showSettingsPopup()
     menu.addSeparator();
     menu.addSubMenu ("Middle C  C" + juce::String (currentMiddleC), middleCMenu);
     menu.addSubMenu (formatNrpnStatus (nrpnCh), nrpnMenu);
+    menu.addItem (kMenuAutoBpmOnImport, "Auto-Detect BPM on Import", true,
+                  processor.autoBpmOnImport.load (std::memory_order_relaxed));
     menu.addSubMenu ("Themes  " + currentName, themesMenu);
 
     const auto stemFolder = processor.getResolvedStemModelFolder();
@@ -401,6 +404,12 @@ void HeaderBar::showSettingsPopup()
             {
                 const int ch = processor.midiEditState.channel.load (std::memory_order_relaxed);
                 processor.midiEditState.channel.store (juce::jlimit (0, 16, ch + 1), std::memory_order_relaxed);
+                editor->saveUserSettings (scale, getTheme().name);
+            }
+            else if (result == kMenuAutoBpmOnImport)
+            {
+                const bool current = processor.autoBpmOnImport.load (std::memory_order_relaxed);
+                processor.autoBpmOnImport.store (! current, std::memory_order_relaxed);
                 editor->saveUserSettings (scale, getTheme().name);
             }
             else if (result == kMenuSponsor)

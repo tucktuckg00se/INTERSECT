@@ -201,6 +201,7 @@ static bool isCriticalCommand (IntersectProcessor::CommandType type)
 
         case IntersectProcessor::CmdLoadFile:
         case IntersectProcessor::CmdAppendFiles:
+        case IntersectProcessor::CmdSetSampleBpm:
         case IntersectProcessor::CmdCreateSlice:
         case IntersectProcessor::CmdDeleteSlice:
         case IntersectProcessor::CmdDeleteSessionSample:
@@ -380,6 +381,7 @@ IntersectProcessor::IntersectProcessor()
     // stemJob's use of AsyncUpdater; handleAsyncUpdate drains all three.
     stemModelDownloadJob.onTerminalState = [this] { triggerAsyncUpdate(); };
     ortBundleDownloadJob.onTerminalState = [this] { triggerAsyncUpdate(); };
+    bpmDetector.onComplete = [this] { triggerAsyncUpdate(); };
 
 	    publishUiSliceSnapshot();
 }
@@ -494,6 +496,99 @@ void IntersectProcessor::handleAsyncUpdate()
 {
     handleStemJobCompletionOnMessageThread();
     handleDownloadCompletionsOnMessageThread();
+    handleBpmDetectionCompletionsOnMessageThread();
+}
+
+void IntersectProcessor::handleBpmDetectionCompletionsOnMessageThread()
+{
+    enqueueArmedAutoBpmDetections();
+
+    auto detectorResults = bpmDetector.takeResults();
+    for (auto& r : detectorResults)
+    {
+        // Re-validate: the sample may have been deleted while detection ran.
+        if (sampleData.findSessionSampleById (r.sampleId) == nullptr)
+            continue;
+
+        const juce::String name = [this, id = r.sampleId]() -> juce::String
+        {
+            if (auto* s = sampleData.findSessionSampleById (id))
+                return s->fileName;
+            return {};
+        }();
+
+        if (r.bestBpm <= 0.0)
+        {
+            // Could not detect. Warn only for explicit manual requests; the
+            // auto-import path stays silent (one-shots never get a value).
+            if (r.manual)
+                setUiStatusMessage ("No tempo detected"
+                                    + (name.isNotEmpty() ? " for " + name : juce::String()), true);
+            continue;
+        }
+
+        if (r.manual)
+        {
+            // Defer to the candidates popup (best / half / double / others).
+            pendingBpmPopup = BpmCandidatesPopup { r.sampleId, r.bestBpm, std::move (r.candidates) };
+            markUiSnapshotDirty();
+        }
+        else
+        {
+            applyDetectedBpm (r.sampleId, r.bestBpm, /*captureUndo*/ false);
+            setUiStatusMessage ("BPM detected: " + juce::String (r.bestBpm, 2)
+                                + (name.isNotEmpty() ? " - " + name : juce::String()), false);
+        }
+    }
+}
+
+void IntersectProcessor::startBpmDetectionForSample (int sampleId, bool manual)
+{
+    auto snap = sampleData.getSnapshot();
+    const SampleData::SessionSample* sample = nullptr;
+    if (snap != nullptr)
+        for (const auto& s : snap->sessionSamples)
+            if (s.sampleId == sampleId)
+            {
+                sample = &s;
+                break;
+            }
+
+    if (sample == nullptr || sample->filePath.isEmpty())
+    {
+        if (manual)
+            setUiStatusMessage ("No sample to analyse", true);
+        return;
+    }
+
+    bpmDetector.enqueue (sampleId, sample->filePath, manual);
+    if (manual)
+        setUiStatusMessage ("Detecting BPM...", false);
+    markUiSnapshotDirty();
+}
+
+void IntersectProcessor::applyDetectedBpm (int sampleId, double bpm, bool captureUndo)
+{
+    if (bpm <= 0.0)
+        return;
+    const float rounded = juce::jlimit (20.0f, 999.0f, (float) (std::round (bpm * 100.0) / 100.0));
+
+    Command cmd;
+    cmd.type = CmdSetSampleBpm;
+    cmd.intParam1 = sampleId;
+    cmd.floatParam1 = rounded;
+    cmd.intParam2 = captureUndo ? 0 : 1;
+    pushCommand (cmd);
+    markUiSnapshotDirty();
+}
+
+std::optional<IntersectProcessor::BpmCandidatesPopup> IntersectProcessor::takeBpmCandidatesPopup()
+{
+    if (! pendingBpmPopup.has_value())
+        return std::nullopt;
+    auto out = std::move (pendingBpmPopup);
+    pendingBpmPopup.reset();
+    return out;
 }
 
 void IntersectProcessor::handleDownloadCompletionsOnMessageThread()
@@ -538,7 +633,7 @@ void IntersectProcessor::handleStemJobCompletionOnMessageThread()
             auto* old = pendingStemImport.exchange (pending, std::memory_order_acq_rel);
             delete old;
 
-            loadFilesAsync (stemResult.stemFiles, true);
+            loadFilesAsync (stemResult.stemFiles, true, /*allowAutoBpm*/ false);
             setUiStatusMessage (stemResult.warningMessage.isNotEmpty()
                                     ? stemResult.warningMessage
                                     : juce::String ("Stems imported"),
@@ -660,7 +755,13 @@ bool IntersectProcessor::enqueueUiUndoSnapshot()
         snap.numSessionSamples = juce::jmin ((int) sampleSnap->sessionSamples.size(),
                                              SampleData::kMaxSessionSamples);
         for (int i = 0; i < snap.numSessionSamples; ++i)
+        {
             snap.sessionSamples[(size_t) i] = sampleSnap->sessionSamples[(size_t) i];
+            // The decoded snapshot never carries per-sample BPM; overlay the
+            // side-table value so undo round-trips it.
+            snap.sessionSamples[(size_t) i].sampleBpm =
+                getSampleBpm (snap.sessionSamples[(size_t) i].sampleId);
+        }
     }
     snap.selectedSessionSampleId = selectedSessionSampleId.load (std::memory_order_relaxed);
     for (int i = 0; i < SliceManager::kMaxSlices; ++i)
@@ -846,7 +947,7 @@ void IntersectProcessor::loadFileAsync (const juce::File& file)
     loadFilesAsync (std::vector<juce::File> { file }, false);
 }
 
-void IntersectProcessor::loadFilesAsync (const std::vector<juce::File>& files, bool append)
+void IntersectProcessor::loadFilesAsync (const std::vector<juce::File>& files, bool append, bool allowAutoBpm)
 {
     pendingStateRestoreToken.store (0, std::memory_order_release);
     if (files.empty())
@@ -854,6 +955,7 @@ void IntersectProcessor::loadFilesAsync (const std::vector<juce::File>& files, b
 
     std::vector<juce::File> orderedFiles;
     std::vector<int> sampleIds;
+    std::vector<int> newSampleIds;  // ids of just-imported files (for auto-BPM)
 
     if (append)
     {
@@ -869,19 +971,67 @@ void IntersectProcessor::loadFilesAsync (const std::vector<juce::File>& files, b
         }
         for (const auto& file : files)
         {
+            const int id = generateSessionSampleId();
             orderedFiles.push_back (file);
-            sampleIds.push_back (generateSessionSampleId());
+            sampleIds.push_back (id);
+            newSampleIds.push_back (id);
         }
         setPendingStateFile (orderedFiles.front());
         setPendingStateFiles (orderedFiles);
-        requestSampleLoad (orderedFiles, LoadKindPreserveSlices, &sampleIds);
+        const int token = requestSampleLoad (orderedFiles, LoadKindPreserveSlices, &sampleIds);
+        armAutoBpmDetection (allowAutoBpm, token, newSampleIds);
         return;
     }
 
     orderedFiles = files;
+    // Generate ids explicitly (rather than letting requestSampleLoad assign them)
+    // so the new samples are known for auto-BPM arming.
+    sampleIds.reserve (files.size());
+    for (size_t i = 0; i < files.size(); ++i)
+    {
+        const int id = generateSessionSampleId();
+        sampleIds.push_back (id);
+        newSampleIds.push_back (id);
+    }
     setPendingStateFile (orderedFiles.front());
     setPendingStateFiles (orderedFiles);
-    requestSampleLoad (orderedFiles, LoadKindReplace);
+    const int token = requestSampleLoad (orderedFiles, LoadKindReplace, &sampleIds);
+    armAutoBpmDetection (allowAutoBpm, token, newSampleIds);
+}
+
+void IntersectProcessor::armAutoBpmDetection (bool allowAutoBpm, int loadToken,
+                                              const std::vector<int>& newSampleIds)
+{
+    if (! allowAutoBpm
+        || newSampleIds.empty()
+        || ! autoBpmOnImport.load (std::memory_order_relaxed))
+    {
+        autoBpmArmedToken.store (0, std::memory_order_release);
+        autoBpmArmedIds.clear();
+        return;
+    }
+    autoBpmArmedIds = newSampleIds;
+    autoBpmArmedToken.store (loadToken, std::memory_order_release);
+}
+
+void IntersectProcessor::enqueueArmedAutoBpmDetections()
+{
+    const int fireToken = autoBpmFireToken.exchange (0, std::memory_order_acq_rel);
+    if (fireToken == 0)
+        return;
+
+    auto snap = sampleData.getSnapshot();
+    if (snap != nullptr)
+    {
+        for (int id : autoBpmArmedIds)
+            for (const auto& s : snap->sessionSamples)
+                if (s.sampleId == id && s.filePath.isNotEmpty())
+                {
+                    bpmDetector.enqueue (id, s.filePath, /*manual*/ false);
+                    break;
+                }
+    }
+    autoBpmArmedIds.clear();
 }
 
 void IntersectProcessor::relinkFileAsync (const juce::File& file)
@@ -965,6 +1115,84 @@ StemMetadata IntersectProcessor::getStemMeta (int sampleId) const
         if (stemMetaEntries[(size_t) i].sampleId == sampleId)
             return stemMetaEntries[(size_t) i].meta;
     return {};
+}
+
+void IntersectProcessor::setSampleBpm (int sampleId, float bpm)
+{
+    if (bpm > 0.0f)
+        bpm = juce::jlimit (20.0f, 999.0f, bpm);
+    else
+        bpm = 0.0f;
+
+    const int count = sampleBpmEntryCount.load (std::memory_order_acquire);
+    for (int i = 0; i < count; ++i)
+    {
+        if (sampleBpmEntries[(size_t) i].sampleId.load (std::memory_order_relaxed) == sampleId)
+        {
+            sampleBpmEntries[(size_t) i].bpm.store (bpm, std::memory_order_relaxed);
+            return;
+        }
+    }
+
+    if (bpm <= 0.0f)
+        return;  // no entry and nothing to store
+
+    if (count >= SampleData::kMaxSessionSamples)
+    {
+        // Compact away entries whose sample no longer exists (ids are monotonic,
+        // never reused, so stale entries are permanently dead).
+        int writeIdx = 0;
+        for (int i = 0; i < count; ++i)
+        {
+            const int id = sampleBpmEntries[(size_t) i].sampleId.load (std::memory_order_relaxed);
+            if (sampleData.findSessionSampleById (id) == nullptr)
+                continue;
+            if (writeIdx != i)
+            {
+                sampleBpmEntries[(size_t) writeIdx].sampleId.store (id, std::memory_order_relaxed);
+                sampleBpmEntries[(size_t) writeIdx].bpm.store (
+                    sampleBpmEntries[(size_t) i].bpm.load (std::memory_order_relaxed),
+                    std::memory_order_relaxed);
+            }
+            ++writeIdx;
+        }
+        sampleBpmEntryCount.store (writeIdx, std::memory_order_release);
+        if (writeIdx >= SampleData::kMaxSessionSamples)
+            return;
+    }
+
+    const int idx = sampleBpmEntryCount.load (std::memory_order_acquire);
+    sampleBpmEntries[(size_t) idx].sampleId.store (sampleId, std::memory_order_relaxed);
+    sampleBpmEntries[(size_t) idx].bpm.store (bpm, std::memory_order_relaxed);
+    sampleBpmEntryCount.store (idx + 1, std::memory_order_release);
+}
+
+float IntersectProcessor::getSampleBpm (int sampleId) const
+{
+    const int count = sampleBpmEntryCount.load (std::memory_order_acquire);
+    for (int i = 0; i < count; ++i)
+        if (sampleBpmEntries[(size_t) i].sampleId.load (std::memory_order_relaxed) == sampleId)
+            return sampleBpmEntries[(size_t) i].bpm.load (std::memory_order_relaxed);
+    return 0.0f;
+}
+
+float IntersectProcessor::effectiveSampleBpm (int sampleId, float fallback) const
+{
+    const float bpm = getSampleBpm (sampleId);
+    return bpm > 0.0f ? bpm : fallback;
+}
+
+void IntersectProcessor::clearAllSampleBpm()
+{
+    sampleBpmEntryCount.store (0, std::memory_order_release);
+}
+
+float IntersectProcessor::effectiveBpmAtFrame (int frame, float fallback) const
+{
+    for (const auto& sample : sampleData.getSessionSamples())
+        if (frame >= sample.startFrame && frame < sample.startFrame + sample.numFrames)
+            return effectiveSampleBpm (sample.sampleId, fallback);
+    return fallback;
 }
 
 juce::File IntersectProcessor::getStemModelFolder() const
@@ -1587,6 +1815,7 @@ void IntersectProcessor::publishUiSliceSnapshot()
             uiSample.sampleId = sample.sampleId;
             uiSample.startSample = sample.startFrame;
             uiSample.numFrames = sample.numFrames;
+            uiSample.sampleBpm = getSampleBpm (sample.sampleId);
             uiSample.fileName.assign (sample.fileName);
         }
         else
@@ -1829,7 +2058,11 @@ UndoManager::Snapshot IntersectProcessor::makeSnapshot()
         snap.numSessionSamples = juce::jmin ((int) sampleSnap->sessionSamples.size(),
                                              SampleData::kMaxSessionSamples);
         for (int i = 0; i < snap.numSessionSamples; ++i)
+        {
             snap.sessionSamples[(size_t) i] = sampleSnap->sessionSamples[(size_t) i];
+            snap.sessionSamples[(size_t) i].sampleBpm =
+                getSampleBpm (snap.sessionSamples[(size_t) i].sampleId);
+        }
     }
     snap.selectedSessionSampleId = selectedSessionSampleId.load (std::memory_order_relaxed);
     for (int i = 0; i < SliceManager::kMaxSlices; ++i)
@@ -1874,6 +2107,14 @@ void IntersectProcessor::restoreSnapshot (const UndoManager::Snapshot& snap)
     selectedSessionSampleId.store (snap.selectedSessionSampleId, std::memory_order_relaxed);
     midiSelectsSlice.store (snap.midiSelectsSlice);
     snapToZeroCrossing.store (snap.snapToZeroCrossing);
+
+    clearAllSampleBpm();
+    for (int i = 0; i < snap.numSessionSamples; ++i)
+    {
+        const auto& sample = snap.sessionSamples[(size_t) i];
+        if (sample.sampleBpm > 0.0f)
+            setSampleBpm (sample.sampleId, sample.sampleBpm);
+    }
 
     if (! files.empty())
     {
@@ -1947,6 +2188,16 @@ void IntersectProcessor::handleCommand (const Command& cmd)
             blocksSinceGestureActivity = 0;
             break;
 
+        case CmdSetSampleBpm:
+            if (cmd.intParam2 == 0)
+            {
+                if (! gestureSnapshotCaptured)
+                    captureSnapshot();
+                gestureSnapshotCaptured = true;
+                blocksSinceGestureActivity = 0;
+            }
+            break;
+
         case CmdSetSliceBounds:
         case CmdCreateSlice:
         case CmdDeleteSlice:
@@ -2007,7 +2258,9 @@ void IntersectProcessor::handleCommand (const Command& cmd)
             if (sampleData.isLoaded())
             {
                 const auto globals = loadGlobalParamSnapshot();
-                const auto psp = makePreviewStretchParams (globals, dawBpm.load(), currentSampleRate, &sampleData);
+                auto psp = makePreviewStretchParams (globals, dawBpm.load(), currentSampleRate, &sampleData);
+                // Playback starts at frame 0; BPM resolves once at start.
+                psp.bpm = effectiveBpmAtFrame (0, psp.bpm);
                 lazyChop.start (sampleData.getNumFrames(), sliceManager, psp,
                                 snapToZeroCrossing.load(), &sampleData.getBuffer());
             }
@@ -2045,7 +2298,12 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                 bool turningOn = !(s.lockMask & bit);
 
                 if (turningOn)
-                    copyGlobalToSlice (s, globals, bit);
+                {
+                    auto effGlobals = globals;
+                    if (bit == kLockBpm)
+                        effGlobals.bpm = effectiveSampleBpm (s.sampleId, globals.bpm);
+                    copyGlobalToSlice (s, effGlobals, bit);
+                }
 
                 s.lockMask ^= bit;
             }
@@ -2093,7 +2351,9 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                 switch (field)
                 {
                     case FieldBpm:
-                        setFloatField (s.bpm, val, globals.bpm, kLockBpm);
+                        // Lock comparison is against the slice's inherited BPM
+                        // (its sample's BPM when set, else the default).
+                        setFloatField (s.bpm, val, effectiveSampleBpm (s.sampleId, globals.bpm), kLockBpm);
                         break;
                     case FieldPitch:
                         setFloatField (s.pitchSemitones, val, globals.pitchSemitones, kLockPitch);
@@ -2509,6 +2769,13 @@ void IntersectProcessor::handleCommand (const Command& cmd)
             // Launched from message thread via startStemSeparation(); nothing to do here.
             break;
 
+        case CmdSetSampleBpm:
+            // Ignore ids no longer in the session so a stale command can't
+            // resurrect a deleted sample's entry.
+            if (sampleData.findSessionSampleById (cmd.intParam1) != nullptr)
+                setSampleBpm (cmd.intParam1, cmd.floatParam1);
+            break;
+
         case CmdNone:
             break;
     }
@@ -2836,6 +3103,8 @@ void IntersectProcessor::processMidiEvent (const juce::MidiMessage& msg,
 
                 p.sliceIdx = sliceIdx;
                 p.sliceRootNote = s.sliceRootNote;
+                // Per-slice: slices may belong to different session samples.
+                p.globalBpm = effectiveSampleBpm (s.sampleId, globals.bpm);
                 voicePool.startVoice (voiceIdx, p, sliceManager, sampleData);
             }
         }
@@ -2926,7 +3195,8 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         else if (req >= 0 && ! lazyChop.isActive() && sampleData.isLoaded())
         {
             const auto globals = loadGlobalParamSnapshot();
-            const auto psp = makePreviewStretchParams (globals, dawBpm.load(), currentSampleRate, &sampleData);
+            auto psp = makePreviewStretchParams (globals, dawBpm.load(), currentSampleRate, &sampleData);
+            psp.bpm = effectiveBpmAtFrame (req, psp.bpm);
             voicePool.startShiftPreview (req, sampleData.getNumFrames(), psp);
         }
     }
@@ -2958,6 +3228,9 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 const int retryToken = requestSampleLoad (files, currentLoadKind, &sampleIds);
                 if (isStateRestoreLoad)
                     pendingStateRestoreToken.store (retryToken, std::memory_order_release);
+                // Carry an armed auto-BPM detection across the sample-rate retry.
+                if (autoBpmArmedToken.load (std::memory_order_acquire) == currentToken)
+                    autoBpmArmedToken.store (retryToken, std::memory_order_release);
             }
             else
             {
@@ -3023,6 +3296,14 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
                 if (isStateRestoreLoad)
                     pendingStateRestoreToken.store (0, std::memory_order_release);
+
+                // Fire any armed auto-BPM detection now that the samples are live.
+                if (autoBpmArmedToken.load (std::memory_order_acquire) == currentToken)
+                {
+                    autoBpmArmedToken.store (0, std::memory_order_release);
+                    autoBpmFireToken.store (currentToken, std::memory_order_release);
+                    triggerAsyncUpdate();
+                }
 
                 loadStateChanged = true;
                 uiSnapshotDirty.store (true, std::memory_order_release);
@@ -3329,7 +3610,7 @@ void IntersectProcessor::getStateInformation (juce::MemoryBlock& destData)
 
     // Optional v24 extension block for fields added without changing the base version.
     stream.writeInt (kStateExtensionMagic);
-    stream.writeInt (6);
+    stream.writeInt (7);
     stream.writeInt (numSlices);
     for (int i = 0; i < numSlices; ++i)
         stream.writeInt (sliceManager.getSlice (i).repitchMode);
@@ -3381,6 +3662,10 @@ void IntersectProcessor::getStateInformation (juce::MemoryBlock& destData)
     }
     // Extension v6: stem compute device preference
     stream.writeInt (static_cast<int> (stemComputeDevice));
+    // Extension v7: per-session-sample BPM (0 = unset → inherit defaultBpm)
+    stream.writeInt (numSessionSamples);
+    for (int i = 0; i < numSessionSamples; ++i)
+        stream.writeFloat (getSampleBpm (sampleSnap->sessionSamples[(size_t) i].sampleId));
 }
 
 void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
@@ -3726,6 +4011,25 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
                         stemComputeDevice = static_cast<StemComputeDevice> (juce::jlimit (0, 1, deviceInt));
                     }
                 }
+
+                if (extensionVersion >= 7)
+                {
+                    if (! requireBytes (4))
+                        return result;
+
+                    const int storedSampleBpms = juce::jlimit (0, SampleData::kMaxSessionSamples,
+                                                               trialStream.readInt());
+                    for (int i = 0; i < storedSampleBpms; ++i)
+                    {
+                        if (! requireBytes (4))
+                            return result;
+
+                        const float bpm = trialStream.readFloat();
+                        if (i < (int) result.sessionSamples.size())
+                            result.sessionSamples[(size_t) i].sampleBpm =
+                                (bpm >= 20.0f && bpm <= 999.0f) ? bpm : 0.0f;
+                    }
+                }
             }
             else
             {
@@ -3818,14 +4122,17 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
     clearVoicesBeforeSampleSwap();
     sampleData.clear();
 
-    // Restore stem metadata from parsed session samples
+    // Restore stem metadata + per-sample BPM from parsed session samples
     stemMetaEntryCount = 0;
+    clearAllSampleBpm();
     if (! postSliceResult->sessionSamples.empty())
     {
         for (const auto& sample : postSliceResult->sessionSamples)
         {
             if (sample.stemMeta.isGenerated)
                 setStemMeta (sample.sampleId, sample.stemMeta);
+            if (sample.sampleBpm > 0.0f)
+                setSampleBpm (sample.sampleId, sample.sampleBpm);
         }
     }
 

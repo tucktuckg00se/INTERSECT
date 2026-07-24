@@ -49,6 +49,8 @@ Requires CMake 3.22+, a C++20 compiler, and Git. For per-OS toolchain setup, bui
 
 INTERSECT is licensed under the [GNU General Public License v3.0](LICENSE).
 
+Automatic BPM detection uses [MiniBPM](https://github.com/breakfastquay/minibpm) © Particular Programs Ltd., distributed under the GNU General Public License v2 or later (compatible with this project's GPLv3).
+
 ## Support / Known limitations
 
 - INTERSECT project recall stores sample file paths for every file in the session; if files move, relink is required.

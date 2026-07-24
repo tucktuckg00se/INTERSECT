@@ -462,6 +462,10 @@ void IntersectEditor::timerCallback()
     // Apply deferred non-RT parameter restores from undo/redo.
     processor.applyDeferredParamRestore();
 
+    // Surface a manual BPM-detection result as a candidates popup.
+    if (auto popup = processor.takeBpmCandidatesPopup())
+        sampleLane.showBpmCandidatesPopup (popup->sampleId, popup->bestBpm, popup->candidates);
+
     bool uiChanged = false;
     bool viewportChanged = false;
     bool fadeOverlayChanged = false;
@@ -674,6 +678,7 @@ void IntersectEditor::saveUserSettings (float scale, const juce::String& themeNa
     content << "nrpnEnabled: "  << (processor.midiEditState.enabled.load (std::memory_order_relaxed) ? "true" : "false") << "\n";
     content << "nrpnChannel: "  << processor.midiEditState.channel.load (std::memory_order_relaxed) << "\n";
     content << "nrpnBlockCc: "  << (processor.midiEditState.consumeMidiEditCc.load (std::memory_order_relaxed) ? "true" : "false") << "\n";
+    content << "autoBpmOnImport: " << (processor.autoBpmOnImport.load (std::memory_order_relaxed) ? "true" : "false") << "\n";
     content << "middleC: " << middleCOctave << "\n";
     content << "sampleBrowserVisible: " << (sampleBrowserVisible ? "true" : "false") << "\n";
     const auto browserBookmarks = sampleBrowser.getBookmarks();
@@ -744,6 +749,11 @@ void IntersectEditor::loadUserSettings()
             {
                 auto val = line.fromFirstOccurrenceOf (":", false, false).trim();
                 processor.midiEditState.consumeMidiEditCc.store (val == "true", std::memory_order_relaxed);
+            }
+            else if (line.startsWith ("autoBpmOnImport:"))
+            {
+                auto val = line.fromFirstOccurrenceOf (":", false, false).trim();
+                processor.autoBpmOnImport.store (val == "true", std::memory_order_relaxed);
             }
             else if (line.startsWith ("middleC:"))
             {

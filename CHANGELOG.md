@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Automatic BPM detection: a `BPM` button on each sample detects that sample's tempo (with a tap-to-confirm menu of the best estimate plus half/double alternatives), plus an optional setting (gear menu → Auto-Detect BPM on Import) to detect BPM automatically for imported samples.
+- Each sample now remembers its own BPM; slices follow their sample's tempo unless individually locked.
+
+### Changed
+- The signal chain's `GLOBAL` tab is now `SAMPLE`, reflecting that its parameters apply to the loaded sample.
+
 ## [0.15.3] - 2026-07-23
 
 ### Added

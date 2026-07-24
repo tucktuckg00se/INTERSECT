@@ -20,7 +20,7 @@ description: "Tour of every visible area of the INTERSECT editor — header bar,
 
 | Area | Function | Notes |
 | --- | --- | --- |
-| Sample lane | Compact session-sample overview above the slice lane | Reflects selection and zoom; drag to reorder samples; includes per-sample `STEMS` / `CANCEL` and delete buttons |
+| Sample lane | Compact session-sample overview above the slice lane | Reflects selection and zoom; drag to reorder samples; includes per-sample `BPM` (detect tempo), `STEMS` / `CANCEL`, and delete buttons |
 | Slice lane | Compact slice-region overview above the waveform | Reflects selection and zoom |
 | Waveform | Main editing surface | Drag-and-drop loading/appending, slice selection, boundary editing, move/duplicate, preview |
 | Overlay hints | Contextual help and action prompts | Used by `ADD`, `AUTO`, and other actions |
@@ -46,6 +46,8 @@ Loading behavior matches the rest of INTERSECT: into an empty session, the first
 ## Stem separation
 
 Each sample in the sample lane has a `STEMS` button that opens the stem-separation overlay panel for that sample. While a job is running on that sample, the button reads `CANCEL`.
+
+Each sample also has a `BPM` button (to the left of `STEMS`) that detects that sample's tempo and sets its Sample BPM. On narrow blocks the label collapses to `B`, and it shows `…` while detection runs. See [Detect BPM](workflow-basics.md#detect-bpm) for the full workflow.
 
 For an end-to-end walkthrough — picking a model, device, and mode, then running the export — see the dedicated [Stem separation]({{ site.baseurl }}{% link stem-separation.md %}) page.
 
@@ -74,16 +76,18 @@ For an end-to-end walkthrough — picking a model, device, and mode, then runnin
 
 The bottom bar is the main parameter editor. It has four modules: `TIME/PITCH`, `FILTER`, `AMP`, and `PLAYBACK`.
 
-**Collapsed mode** (default): `GLOBAL` and `SLICE` tabs switch between scopes, with one parameter strip visible at a time.
+**Collapsed mode** (default): `SAMPLE` and `SLICE` tabs switch between scopes, with one parameter strip visible at a time.
 
-**Expanded mode**: shows both strips simultaneously — slice on top, global below — with no tabs. Click the chevron toggle on the right edge of the context bar to switch between modes.
+**Expanded mode**: shows both strips simultaneously — slice on top, sample below — with no tabs. Click the chevron toggle on the right edge of the context bar to switch between modes.
+
+> Note: in the `SAMPLE` strip, `BPM` is stored **per sample** — each loaded sample keeps its own tempo. The other `SAMPLE` fields (pitch, envelope, filter, etc.) are shared plugin-wide defaults.
 
 **Context bar** (bottom edge):
 - `SLICES` count and the global `ROOT` note are always visible on the right. The global `ROOT` is editable only when no slices exist.
 - When a slice is selected: slice sample range, length, a `NOTE`/`RANGE` toggle, numeric note controls, read-only note names, and override count.
 
 ```text
-┌─[ Tab: GLOBAL | SLICE ]─────────[ slice range · length · NOTE/RANGE ]──────[ SLICES: 8  ROOT: C2 ]──[ ⌃ ]─┐
+┌─[ Tab: SAMPLE | SLICE ]─────────[ slice range · length · NOTE/RANGE ]──────[ SLICES: 8  ROOT: C2 ]──[ ⌃ ]─┐
 │  TIME/PITCH        │  FILTER             │  AMP               │  PLAYBACK                                  │
 │  BPM PITCH ALGO …  │  TYPE CUT RESO …    │  ATK DEC SUS REL … │  REV LOOP FADE MUTE OUT …                  │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
