@@ -41,7 +41,7 @@ If nothing plays, see [Troubleshooting → A slice doesn't make sound]({{ site.b
 
 ## 4. Adjust a slice parameter (and see how locking works)
 
-The bottom of the editor is the **signal chain bar**. It has two tabs: `GLOBAL` (sample-wide defaults) and `SLICE` (overrides for the selected slice).
+The bottom of the editor is the **signal chain bar**. It has two tabs: `SAMPLE` (sample-wide defaults) and `SLICE` (overrides for the selected slice).
 
 1. Click your slice on the waveform to select it.
 2. In the signal chain bar, click the `SLICE` tab.
@@ -49,7 +49,7 @@ The bottom of the editor is the **signal chain bar**. It has two tabs: `GLOBAL` 
 
 The parameter label highlights — that means the slice has a locked override on `PITCH`. Right-click the value (or click the highlighted label) to clear the lock and inherit the global default again.
 
-This is INTERSECT's core idea: edit defaults in `GLOBAL`, then lock per-slice overrides where you want them to differ.
+This is INTERSECT's core idea: edit defaults in `SAMPLE`, then lock per-slice overrides where you want them to differ.
 
 ## 5. Chop the sample into even pieces
 

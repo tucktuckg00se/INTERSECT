@@ -97,7 +97,7 @@ Filter notes:
 | `MUTE` | Mute group | `0–32`, `0` = off. Voices in the same group choke each other |
 | `1SHOT` | One-shot playback | Ignores note-off until the slice ends |
 | `OUT` | Output bus | `SLICE` mode only, `1` to `16` |
-| `VOICES` | Max playable voices | `GLOBAL` mode only, `1` to `31` (voice 32 is reserved for the preview voice) |
+| `VOICES` | Max playable voices | `SAMPLE` mode only, `1` to `31` (voice 32 is reserved for the preview voice) |
 
 ## Master and global controls
 

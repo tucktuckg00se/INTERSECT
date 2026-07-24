@@ -10,3 +10,6 @@
 [submodule "signalsmith-linear"]
 	path = signalsmith-linear
 	url = https://github.com/Signalsmith-Audio/linear.git
+[submodule "minibpm"]
+	path = minibpm
+	url = https://github.com/breakfastquay/minibpm.git

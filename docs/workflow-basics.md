@@ -39,11 +39,11 @@ Range mode is what turns INTERSECT from a kit-style slicer into a chromatic inst
 
 This is INTERSECT's central idea, and it's worth a concrete example.
 
-The signal chain bar at the bottom of the editor has two tabs: `GLOBAL` (sample-wide defaults) and `SLICE` (overrides for the selected slice).
+The signal chain bar at the bottom of the editor has two tabs: `SAMPLE` (sample-wide defaults) and `SLICE` (overrides for the selected slice).
 
-> **Example.** With no slice selected, set `GLOBAL → PITCH` to `+2`. Every slice in the sample now plays at +2 semitones. Now select one slice, click the `SLICE` tab, and drag its `PITCH` to `+7`. The parameter label highlights — that slice has a **lock** on `PITCH`. It plays at +7. All other slices still inherit `+2`.
+> **Example.** With no slice selected, set `SAMPLE → PITCH` to `+2`. Every slice in the sample now plays at +2 semitones. Now select one slice, click the `SLICE` tab, and drag its `PITCH` to `+7`. The parameter label highlights — that slice has a **lock** on `PITCH`. It plays at +7. All other slices still inherit `+2`.
 >
-> Change `GLOBAL → PITCH` to `0`. The locked slice still plays at `+7`; everything else now plays at `0`.
+> Change `SAMPLE → PITCH` to `0`. The locked slice still plays at `+7`; everything else now plays at `0`.
 >
 > Right-click the locked `PITCH` value (or click the highlighted parameter label) to clear the lock. The slice re-inherits the global default.
 
@@ -65,7 +65,17 @@ INTERSECT ships three time/pitch engines. Pick one per sample with `ALGO`.
 
 `SET BPM` (in the Time/Pitch module) calculates the sample's BPM from a musical duration. Pick "1 bar", "1/4 note", "1/8 note", and so on; the engine computes BPM from the selected slice's length and auto-locks the BPM value. This is the workflow when you know "this loop is 2 bars" but don't know the exact tempo.
 
-Available in both `GLOBAL` and `SLICE` scope.
+Available in both `SAMPLE` and `SLICE` scope.
+
+## Detect BPM
+
+INTERSECT can estimate a sample's tempo automatically:
+
+- **`BPM` button** on each sample block in the sample bar (left of `STEMS`). Click it to analyse that sample; a menu shows the best estimate plus half/double and other candidates — pick one to set the sample's BPM. If the clip is too short to estimate (e.g. a one-shot), a status message says so and nothing changes. Detection runs in the background; the button shows `…` while it works.
+- **`SET BPM → Detect BPM`** runs the same detection on the selected sample.
+- **Auto-detect on import** (gear menu → *Auto-Detect BPM on Import*) analyses every newly imported sample automatically and sets its BPM — no clicks, no popup. One-shots are skipped. This preference is saved with your app settings and is off by default.
+
+Each sample keeps its **own** detected BPM; slices inside a sample follow that sample's tempo unless individually locked. Detected values are undoable (Ctrl/Cmd+Z), and clearing the `SAMPLE → BPM` override restores inheritance from the plugin default.
 
 ## Filter
 

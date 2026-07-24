@@ -7,7 +7,8 @@ class IntersectProcessor;
 class StemExportPanel;
 class WaveformView;
 
-class SampleLane : public juce::Component
+class SampleLane : public juce::Component,
+                   public juce::TooltipClient
 {
 public:
     SampleLane (IntersectProcessor& p, WaveformView& wv);
@@ -18,8 +19,14 @@ public:
     void mouseDown (const juce::MouseEvent& e) override;
     void mouseDrag (const juce::MouseEvent& e) override;
     void mouseUp (const juce::MouseEvent& e) override;
+    juce::String getTooltip() override;
 
     bool isStemExportOpen() const { return stemExportPanel != nullptr; }
+
+    // Called from the editor timer when a manual detection completes: shows a
+    // menu of the best estimate plus half/double and other candidates, anchored
+    // at the sample's block.
+    void showBpmCandidatesPopup (int sampleId, double bestBpm, const std::vector<double>& candidates);
 
 private:
     struct VisibleSample
@@ -31,6 +38,7 @@ private:
         bool selected = false;
         juce::Colour colour;
         juce::String label;
+        juce::Rectangle<int> bpmBounds;
         juce::Rectangle<int> stemsBounds;
         juce::Rectangle<int> deleteBounds;
     };
