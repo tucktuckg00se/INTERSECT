@@ -16,7 +16,6 @@ const juce::String kBrowserDragPrefix = "INTERSECT_BROWSER_FILES\n";
 // so status text uses plain "..." / "-" rather than fancy glyphs.
 const juce::String kSearchPlaceholder = "Search files & folders...";
 const juce::String kSearchingLabel    = "Searching...";
-const juce::String kTruncatedLabel    = "Showing first matches - refine search";
 
 juce::String normalisePath (const juce::File& file)
 {
@@ -988,7 +987,8 @@ void SampleBrowserPanel::updateSearchStatusLabel()
     }
     else if (searchTruncated)
     {
-        text = kTruncatedLabel;
+        // Only reached when the search hit the result cap; state the count so it's self-explanatory.
+        text = "Showing the first " + juce::String ((int) files.size()) + " matches - refine your search";
         bottomStrip = true;
     }
     else
@@ -999,9 +999,10 @@ void SampleBrowserPanel::updateSearchStatusLabel()
 
     searchStatusLabel.setText (text, juce::dontSendNotification);
     searchStatusLabel.setColour (juce::Label::textColourId,
-                                 getTheme().text0.withAlpha (bottomStrip ? 0.9f : 0.62f));
+                                 bottomStrip ? getTheme().text2.withAlpha (0.9f)
+                                             : getTheme().text0.withAlpha (0.62f));
     searchStatusLabel.setColour (juce::Label::backgroundColourId,
-                                 bottomStrip ? getTheme().surface1.withAlpha (0.92f)
+                                 bottomStrip ? getTheme().surface1.withAlpha (0.95f)
                                              : juce::Colours::transparentBlack);
 
     if (bottomStrip)
@@ -1027,7 +1028,7 @@ void SampleBrowserPanel::refreshThemeColours()
     searchEditor.repaint();
     searchToggleButton.repaint();
     clearSearchButton.repaint();
-    searchStatusLabel.repaint();
+    updateSearchStatusLabel();   // re-theme the search status/truncation strip if it is showing
     for (auto* button : { &backButton, &forwardButton, &upButton, &refreshButton })
         button->repaint();
     locationList.repaint();
