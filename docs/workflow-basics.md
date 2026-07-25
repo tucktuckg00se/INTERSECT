@@ -31,7 +31,7 @@ Each slice is mapped to a MIDI note. By default the first slice gets C2 (note 36
 Each slice can respond to a single MIDI note or a range of notes:
 
 - **Single note** (default): `NOTE` mode. The slice plays only when its assigned note is triggered.
-- **Range**: `RANGE` mode. The slice covers `LOW` through `HIGH`, transposing chromatically relative to a `ROOT` note. Filter key-tracking uses the slice's `ROOT` rather than the global root.
+- **Range**: `RANGE` mode. The slice covers `LOW` through `HIGH`, transposing chromatically relative to a `ROOT` note. Filter key-tracking uses the slice's `ROOT` rather than the sample root.
 
 Range mode is what turns INTERSECT from a kit-style slicer into a chromatic instrument. Range transpose is ignored when `ALGO` is `Repitch` with `STRETCH` on — those modes are trigger-zone only.
 
@@ -39,15 +39,15 @@ Range mode is what turns INTERSECT from a kit-style slicer into a chromatic inst
 
 This is INTERSECT's central idea, and it's worth a concrete example.
 
-The signal chain bar at the bottom of the editor has two tabs: `GLOBAL` (sample-wide defaults) and `SLICE` (overrides for the selected slice).
+The signal chain bar at the bottom of the editor has two tabs: `SAMPLE` (sample-wide defaults) and `SLICE` (overrides for the selected slice).
 
-> **Example.** With no slice selected, set `GLOBAL → PITCH` to `+2`. Every slice in the sample now plays at +2 semitones. Now select one slice, click the `SLICE` tab, and drag its `PITCH` to `+7`. The parameter label highlights — that slice has a **lock** on `PITCH`. It plays at +7. All other slices still inherit `+2`.
+> **Example.** With no slice selected, set `SAMPLE → PITCH` to `+2`. Every slice in the sample now plays at +2 semitones. Now select one slice, click the `SLICE` tab, and drag its `PITCH` to `+7`. The parameter label highlights — that slice has a **lock** on `PITCH`. It plays at +7. All other slices still inherit `+2`.
 >
-> Change `GLOBAL → PITCH` to `0`. The locked slice still plays at `+7`; everything else now plays at `0`.
+> Change `SAMPLE → PITCH` to `0`. The locked slice still plays at `+7`; everything else now plays at `0`.
 >
-> Right-click the locked `PITCH` value (or click the highlighted parameter label) to clear the lock. The slice re-inherits the global default.
+> Right-click the locked `PITCH` value (or click the highlighted parameter label) to clear the lock. The slice re-inherits the sample default.
 
-This applies to almost every signal-chain parameter, plus per-slice settings like output bus, mute group, and loop mode. The result is that defaults are cheap to set globally, but anything can be locked when a slice needs to differ.
+This applies to almost every signal-chain parameter, plus per-slice settings like output bus, mute group, and loop mode. The result is that defaults are cheap to set sample-wide, but anything can be locked when a slice needs to differ.
 
 ## Time and pitch algorithms
 
@@ -65,7 +65,7 @@ INTERSECT ships three time/pitch engines. Pick one per sample with `ALGO`.
 
 `SET BPM` (in the Time/Pitch module) calculates the sample's BPM from a musical duration. Pick "1 bar", "1/4 note", "1/8 note", and so on; the engine computes BPM from the selected slice's length and auto-locks the BPM value. This is the workflow when you know "this loop is 2 bars" but don't know the exact tempo.
 
-Available in both `GLOBAL` and `SLICE` scope.
+Available in both `SAMPLE` and `SLICE` scope.
 
 ## Filter
 

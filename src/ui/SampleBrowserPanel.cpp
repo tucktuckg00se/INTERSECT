@@ -12,6 +12,11 @@ enum MenuIds
 
 const juce::String kBrowserDragPrefix = "INTERSECT_BROWSER_FILES\n";
 
+// Kept ASCII on purpose: non-ASCII punctuation (ellipsis, em-dash) mis-renders on this toolchain,
+// so status text uses plain "..." / "-" rather than fancy glyphs.
+const juce::String kSearchPlaceholder = "Search files & folders...";
+const juce::String kSearchingLabel    = "Searching...";
+
 juce::String normalisePath (const juce::File& file)
 {
     return file.getFullPathName();
@@ -68,6 +73,42 @@ void SampleBrowserPanel::PathDisplay::mouseDown (const juce::MouseEvent&)
     owner.beginPathEditing();
 }
 
+SampleBrowserPanel::SearchToggleButton::SearchToggleButton()
+    : juce::Button ("search")
+{
+    getProperties().set (IntersectLookAndFeel::outlineOnlyButtonProperty, true);
+    setClickingTogglesState (false);
+    setTooltip ("Search files & folders");
+}
+
+void SampleBrowserPanel::SearchToggleButton::paintButton (juce::Graphics& g,
+                                                          bool shouldDrawButtonAsHighlighted,
+                                                          bool shouldDrawButtonAsDown)
+{
+    getLookAndFeel().drawButtonBackground (g, *this,
+                                           findColour (juce::TextButton::buttonColourId),
+                                           shouldDrawButtonAsHighlighted, shouldDrawButtonAsDown);
+
+    auto iconCol = findColour (getToggleState() ? juce::TextButton::textColourOnId
+                                                : juce::TextButton::textColourOffId);
+    if (iconCol.isTransparent())
+        iconCol = getTheme().text2;
+    g.setColour (iconCol);
+
+    // Magnifier: a circular lens with a short handle off the lower-right.
+    const auto area = getLocalBounds().toFloat().reduced (getWidth() * 0.30f, getHeight() * 0.30f);
+    const float d = juce::jmin (area.getWidth(), area.getHeight());
+    juce::Rectangle<float> lens (area.getX(), area.getY(), d, d);
+    const float stroke = juce::jmax (1.1f, d * 0.13f);
+    g.drawEllipse (lens, stroke);
+
+    const auto centre = lens.getCentre();
+    const float r = d * 0.5f;
+    const juce::Point<float> handleStart (centre.x + r * 0.72f, centre.y + r * 0.72f);
+    const juce::Point<float> handleEnd (area.getRight(), area.getBottom());
+    g.drawLine ({ handleStart, handleEnd }, stroke);
+}
+
 SampleBrowserPanel::SampleBrowserPanel()
 {
     setWantsKeyboardFocus (true);
@@ -109,6 +150,39 @@ SampleBrowserPanel::SampleBrowserPanel()
     upButton.setTooltip ("Up folder");
     refreshButton.setTooltip ("Refresh");
 
+    addAndMakeVisible (searchToggleButton);
+    searchToggleButton.onClick = [this] { setSearchInputMode (! searchInputMode); };
+
+    searchEditor.setJustification (juce::Justification::centredLeft);
+    searchEditor.setIndents (5, 0);
+    searchEditor.setInputRestrictions (0);
+    searchEditor.setMultiLine (false);
+    searchEditor.setReturnKeyStartsNewLine (false);
+    searchEditor.setScrollbarsShown (false);
+    searchEditor.setFont (IntersectLookAndFeel::makeFont (9.0f));
+    searchEditor.setTextToShowWhenEmpty (kSearchPlaceholder, getTheme().text0.withAlpha (0.55f));
+    searchEditor.onTextChange = [this] { onSearchTextChanged(); };
+    searchEditor.onEscapeKey = [this] { setSearchInputMode (false); };
+    searchEditor.onReturnKey = [this]
+    {
+        if (! files.empty())
+            activateSelectedFilesOrRow (juce::jmax (0, fileList.getSelectedRow()));
+    };
+    addChildComponent (searchEditor);
+
+    clearSearchButton.getProperties().set (IntersectLookAndFeel::outlineOnlyButtonProperty, true);
+    clearSearchButton.setTooltip ("Clear search");
+    clearSearchButton.onClick = [this] { searchEditor.clear(); onSearchTextChanged(); };
+    addChildComponent (clearSearchButton);
+
+    searchStatusLabel.setJustificationType (juce::Justification::centred);
+    searchStatusLabel.setInterceptsMouseClicks (false, false);
+    searchStatusLabel.setFont (IntersectLookAndFeel::makeFont (10.0f));
+    addChildComponent (searchStatusLabel);
+
+    searcher.isAudioFile = [this] (const juce::File& f) { return isSupportedAudioFile (f); };
+    searcher.onComplete = [this] (const DirectorySearch::Result& r) { applySearchResults (r); };
+
     backButton.onClick = [this]
     {
         if (historyIndex > 0)
@@ -132,7 +206,13 @@ SampleBrowserPanel::SampleBrowserPanel()
     };
 
     upButton.onClick = [this] { goUp(); };
-    refreshButton.onClick = [this] { refreshFiles(); };
+    refreshButton.onClick = [this]
+    {
+        if (searchMode)
+            launchSearch();
+        else
+            refreshFiles();
+    };
     for (auto* list : { &locationList, &fileList })
     {
         list->setRowHeight (22);
@@ -196,9 +276,7 @@ void SampleBrowserPanel::resized()
     titleLabel.setBounds (titleRow);
 
     header.removeFromTop (4);
-    auto pathBounds = header.removeFromTop (22);
-    pathDisplay.setBounds (pathBounds);
-    pathEditor.setBounds (pathBounds);
+    layoutPathSearchRow (header.removeFromTop (22));
 
     area.removeFromTop (5);
     if (locationSectionHeight <= 0)
@@ -211,6 +289,30 @@ void SampleBrowserPanel::resized()
 
     locationList.setBounds (locationSectionBounds);
     fileList.setBounds (fileSectionBounds);
+    updateSearchStatusLabel();
+}
+
+// Lays out the shared path/search row: magnifier toggle on the left, then the path display
+// (path mode) or the search editor + clear button (search mode) sharing the remaining width.
+void SampleBrowserPanel::layoutPathSearchRow (juce::Rectangle<int> row)
+{
+    pathSearchRow = row;
+    const int toggleW = 20;
+    const int gap = 3;
+    searchToggleButton.setBounds (row.removeFromLeft (toggleW));
+    row.removeFromLeft (gap);
+
+    pathDisplay.setBounds (row);
+    pathEditor.setBounds (row);
+
+    auto searchRow = row;
+    if (searchInputMode)
+    {
+        const int clearW = 20;
+        clearSearchButton.setBounds (searchRow.removeFromRight (clearW));
+        searchRow.removeFromRight (gap);
+    }
+    searchEditor.setBounds (searchRow);
 }
 
 void SampleBrowserPanel::mouseDown (const juce::MouseEvent& e)
@@ -337,6 +439,11 @@ juce::var SampleBrowserPanel::FileListModel::getDragSourceDescription (const juc
     return owner.makeDragDescriptionForRows (rowsToDescribe);
 }
 
+juce::String SampleBrowserPanel::FileListModel::getTooltipForRow (int row)
+{
+    return owner.fileRowTooltip (row);
+}
+
 int SampleBrowserPanel::getNumLocationRows() const
 {
     return (int) locations.size();
@@ -428,6 +535,16 @@ void SampleBrowserPanel::fileRowClicked (int row, const juce::MouseEvent& e)
         showFileMenu (row, e.getScreenPosition());
 }
 
+// Search results show only the file name, so the full path is offered on hover. Normal browsing
+// keeps its current no-tooltip behaviour.
+juce::String SampleBrowserPanel::fileRowTooltip (int row) const
+{
+    if (! searchMode || row < 0 || row >= (int) files.size())
+        return {};
+
+    return files[(size_t) row].file.getFullPathName();
+}
+
 void SampleBrowserPanel::rebuildLocations()
 {
     locations.clear();
@@ -497,7 +614,36 @@ void SampleBrowserPanel::rebuildLocations()
     locationList.repaint();
 }
 
+// Normal-browsing reset: leaves search mode (any directory navigation calls this) and shows
+// the current directory. Every navigation path funnels through here, so search always exits.
 void SampleBrowserPanel::refreshFiles()
+{
+    searchMode = false;
+    searchScanning = false;
+    searchTruncated = false;
+
+    if (searchInputMode)
+    {
+        searchInputMode = false;
+        searcher.cancel();
+        searchEditor.setText ({}, juce::dontSendNotification);
+        searchQuery.clear();
+        searchEditor.setVisible (false);
+        clearSearchButton.setVisible (false);
+        searchToggleButton.setToggleState (false, juce::dontSendNotification);
+        pathDisplay.setVisible (true);
+        if (! pathSearchRow.isEmpty())
+            layoutPathSearchRow (pathSearchRow);
+        searchToggleButton.repaint();
+    }
+
+    populateCurrentDirectoryFiles();
+    updateSearchStatusLabel();
+}
+
+// Builds the file list from the current directory (folders + audio files). Does not touch
+// search mode, so it also backs the "empty query" case where the search field stays open.
+void SampleBrowserPanel::populateCurrentDirectoryFiles()
 {
     files.clear();
 
@@ -733,12 +879,156 @@ void SampleBrowserPanel::flashPathError()
     });
 }
 
+void SampleBrowserPanel::setSearchInputMode (bool shouldSearch)
+{
+    if (shouldSearch)
+    {
+        if (searchInputMode)
+        {
+            searchEditor.grabKeyboardFocus();
+            return;
+        }
+
+        if (pathEditorActive)
+            endPathEditing (true);
+
+        searchInputMode = true;
+        pathDisplay.setVisible (false);
+        pathEditor.setVisible (false);
+        searchEditor.setVisible (true);
+        searchToggleButton.setToggleState (true, juce::dontSendNotification);
+        if (! pathSearchRow.isEmpty())
+            layoutPathSearchRow (pathSearchRow);
+        searchEditor.toFront (false);
+        searchEditor.grabKeyboardFocus();
+        searchToggleButton.repaint();
+        onSearchTextChanged();   // reflect any existing text (usually empty on first open)
+    }
+    else
+    {
+        // refreshFiles() performs the full exit-to-path-mode reset.
+        refreshFiles();
+    }
+}
+
+void SampleBrowserPanel::onSearchTextChanged()
+{
+    searchQuery = searchEditor.getText().trim();
+    clearSearchButton.setVisible (searchInputMode && searchEditor.getText().isNotEmpty());
+
+    if (searchQuery.isEmpty())
+    {
+        searchMode = false;
+        searchScanning = false;
+        searchTruncated = false;
+        searcher.cancel();
+        populateCurrentDirectoryFiles();   // stay in search field, show current directory
+        updateSearchStatusLabel();
+        return;
+    }
+
+    searchMode = true;
+    searchScanning = true;
+    updateSearchStatusLabel();
+
+    const int gen = ++debounceGeneration;
+    juce::Timer::callAfterDelay (180, [safe = juce::Component::SafePointer<SampleBrowserPanel> (this), gen]
+    {
+        if (safe != nullptr && safe->debounceGeneration == gen && safe->searchMode)
+            safe->launchSearch();
+    });
+}
+
+void SampleBrowserPanel::launchSearch()
+{
+    if (! searchMode || searchQuery.isEmpty())
+        return;
+
+    searchScanning = true;
+    updateSearchStatusLabel();
+    searcher.search (currentDirectory, searchQuery);
+}
+
+void SampleBrowserPanel::applySearchResults (const DirectorySearch::Result& result)
+{
+    // Ignore stale deliveries: mode changed, or a newer query is already in the box.
+    if (! searchMode || result.query != searchQuery)
+        return;
+
+    searchScanning = false;
+    searchTruncated = result.truncated;
+
+    files.clear();
+    files.reserve (result.matches.size());
+    for (const auto& m : result.matches)
+        files.push_back ({ m.file, m.directory, m.audio });
+
+    fileList.deselectAllRows();
+    fileList.updateContent();
+    fileList.repaint();
+    updateSearchStatusLabel();
+}
+
+void SampleBrowserPanel::updateSearchStatusLabel()
+{
+    if (! searchMode)
+    {
+        searchStatusLabel.setVisible (false);
+        return;
+    }
+
+    juce::String text;
+    bool bottomStrip = false;
+
+    if (files.empty())
+    {
+        text = searchScanning ? kSearchingLabel
+                              : "No matches for \"" + searchQuery + "\"";
+    }
+    else if (searchTruncated)
+    {
+        // Only reached when the search hit the result cap; state the count so it's self-explanatory.
+        text = "Showing the first " + juce::String ((int) files.size()) + " matches - refine your search";
+        bottomStrip = true;
+    }
+    else
+    {
+        searchStatusLabel.setVisible (false);
+        return;
+    }
+
+    searchStatusLabel.setText (text, juce::dontSendNotification);
+    searchStatusLabel.setColour (juce::Label::textColourId,
+                                 bottomStrip ? getTheme().text2.withAlpha (0.9f)
+                                             : getTheme().text0.withAlpha (0.62f));
+    searchStatusLabel.setColour (juce::Label::backgroundColourId,
+                                 bottomStrip ? getTheme().surface1.withAlpha (0.95f)
+                                             : juce::Colours::transparentBlack);
+
+    if (bottomStrip)
+    {
+        auto strip = fileSectionBounds;
+        searchStatusLabel.setBounds (strip.removeFromBottom (18));
+    }
+    else
+    {
+        searchStatusLabel.setBounds (fileSectionBounds);
+    }
+
+    searchStatusLabel.setVisible (true);
+    searchStatusLabel.toFront (false);
+}
+
 void SampleBrowserPanel::refreshThemeColours()
 {
     updateListThemeColours();
     titleLabel.repaint();
     pathDisplay.repaint();
     pathEditor.repaint();
+    searchEditor.repaint();
+    searchToggleButton.repaint();
+    clearSearchButton.repaint();
+    updateSearchStatusLabel();   // re-theme the search status/truncation strip if it is showing
     for (auto* button : { &backButton, &forwardButton, &upButton, &refreshButton })
         button->repaint();
     locationList.repaint();
@@ -787,11 +1077,26 @@ void SampleBrowserPanel::updateListThemeColours()
     pathEditor.setColour (juce::TextEditor::textColourId, getTheme().text2);
     pathEditor.setColour (juce::TextEditor::highlightColourId, getTheme().accent.withAlpha (0.35f));
 
+    searchEditor.setColour (juce::TextEditor::backgroundColourId, getTheme().surface1.withAlpha (0.92f));
+    searchEditor.setColour (juce::TextEditor::outlineColourId, getTheme().surface4.withAlpha (0.92f));
+    searchEditor.setColour (juce::TextEditor::focusedOutlineColourId, getTheme().accent.withAlpha (0.85f));
+    searchEditor.setColour (juce::TextEditor::textColourId, getTheme().text2);
+    searchEditor.setColour (juce::TextEditor::highlightColourId, getTheme().accent.withAlpha (0.35f));
+    searchEditor.setTextToShowWhenEmpty (kSearchPlaceholder, getTheme().text0.withAlpha (0.55f));
+
     for (auto* button : { &backButton, &forwardButton, &upButton, &refreshButton })
     {
         button->setColour (juce::TextButton::buttonColourId,
                            (button->isMouseOverOrDragging() ? getTheme().surface5 : getTheme().surface4).withAlpha (0.95f));
         button->setColour (juce::TextButton::textColourOnId, getTheme().text2.withAlpha (0.88f));
+        button->setColour (juce::TextButton::textColourOffId, getTheme().text2.withAlpha (0.88f));
+    }
+
+    for (juce::Button* button : { static_cast<juce::Button*> (&searchToggleButton),
+                                  static_cast<juce::Button*> (&clearSearchButton) })
+    {
+        button->setColour (juce::TextButton::buttonColourId, getTheme().surface4.withAlpha (0.95f));
+        button->setColour (juce::TextButton::textColourOnId, getTheme().accent.withAlpha (0.95f));
         button->setColour (juce::TextButton::textColourOffId, getTheme().text2.withAlpha (0.88f));
     }
 

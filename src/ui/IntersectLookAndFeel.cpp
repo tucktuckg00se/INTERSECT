@@ -303,7 +303,7 @@ void IntersectLookAndFeel::drawTooltip (juce::Graphics& g, const juce::String& t
     g.setColour (getTheme().surface5);
     g.drawRect (0, 0, width, height, 1);
     g.setColour (getTheme().text2);
-    g.setFont (makeFont (14.0f));
+    g.setFont (makeFont (11.0f));
     g.drawText (text, 4, 0, width - 8, height, juce::Justification::centredLeft);
 }
 
@@ -312,9 +312,9 @@ juce::Rectangle<int> IntersectLookAndFeel::getTooltipBounds (const juce::String&
                                                               juce::Rectangle<int> parentArea)
 {
     juce::GlyphArrangement glyphs;
-    glyphs.addLineOfText (makeFont (14.0f), text, 0.0f, 0.0f);
+    glyphs.addLineOfText (makeFont (11.0f), text, 0.0f, 0.0f);
     int w = juce::roundToInt (glyphs.getBoundingBox (0, -1, true).getWidth()) + 14;
-    int h = 24;
+    int h = 20;
     int x = screenPos.x;
     int y = screenPos.y + 18;
 

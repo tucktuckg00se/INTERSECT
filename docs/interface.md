@@ -74,16 +74,16 @@ For an end-to-end walkthrough — picking a model, device, and mode, then runnin
 
 The bottom bar is the main parameter editor. It has four modules: `TIME/PITCH`, `FILTER`, `AMP`, and `PLAYBACK`.
 
-**Collapsed mode** (default): `GLOBAL` and `SLICE` tabs switch between scopes, with one parameter strip visible at a time.
+**Collapsed mode** (default): `SAMPLE` and `SLICE` tabs switch between scopes, with one parameter strip visible at a time.
 
-**Expanded mode**: shows both strips simultaneously — slice on top, global below — with no tabs. Click the chevron toggle on the right edge of the context bar to switch between modes.
+**Expanded mode**: shows both strips simultaneously — slice on top, sample below — with no tabs. Click the chevron toggle on the right edge of the context bar to switch between modes.
 
 **Context bar** (bottom edge):
-- `SLICES` count and the global `ROOT` note are always visible on the right. The global `ROOT` is editable only when no slices exist.
+- `SLICES` count and the sample `ROOT` note are always visible on the right. The sample `ROOT` is editable only when no slices exist.
 - When a slice is selected: slice sample range, length, a `NOTE`/`RANGE` toggle, numeric note controls, read-only note names, and override count.
 
 ```text
-┌─[ Tab: GLOBAL | SLICE ]─────────[ slice range · length · NOTE/RANGE ]──────[ SLICES: 8  ROOT: C2 ]──[ ⌃ ]─┐
+┌─[ Tab: SAMPLE | SLICE ]─────────[ slice range · length · NOTE/RANGE ]──────[ SLICES: 8  ROOT: C2 ]──[ ⌃ ]─┐
 │  TIME/PITCH        │  FILTER             │  AMP               │  PLAYBACK                                  │
 │  BPM PITCH ALGO …  │  TYPE CUT RESO …    │  ATK DEC SUS REL … │  REV LOOP FADE MUTE OUT …                  │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
@@ -92,7 +92,7 @@ The bottom bar is the main parameter editor. It has four modules: `TIME/PITCH`, 
 General behavior:
 - Drag up/down on a value to edit it.
 - Double-click a value to type it directly.
-- In `SLICE` mode, editing a field locks that field for the selected slice when it differs from the global value. The parameter label highlights to show the lock.
-- In `SLICE` mode, clicking a locked field label or right-clicking the field clears that override and re-inherits the global value.
+- In `SLICE` mode, editing a field locks that field for the selected slice when it differs from the sample value. The parameter label highlights to show the lock.
+- In `SLICE` mode, clicking a locked field label or right-clicking the field clears that override and re-inherits the sample value.
 
 For each module's individual controls, see the [Controls and shortcuts reference]({{ site.baseurl }}{% link controls-reference.md %}). For the underlying mental model, see [Concepts → The inheritance / lock model]({{ site.baseurl }}{% link workflow-basics.md %}#the-inheritance--lock-model).

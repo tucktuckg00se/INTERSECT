@@ -23,7 +23,7 @@ description: "Every button, parameter, gesture, and keyboard shortcut in the INT
 | Control | Function | Notes |
 | --- | --- | --- |
 | `SLICES` | Slice count | Always visible on the right side of the context bar |
-| Global `ROOT` | Root note for new slices | Always visible on the right side of the context bar; editable only before any slices exist |
+| Sample `ROOT` | Root note for new slices | Always visible on the right side of the context bar; editable only before any slices exist |
 
 ### Time/Pitch module
 
@@ -97,7 +97,7 @@ Filter notes:
 | `MUTE` | Mute group | `0–32`, `0` = off. Voices in the same group choke each other |
 | `1SHOT` | One-shot playback | Ignores note-off until the slice ends |
 | `OUT` | Output bus | `SLICE` mode only, `1` to `16` |
-| `VOICES` | Max playable voices | `GLOBAL` mode only, `1` to `31` (voice 32 is reserved for the preview voice) |
+| `VOICES` | Max playable voices | `SAMPLE` mode only, `1` to `31` (voice 32 is reserved for the preview voice) |
 
 ## Master and global controls
 

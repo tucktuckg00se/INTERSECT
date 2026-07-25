@@ -1,5 +1,6 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
+#include "DirectorySearch.h"
 #include <functional>
 #include <vector>
 
@@ -68,6 +69,7 @@ private:
         void listBoxItemClicked (int row, const juce::MouseEvent& e) override;
         void listBoxItemDoubleClicked (int row, const juce::MouseEvent& e) override;
         juce::var getDragSourceDescription (const juce::SparseSet<int>& rowsToDescribe) override;
+        juce::String getTooltipForRow (int row) override;
     private:
         SampleBrowserPanel& owner;
     };
@@ -83,15 +85,26 @@ private:
         SampleBrowserPanel& owner;
     };
 
+    // Outline-only button that draws a vector magnifier icon (Inter lacks a magnifier glyph),
+    // delegating its background/toggle styling to IntersectLookAndFeel.
+    class SearchToggleButton : public juce::Button
+    {
+    public:
+        SearchToggleButton();
+        void paintButton (juce::Graphics& g, bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override;
+    };
+
     int getNumLocationRows() const;
     int getNumFileRows() const;
     void paintLocationRow (int row, juce::Graphics& g, int width, int height, bool selected);
     void paintFileRow (int row, juce::Graphics& g, int width, int height, bool selected);
     void locationRowClicked (int row, const juce::MouseEvent& e);
     void fileRowClicked (int row, const juce::MouseEvent& e);
+    juce::String fileRowTooltip (int row) const;
 
     void rebuildLocations();
     void refreshFiles();
+    void populateCurrentDirectoryFiles();
     void setCurrentDirectory (const juce::File& dir);
     void goUp();
     void activateFileRow (int row);
@@ -115,13 +128,24 @@ private:
     juce::String locationPrefixForKind (LocationKind kind) const;
     juce::String formatFileMeta (const FileRow& row) const;
 
+    void layoutPathSearchRow (juce::Rectangle<int> row);
+    void setSearchInputMode (bool shouldSearch);
+    void onSearchTextChanged();
+    void launchSearch();
+    void applySearchResults (const DirectorySearch::Result& result);
+    void updateSearchStatusLabel();
+
     juce::TextButton backButton { juce::String::charToString (0x2190) };   // ←
     juce::TextButton forwardButton { juce::String::charToString (0x2192) }; // →
     juce::TextButton upButton { juce::String::charToString (0x2191) };      // ↑
     juce::TextButton refreshButton { juce::String::charToString (0x21BB) }; // ↻
+    SearchToggleButton searchToggleButton;
     juce::Label titleLabel;
     PathDisplay pathDisplay { *this };
     juce::TextEditor pathEditor;
+    juce::TextEditor searchEditor;
+    juce::TextButton clearSearchButton { juce::String::charToString (0x00D7) }; // ×
+    juce::Label searchStatusLabel;
     LocationListModel locationModel { *this };
     FileListModel fileModel { *this };
     juce::ListBox locationList { "browser locations", &locationModel };
@@ -143,6 +167,19 @@ private:
     juce::Rectangle<int> locationSectionBounds;
     juce::Rectangle<int> fileSectionBounds;
     juce::Rectangle<int> splitterBounds;
+    juce::Rectangle<int> pathSearchRow;   // full path/search row, for re-layout on mode change
+
+    // Recursive-search state. searchInputMode = the bar is a search field (vs path);
+    // searchMode = the file list is showing search results (vs current-dir contents).
+    juce::String searchQuery;
+    bool searchInputMode = false;
+    bool searchMode = false;
+    bool searchScanning = false;
+    bool searchTruncated = false;
+    int debounceGeneration = 0;
+
+    // Declared last so its worker thread is stopped before any member it references is torn down.
+    DirectorySearch searcher;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SampleBrowserPanel)
 };

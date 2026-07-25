@@ -905,7 +905,7 @@ void SignalChainBar::rebuildContextBar (const LayoutInput& input)
 
         contextRow.performLayout (contextArea.toFloat());
 
-        addTabCell (toIntBounds (contextRow.items[0].currentBounds), "GLOBAL", TabTarget::Global, ! input.sliceScope, true);
+        addTabCell (toIntBounds (contextRow.items[0].currentBounds), "SAMPLE", TabTarget::Global, ! input.sliceScope, true);
         addTabCell (toIntBounds (contextRow.items[2].currentBounds), sliceTabText, TabTarget::Slice, input.sliceScope, input.hasValidSlice);
 
         contextInfoBounds = toIntBounds (contextRow.items[timeItemIndex].currentBounds);
@@ -962,7 +962,7 @@ void SignalChainBar::rebuildContextBar (const LayoutInput& input)
     contextRow.items.add (juce::FlexItem().withWidth (10.0f));  // trailing pad
     contextRow.performLayout (contextArea.toFloat());
 
-    addTabCell (toIntBounds (contextRow.items[0].currentBounds), "GLOBAL", TabTarget::Global, ! input.sliceScope, true);
+    addTabCell (toIntBounds (contextRow.items[0].currentBounds), "SAMPLE", TabTarget::Global, ! input.sliceScope, true);
     addTabCell (toIntBounds (contextRow.items[2].currentBounds), sliceTabText, TabTarget::Slice, input.sliceScope, input.hasValidSlice);
 
     contextInfoBounds = toIntBounds (contextRow.items[infoItemIndex].currentBounds);
@@ -1760,7 +1760,7 @@ void SignalChainBar::paint (juce::Graphics& g)
         {
             g.setFont (IntersectLookAndFeel::makeFont (7.0f, true));
             g.setColour (getTheme().text0.withAlpha (0.4f));
-            g.drawText (isSliceStrip ? "SLICE" : "GLOBAL",
+            g.drawText (isSliceStrip ? "SLICE" : "SAMPLE",
                         stripBounds.getX() + 2, stripBounds.getY() + 1, 36, 10,
                         juce::Justification::centredLeft);
         }
