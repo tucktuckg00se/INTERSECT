@@ -25,7 +25,6 @@ public:
         juce::File file;
         bool directory = false;
         bool audio = false;
-        juce::String relativePath;
     };
 
     struct Result
@@ -160,7 +159,7 @@ private:
 
                 if (child.getFileName().toLowerCase().contains (needle))
                 {
-                    result.matches.push_back ({ child, isDir, isAudio, child.getRelativePathFrom (root) });
+                    result.matches.push_back ({ child, isDir, isAudio });
                     if ((int) result.matches.size() >= kMaxResults)
                     {
                         result.truncated = true;
@@ -171,12 +170,12 @@ private:
             }
         }
 
-        // Directories first, then relative path case-insensitive (mirrors normal browsing order).
+        // Directories first, then file name case-insensitive (matches the name shown in each row).
         std::sort (result.matches.begin(), result.matches.end(), [] (const Match& a, const Match& b)
         {
             if (a.directory != b.directory)
                 return a.directory;
-            return a.relativePath.compareIgnoreCase (b.relativePath) < 0;
+            return a.file.getFileName().compareIgnoreCase (b.file.getFileName()) < 0;
         });
 
         return true;

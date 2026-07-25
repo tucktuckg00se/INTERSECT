@@ -47,7 +47,6 @@ private:
         juce::File file;
         bool directory = false;
         bool audio = false;
-        juce::String displayName;   // file name when browsing; relative path in search results
     };
 
     class LocationListModel : public juce::ListBoxModel
@@ -70,6 +69,7 @@ private:
         void listBoxItemClicked (int row, const juce::MouseEvent& e) override;
         void listBoxItemDoubleClicked (int row, const juce::MouseEvent& e) override;
         juce::var getDragSourceDescription (const juce::SparseSet<int>& rowsToDescribe) override;
+        juce::String getTooltipForRow (int row) override;
     private:
         SampleBrowserPanel& owner;
     };
@@ -100,6 +100,7 @@ private:
     void paintFileRow (int row, juce::Graphics& g, int width, int height, bool selected);
     void locationRowClicked (int row, const juce::MouseEvent& e);
     void fileRowClicked (int row, const juce::MouseEvent& e);
+    juce::String fileRowTooltip (int row) const;
 
     void rebuildLocations();
     void refreshFiles();

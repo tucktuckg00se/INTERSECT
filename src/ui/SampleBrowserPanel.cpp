@@ -440,6 +440,11 @@ juce::var SampleBrowserPanel::FileListModel::getDragSourceDescription (const juc
     return owner.makeDragDescriptionForRows (rowsToDescribe);
 }
 
+juce::String SampleBrowserPanel::FileListModel::getTooltipForRow (int row)
+{
+    return owner.fileRowTooltip (row);
+}
+
 int SampleBrowserPanel::getNumLocationRows() const
 {
     return (int) locations.size();
@@ -504,7 +509,7 @@ void SampleBrowserPanel::paintFileRow (int row, juce::Graphics& g, int width, in
     auto metaBounds = textBounds.removeFromRight (46);
     g.setFont (IntersectLookAndFeel::makeFont (9.5f));
     g.setColour (item.audio || item.directory ? getTheme().text2 : getTheme().text0.withAlpha (0.55f));
-    g.drawText (item.displayName, textBounds, juce::Justification::centredLeft, true);
+    g.drawText (item.file.getFileName(), textBounds, juce::Justification::centredLeft, true);
     g.setColour (getTheme().text0.withAlpha (0.8f));
     g.drawText (formatFileMeta (item), metaBounds, juce::Justification::centredRight, true);
 }
@@ -529,6 +534,16 @@ void SampleBrowserPanel::fileRowClicked (int row, const juce::MouseEvent& e)
 {
     if (e.mods.isPopupMenu())
         showFileMenu (row, e.getScreenPosition());
+}
+
+// Search results show only the file name, so the full path is offered on hover. Normal browsing
+// keeps its current no-tooltip behaviour.
+juce::String SampleBrowserPanel::fileRowTooltip (int row) const
+{
+    if (! searchMode || row < 0 || row >= (int) files.size())
+        return {};
+
+    return files[(size_t) row].file.getFullPathName();
 }
 
 void SampleBrowserPanel::rebuildLocations()
@@ -651,7 +666,7 @@ void SampleBrowserPanel::populateCurrentDirectoryFiles()
             const bool isDir = child.isDirectory();
             const bool isAudio = isSupportedAudioFile (child);
             if (isDir || isAudio)
-                files.push_back ({ child, isDir, isAudio, child.getFileName() });
+                files.push_back ({ child, isDir, isAudio });
         }
     }
 
@@ -947,7 +962,7 @@ void SampleBrowserPanel::applySearchResults (const DirectorySearch::Result& resu
     files.clear();
     files.reserve (result.matches.size());
     for (const auto& m : result.matches)
-        files.push_back ({ m.file, m.directory, m.audio, m.relativePath });
+        files.push_back ({ m.file, m.directory, m.audio });
 
     fileList.deselectAllRows();
     fileList.updateContent();

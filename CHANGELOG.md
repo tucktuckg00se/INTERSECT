@@ -7,7 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
-- The FILES browser has a search mode: click the magnifier in the path bar and type to find matching files and folders across the current folder and all of its subfolders. Matching is case-insensitive and partial, results show their location, and clearing the search or switching the magnifier off returns to normal browsing.
+- The FILES browser has a search mode: click the magnifier in the path bar and type to find matching files and folders across the current folder and all of its subfolders. Matching is case-insensitive and partial, each result shows its file name (hover to see the full path), and clearing the search or switching the magnifier off returns to normal browsing.
 
 ## [0.15.3] - 2026-07-23
 
