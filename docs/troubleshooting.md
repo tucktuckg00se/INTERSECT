@@ -40,7 +40,7 @@ Check, in order:
 1. **MIDI routing.** Confirm your DAW track is routed to INTERSECT and the track is armed.
 2. **Note mapping.** The slice's `NOTE` (or `LOW`–`HIGH` range) must include the note you're playing. The **FM** button auto-selects the slice for the note you just played — turn it on temporarily to confirm.
 3. **Mute group.** If two slices share the same mute group, the latest note-on chokes earlier ones.
-4. **Voice budget.** If many notes are held, low-priority voices get stolen. Raise the global `VOICES` parameter (1–31).
+4. **Voice budget.** If many notes are held, low-priority voices get stolen. Raise the `VOICES` parameter (1–31).
 5. **Master gain.** Check the Amp module's `GAIN` and the filter `CUT` — if cutoff is at the floor and the filter is on, the slice will be silent.
 6. **PANIC.** If something appears stuck, press `PANIC` in the header bar.
 
