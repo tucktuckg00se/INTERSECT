@@ -12,12 +12,11 @@ enum MenuIds
 
 const juce::String kBrowserDragPrefix = "INTERSECT_BROWSER_FILES\n";
 
-// Non-ASCII glyphs are built via charToString rather than UTF-8 literals, matching the nav-button
-// convention above (raw UTF-8 string literals get mis-decoded on this toolchain).
-const juce::String kSearchPlaceholder = "Search files & folders" + juce::String::charToString (0x2026);   // …
-const juce::String kSearchingLabel    = "Searching" + juce::String::charToString (0x2026);                // …
-const juce::String kTruncatedLabel    = "Showing first matches " + juce::String::charToString (0x2014)     // —
-                                        + " refine search";
+// Kept ASCII on purpose: non-ASCII punctuation (ellipsis, em-dash) mis-renders on this toolchain,
+// so status text uses plain "..." / "-" rather than fancy glyphs.
+const juce::String kSearchPlaceholder = "Search files & folders...";
+const juce::String kSearchingLabel    = "Searching...";
+const juce::String kTruncatedLabel    = "Showing first matches - refine search";
 
 juce::String normalisePath (const juce::File& file)
 {
