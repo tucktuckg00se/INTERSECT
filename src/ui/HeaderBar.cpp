@@ -1,5 +1,6 @@
 #include "HeaderBar.h"
 #include "IntersectLookAndFeel.h"
+#include "../AppFiles.h"
 #include "../PluginEditor.h"
 #include "../PluginProcessor.h"
 
@@ -29,6 +30,9 @@ enum SettingsMenuItemId
     kMenuOrtCancelDownload = 4200,
     kMenuOrtBundleDownloadBase = 4300,  // + index into getOrtBundlesForCurrentPlatform()
     kMenuOrtBundleActivateBase = 4400,  // + index into getOrtBundlesForCurrentPlatform()
+    kMenuPresetDefaultFolder = 5000,
+    kMenuPresetCustomFolder,
+    kMenuPresetClearCustomFolder,
 };
 
 float measureTextWidth (const juce::Font& font, const juce::String& text)
@@ -271,6 +275,19 @@ void HeaderBar::showSettingsPopup()
     menu.addSubMenu (formatNrpnStatus (nrpnCh), nrpnMenu);
     menu.addSubMenu ("Themes  " + currentName, themesMenu);
 
+    const auto customPresetsFolder = editor->getCustomPresetsFolder();
+    juce::PopupMenu presetsMenu;
+    presetsMenu.setLookAndFeel (&getLookAndFeel());
+    presetsMenu.addSectionHeader ("Presets");
+    presetsMenu.addItem (kMenuPresetDefaultFolder,
+                         "Default Folder: " + AppFiles::getPresetsDir().getFullPathName(), false, false);
+    presetsMenu.addItem (kMenuPresetCustomFolder,
+                         customPresetsFolder != juce::File()
+                             ? "Custom Folder: " + customPresetsFolder.getFullPathName()
+                             : juce::String ("Choose Custom Folder..."));
+    presetsMenu.addItem (kMenuPresetClearCustomFolder, "Clear Custom Folder", customPresetsFolder != juce::File());
+    menu.addSubMenu ("Presets", presetsMenu);
+
     const auto stemFolder = processor.getResolvedStemModelFolder();
     const auto customStemFolder = processor.getStemModelFolder();
     const auto installedModels = processor.getInstalledStemModels();
@@ -430,6 +447,26 @@ void HeaderBar::showSettingsPopup()
                             editor->saveUserSettings (scale, getTheme().name);
                         }
                     });
+            }
+            else if (result == kMenuPresetCustomFolder)
+            {
+                const auto current = editor->getCustomPresetsFolder();
+                fileChooser = std::make_unique<juce::FileChooser> (
+                    "Select Custom Presets Folder",
+                    current.isDirectory() ? current
+                                          : juce::File::getSpecialLocation (juce::File::userDocumentsDirectory));
+                fileChooser->launchAsync (juce::FileBrowserComponent::openMode
+                                              | juce::FileBrowserComponent::canSelectDirectories,
+                    [editor] (const juce::FileChooser& fc)
+                    {
+                        auto chosenFolder = fc.getResult();
+                        if (chosenFolder.isDirectory())
+                            editor->setCustomPresetsFolder (chosenFolder);
+                    });
+            }
+            else if (result == kMenuPresetClearCustomFolder)
+            {
+                editor->setCustomPresetsFolder ({});
             }
             else if (result == kMenuStemUseDefaultFolder)
             {

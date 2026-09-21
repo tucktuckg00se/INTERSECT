@@ -1,4 +1,5 @@
 #include "PluginEditor.h"
+#include "AppFiles.h"
 #include <algorithm>
 #include <cmath>
 
@@ -21,20 +22,14 @@ static constexpr float kHostChromeReserveH = 56.0f;  // title bar + borders + ho
 static constexpr float kMinEffectiveScale  = 0.4f;   // usability floor on tiny displays
 static constexpr float kScaleEpsilon       = 0.005f; // half a 0.01 quantisation step
 
-static juce::File getSettingsDir()
-{
-    return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-               .getChildFile ("INTERSECT");
-}
-
 static juce::File getUserSettingsFile()
 {
-    return getSettingsDir().getChildFile ("settings.yaml");
+    return AppFiles::getSettingsDir().getChildFile ("settings.yaml");
 }
 
 static juce::File getThemesDir()
 {
-    return getSettingsDir().getChildFile ("themes");
+    return AppFiles::getSettingsDir().getChildFile ("themes");
 }
 
 namespace
@@ -129,6 +124,11 @@ IntersectEditor::IntersectEditor (IntersectProcessor& p)
     actionPanel.onDeleteRequested = [this] { performContextualDelete(); };
     headerBar.onBrowserToggle = [this] { setSampleBrowserVisible (! sampleBrowserVisible); };
     sampleBrowser.onFilesChosen = [this] (const std::vector<juce::File>& files) { loadBrowserFiles (files); };
+    sampleBrowser.onPresetChosen = [this] (const juce::File& preset) { processor.loadPresetAsync (preset); };
+    sampleBrowser.onSavePresetRequested = [this] (bool embedSamples, const juce::File& startFolder)
+    {
+        openPresetSaveDialog (embedSamples, startFolder);
+    };
     sampleBrowser.onBookmarksChanged = [this]
     {
         float scale = processor.apvts.getRawParameterValue (ParamIds::uiScale)->load();
@@ -155,6 +155,7 @@ IntersectEditor::IntersectEditor (IntersectProcessor& p)
     applyLogicalSize();
     updateUiTransform();   // host's first getSize sees the restored scale; refitted post-attach
     lastUiSnapshotVersion = processor.getUiSliceSnapshotVersion();
+    lastPresetSaveVersion = processor.getPresetSaveVersion();
     lastGlobalFadeCrossfade = processor.apvts.getRawParameterValue (ParamIds::defaultCrossfade)->load();
     lastGlobalFadeLoopMode = juce::roundToInt (processor.apvts.getRawParameterValue (ParamIds::defaultLoop)->load());
     lastGlobalFadeReverse = processor.apvts.getRawParameterValue (ParamIds::defaultReverse)->load() >= 0.5f ? 1 : 0;
@@ -457,10 +458,60 @@ void IntersectEditor::loadBrowserFiles (const std::vector<juce::File>& files)
     }
 }
 
+void IntersectEditor::openPresetSaveDialog (bool embedSamples, const juce::File& startFolder)
+{
+    (void) startFolder.createDirectory();   // the default presets folder may not exist yet
+
+    presetChooser = std::make_unique<juce::FileChooser> (
+        embedSamples ? "Save Preset with Samples" : "Save Preset",
+        startFolder.getChildFile (getDefaultPresetName() + AppFiles::kPresetExtension),
+        juce::String ("*") + AppFiles::kPresetExtension);
+
+    presetChooser->launchAsync (juce::FileBrowserComponent::saveMode
+                                    | juce::FileBrowserComponent::canSelectFiles
+                                    | juce::FileBrowserComponent::warnAboutOverwriting,
+        [this, embedSamples] (const juce::FileChooser& fc)
+        {
+            auto destination = fc.getResult();
+            if (destination == juce::File())
+                return;   // cancelled
+
+            // Some native dialogs don't add the filter's extension; append rather than replace,
+            // so a name like "Kit.v2" keeps its dot.
+            if (! AppFiles::isPresetFile (destination))
+                destination = destination.getSiblingFile (destination.getFileName() + AppFiles::kPresetExtension);
+
+            processor.savePresetAsync (destination, embedSamples);
+        });
+}
+
+juce::String IntersectEditor::getDefaultPresetName() const
+{
+    const auto& ui = processor.getUiSliceSnapshot();
+    const auto sourceName = ui.numSessionSamples > 0 ? ui.sessionSamples[0].fileName.toString()
+                                                     : ui.sampleFileName.toString();
+    const auto name = juce::File::createLegalFileName (
+        sourceName.upToLastOccurrenceOf (".", false, false).trim());
+    return name.isNotEmpty() ? name : juce::String ("Untitled");
+}
+
+void IntersectEditor::setCustomPresetsFolder (const juce::File& folder)
+{
+    sampleBrowser.setCustomPresetsFolder (folder);
+    float scale = processor.apvts.getRawParameterValue (ParamIds::uiScale)->load();
+    saveUserSettings (scale, getTheme().name);
+}
+
 void IntersectEditor::timerCallback()
 {
     // Apply deferred non-RT parameter restores from undo/redo.
     processor.applyDeferredParamRestore();
+
+    if (processor.getPresetSaveVersion() != lastPresetSaveVersion)
+    {
+        lastPresetSaveVersion = processor.getPresetSaveVersion();
+        sampleBrowser.revealFile (processor.getLastSavedPresetFile());
+    }
 
     bool uiChanged = false;
     bool viewportChanged = false;
@@ -686,6 +737,9 @@ void IntersectEditor::saveUserSettings (float scale, const juce::String& themeNa
     const auto stemFolder = processor.getStemModelFolder();
     if (stemFolder != juce::File())
         content << "stemModelFolder: " << stemFolder.getFullPathName() << "\n";
+    const auto presetFolder = sampleBrowser.getCustomPresetsFolder();
+    if (presetFolder != juce::File())
+        content << "presetFolder: " << presetFolder.getFullPathName() << "\n";
     content << "stemComputeDevice: " << stemComputeDeviceToString (processor.getStemComputeDevice()) << "\n";
     file.replaceWithText (content);
 }
@@ -695,6 +749,7 @@ void IntersectEditor::loadUserSettings()
     savedScale = -1.0f;
     juce::String themeName = "dark";
     juce::StringArray browserBookmarks;
+    juce::File customPresetsFolder;
 
     auto file = getUserSettingsFile();
     if (file.existsAsFile())
@@ -760,6 +815,12 @@ void IntersectEditor::loadUserSettings()
             {
                 readingBrowserBookmarks = true;
             }
+            else if (line.startsWith ("presetFolder:"))
+            {
+                const auto path = line.fromFirstOccurrenceOf (":", false, false).trim();
+                if (juce::File::isAbsolutePath (path))
+                    customPresetsFolder = juce::File (path);
+            }
             else if (line.startsWith ("stemModelFolder:"))
             {
                 processor.setStemModelFolder (juce::File (line.fromFirstOccurrenceOf (":", false, false).trim()));
@@ -781,6 +842,7 @@ void IntersectEditor::loadUserSettings()
     signalChainBar.middleCOctave = middleCOctave;
     processor.middleCOctave.store (middleCOctave, std::memory_order_relaxed);
     sampleBrowser.setBookmarks (browserBookmarks);
+    sampleBrowser.setCustomPresetsFolder (customPresetsFolder);
     sampleBrowser.setVisible (sampleBrowserVisible);
 
     // Apply theme

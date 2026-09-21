@@ -1,6 +1,8 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <array>
+#include <functional>
+#include <map>
 #include <optional>
 #include <vector>
 #include "Constants.h"
@@ -231,6 +233,14 @@ public:
         setUiStatusMessage (text, isWarning);
     }
 
+    // Built-in presets (.intersectpreset): a full kit (samples, slices, parameters) as a file.
+    // Message thread only. File work runs on fileLoadPool; results land via handleAsyncUpdate.
+    void savePresetAsync (const juce::File& destination, bool embedSamples);
+    void loadPresetAsync (const juce::File& presetFile);
+    // Bumped each time a preset save finishes successfully, so the editor can reveal the file.
+    uint32_t getPresetSaveVersion() const noexcept { return presetSaveVersion; }
+    juce::File getLastSavedPresetFile() const { return lastSavedPresetFile; }
+
     struct UiSliceSnapshot
     {
         struct UiSessionSample
@@ -384,6 +394,7 @@ private:
             generic,
             droppedCommands,
             midiLimit,
+            transientInfo,   // non-warning message that clears itself like a warning
         };
 
         RtText<256> text;
@@ -402,6 +413,34 @@ private:
         std::atomic<int> savedSourceNumFrames { 0 };
         std::atomic<double> savedSourceSampleRate { 0.0 };
     };
+
+    struct RestoreOptions
+    {
+        // Maps a sample path stored in the state to the file to load. Null = use paths as saved.
+        std::function<juce::File (const juce::String&)> resolveSamplePath;
+        // Keep machine/user preferences (UI scale, NRPN settings, stem compute device) instead of
+        // taking them from the state. Used for presets, which travel between machines.
+        bool preserveUserPrefs = false;
+    };
+
+    struct PresetJobResult
+    {
+        enum class Kind { save, load };
+        Kind kind = Kind::save;
+        int generation = 0;
+        juce::File presetFile;
+        juce::Result result = juce::Result::ok();
+        juce::MemoryBlock state;                               // load only
+        std::map<juce::String, juce::File> resolvedSamples;    // load only: saved path -> local file
+        int missingSamples = 0;                                // load only
+    };
+
+    // Returns false if the state was rejected; a malformed slice table can leave it partly applied.
+    bool restoreState (const void* data, int sizeInBytes, const RestoreOptions& options);
+    juce::StringArray getStateSampleFilePaths() const;
+    void postPresetJobResult (PresetJobResult result);
+    void handlePresetJobCompletionOnMessageThread();
+    void applyLoadedPreset (const PresetJobResult& job);
 
     void drainCommands();
     void handleCommand (const Command& cmd);
@@ -532,6 +571,15 @@ private:
         int parentSourceSampleId = -1;
     };
     std::atomic<PendingStemImport*> pendingStemImport { nullptr };
+
+    // Presets. A newer preset load, a sample load or a host state restore bumps the generation,
+    // which makes any in-flight preset load drop its result. Declared before fileLoadPool so
+    // these outlive the pool's worker thread.
+    std::atomic<int> presetLoadGeneration { 0 };
+    juce::CriticalSection presetJobLock;
+    std::vector<PresetJobResult> completedPresetJobs;   // guarded by presetJobLock
+    uint32_t presetSaveVersion = 0;                      // message thread only
+    juce::File lastSavedPresetFile;                      // message thread only
 
     juce::ThreadPool fileLoadPool { 1 };
     std::atomic<int> nextLoadToken { 0 };

@@ -24,7 +24,6 @@ public:
     {
         juce::File file;
         bool directory = false;
-        bool audio = false;
     };
 
     struct Result
@@ -34,9 +33,9 @@ public:
         bool truncated = false;           // hit kMaxResults / kMaxDirs before finishing
     };
 
-    /** Predicate deciding whether a non-directory file counts as an audio result. Injected by
-        the owner so the searcher stays decoupled from the file-type policy. */
-    std::function<bool (const juce::File&)> isAudioFile;
+    /** Predicate deciding whether a non-directory file can appear in the results (audio, presets).
+        Injected by the owner so the searcher stays decoupled from the file-type policy. */
+    std::function<bool (const juce::File&)> isListedFile;
 
     /** Invoked on the message thread when a scan for the newest request completes. */
     std::function<void (Result)> onComplete;
@@ -148,18 +147,18 @@ private:
             for (const auto& child : children)
             {
                 const bool isDir = child.isDirectory();
-                const bool isAudio = (! isDir) && isAudioFile != nullptr && isAudioFile (child);
+                const bool isListed = (! isDir) && isListedFile != nullptr && isListedFile (child);
 
                 // Descend into subfolders, but skip hidden/system trees (.git, .Trash, …).
                 if (isDir && ! child.getFileName().startsWithChar ('.'))
                     stack.push_back (child);
 
-                if (! isDir && ! isAudio)
-                    continue;   // non-audio file — never a result and nothing to descend
+                if (! isDir && ! isListed)
+                    continue;   // unlisted file — never a result and nothing to descend
 
                 if (child.getFileName().toLowerCase().contains (needle))
                 {
-                    result.matches.push_back ({ child, isDir, isAudio });
+                    result.matches.push_back ({ child, isDir });
                     if ((int) result.matches.size() >= kMaxResults)
                     {
                         result.truncated = true;

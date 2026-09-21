@@ -29,6 +29,8 @@ public:
     void setMiddleCOctave (int octave);
     int getMiddleCOctave() const { return middleCOctave; }
     float getEffectiveUiScale() const noexcept { return lastAppliedScale; }
+    juce::File getCustomPresetsFolder() const { return sampleBrowser.getCustomPresetsFolder(); }
+    void setCustomPresetsFolder (const juce::File& folder);
 
 private:
     enum class DeleteTarget
@@ -43,6 +45,8 @@ private:
     void loadUserSettings();
     void setSampleBrowserVisible (bool shouldBeVisible);
     void loadBrowserFiles (const std::vector<juce::File>& files);
+    void openPresetSaveDialog (bool embedSamples, const juce::File& startFolder);
+    juce::String getDefaultPresetName() const;
     float computeEffectiveScale (float desiredScale) const;
     bool updateUiTransform();
     void applyLogicalSize();
@@ -65,6 +69,7 @@ private:
     float savedScale = -1.0f;
     bool sampleBrowserVisible = false;
     uint32_t lastUiSnapshotVersion = 0;
+    uint32_t lastPresetSaveVersion = 0;
     DeleteTarget deleteTarget = DeleteTarget::slice;
 
     IntersectLookAndFeel lnf;
@@ -78,6 +83,7 @@ private:
     ActionPanel     actionPanel;
 
     juce::TooltipWindow tooltipWindow { this, 500 };
+    std::unique_ptr<juce::FileChooser> presetChooser;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (IntersectEditor)
 };

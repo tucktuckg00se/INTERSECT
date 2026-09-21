@@ -1,6 +1,8 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "AppFiles.h"
 #include "Constants.h"
+#include "PresetFile.h"
 #include "audio/GrainEngine.h"
 #include "audio/AudioAnalysis.h"
 #include <cmath>
@@ -494,6 +496,7 @@ void IntersectProcessor::handleAsyncUpdate()
 {
     handleStemJobCompletionOnMessageThread();
     handleDownloadCompletionsOnMessageThread();
+    handlePresetJobCompletionOnMessageThread();
 }
 
 void IntersectProcessor::handleDownloadCompletionsOnMessageThread()
@@ -851,6 +854,8 @@ void IntersectProcessor::loadFilesAsync (const std::vector<juce::File>& files, b
     pendingStateRestoreToken.store (0, std::memory_order_release);
     if (files.empty())
         return;
+
+    presetLoadGeneration.fetch_add (1, std::memory_order_acq_rel);   // a newer load wins over a pending preset
 
     std::vector<juce::File> orderedFiles;
     std::vector<int> sampleIds;
@@ -3055,7 +3060,7 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
     {
         const auto& status = getUiStatusMessage();
-        if (status.isWarning
+        if ((status.isWarning || status.source == UiStatusMessage::Source::transientInfo)
             && status.shownAtMs > 0
             && juce::Time::currentTimeMillis() - status.shownAtMs >= 5000)
         {
@@ -3385,6 +3390,12 @@ void IntersectProcessor::getStateInformation (juce::MemoryBlock& destData)
 
 void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
+    presetLoadGeneration.fetch_add (1, std::memory_order_acq_rel);   // host restore wins over a pending preset
+    restoreState (data, sizeInBytes, {});
+}
+
+bool IntersectProcessor::restoreState (const void* data, int sizeInBytes, const RestoreOptions& options)
+{
     juce::MemoryInputStream stream (data, (size_t) sizeInBytes, false);
     pendingStateRestoreToken.store (0, std::memory_order_release);
     clearPendingStateFiles();
@@ -3397,7 +3408,7 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
                             true);
         uiSnapshotDirty.store (true, std::memory_order_release);
         publishUiSliceSnapshot();
-        return;
+        return false;
     }
 
     clearUiStatusMessage();
@@ -3405,7 +3416,16 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
     // APVTS state
     auto xmlString = stream.readString();
     if (auto xml = juce::parseXML (xmlString))
-        apvts.replaceState (juce::ValueTree::fromXml (*xml));
+    {
+        auto newState = juce::ValueTree::fromXml (*xml);
+        if (options.preserveUserPrefs && uiScaleParam != nullptr)
+        {
+            auto scaleParam = newState.getChildWithProperty ("id", ParamIds::uiScale);
+            if (scaleParam.isValid())
+                scaleParam.setProperty ("value", uiScaleParam->load(), nullptr);
+        }
+        apvts.replaceState (newState);
+    }
 
     if (version == 20)
         if (auto* param = dynamic_cast<juce::RangedAudioParameter*> (apvts.getParameter (ParamIds::defaultFilterEnvAmount)))
@@ -3422,7 +3442,7 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
     // Slice data
     const int storedNumSlices = stream.readInt();
     if (storedNumSlices < 0 || storedNumSlices > 4096)
-        return;
+        return false;
 
     const int validatedNumSlices = juce::jlimit (0, SliceManager::kMaxSlices, storedNumSlices);
     sliceManager.setNumSlices (validatedNumSlices);
@@ -3516,6 +3536,7 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
         std::vector<int> sliceSampleIds;
         std::vector<int> sliceStartsInSample;
         std::vector<int> sliceEndsInSample;
+        std::optional<StemComputeDevice> stemComputeDevice;
     };
 
     const auto postSliceBasePosition = stream.getPosition();
@@ -3723,7 +3744,7 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
                     if (requireBytes (4))
                     {
                         const int deviceInt = trialStream.readInt();
-                        stemComputeDevice = static_cast<StemComputeDevice> (juce::jlimit (0, 1, deviceInt));
+                        result.stemComputeDevice = static_cast<StemComputeDevice> (juce::jlimit (0, 1, deviceInt));
                     }
                 }
             }
@@ -3772,7 +3793,10 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
     }
 
     if (! postSliceResult->valid)
-        return;
+        return false;
+
+    if (postSliceResult->stemComputeDevice.has_value() && ! options.preserveUserPrefs)
+        stemComputeDevice = *postSliceResult->stemComputeDevice;
 
     for (int i = 0; i < validatedNumSlices; ++i)
     {
@@ -3829,6 +3853,12 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
         }
     }
 
+    auto resolveSamplePath = [&options] (const juce::String& savedPath)
+    {
+        return options.resolveSamplePath != nullptr ? options.resolveSamplePath (savedPath)
+                                                    : juce::File (savedPath);
+    };
+
     std::vector<juce::File> restoreFiles;
     std::vector<int> restoreSampleIds;
     if (! postSliceResult->sessionSamples.empty())
@@ -3837,17 +3867,25 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
         restoreSampleIds.reserve (postSliceResult->sessionSamples.size());
         for (const auto& sample : postSliceResult->sessionSamples)
         {
-            if (sample.filePath.isNotEmpty())
+            if (sample.filePath.isEmpty())
+                continue;
+
+            const auto file = resolveSamplePath (sample.filePath);
+            if (file != juce::File())
             {
-                restoreFiles.emplace_back (sample.filePath);
+                restoreFiles.push_back (file);
                 restoreSampleIds.push_back (sample.sampleId);
             }
         }
     }
     else if (filePath.isNotEmpty())
     {
-        restoreFiles.emplace_back (filePath);
-        restoreSampleIds.push_back (generateSessionSampleId());
+        const auto file = resolveSamplePath (filePath);
+        if (file != juce::File())
+        {
+            restoreFiles.push_back (file);
+            restoreSampleIds.push_back (generateSessionSampleId());
+        }
     }
 
     if (! restoreFiles.empty())
@@ -3881,12 +3919,203 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
     snapToZeroCrossing.store (postSliceResult->snapToZeroCrossing);
 
     // v19: MIDI edit settings
-    midiEditState.enabled.store (postSliceResult->midiEditEnabled, std::memory_order_relaxed);
-    midiEditState.channel.store (juce::jlimit (0, 16, postSliceResult->midiEditChannel), std::memory_order_relaxed);
-    midiEditState.consumeMidiEditCc.store (postSliceResult->consumeMidiEditCc, std::memory_order_relaxed);
+    if (! options.preserveUserPrefs)
+    {
+        midiEditState.enabled.store (postSliceResult->midiEditEnabled, std::memory_order_relaxed);
+        midiEditState.channel.store (juce::jlimit (0, 16, postSliceResult->midiEditChannel), std::memory_order_relaxed);
+        midiEditState.consumeMidiEditCc.store (postSliceResult->consumeMidiEditCc, std::memory_order_relaxed);
+    }
 
     sliceManager.rebuildMidiMap();
     publishUiSliceSnapshot();
+    return true;
+}
+
+namespace
+{
+// True when the pool job running on this thread has been asked to stop (e.g. plugin teardown).
+bool currentPoolJobShouldExit()
+{
+    auto* job = juce::ThreadPoolJob::getCurrentThreadPoolJob();
+    return job != nullptr && job->shouldExit();
+}
+}
+
+// Mirrors the sample-path choice in getStateInformation(): every session sample, or the single
+// legacy/missing/pending path when no session is loaded.
+juce::StringArray IntersectProcessor::getStateSampleFilePaths() const
+{
+    juce::StringArray paths;
+    if (auto sampleSnap = sampleData.getSnapshot())
+    {
+        const int numSessionSamples = juce::jmin ((int) sampleSnap->sessionSamples.size(),
+                                                  SampleData::kMaxSessionSamples);
+        for (int i = 0; i < numSessionSamples; ++i)
+            paths.addIfNotAlreadyThere (sampleSnap->sessionSamples[(size_t) i].filePath);
+
+        if (numSessionSamples == 0)
+            paths.add (sampleSnap->filePath);
+    }
+    else if (sampleMissing.load (std::memory_order_relaxed))
+    {
+        paths.add (getMissingFileInfo().filePath.toString());
+    }
+    else if (const auto pendingFile = getPendingStateFile(); pendingFile != juce::File())
+    {
+        paths.add (pendingFile.getFullPathName());
+    }
+
+    paths.removeEmptyStrings();
+    return paths;
+}
+
+void IntersectProcessor::savePresetAsync (const juce::File& destination, bool embedSamples)
+{
+    juce::MemoryBlock state;
+    getStateInformation (state);
+    const auto samplePaths = getStateSampleFilePaths();
+
+    if (embedSamples && ! samplePaths.isEmpty())
+        setUiStatusMessage ("Saving preset with samples...", false, UiStatusMessage::Source::transientInfo);
+
+    fileLoadPool.addJob ([this, destination, embedSamples, state, samplePaths]
+    {
+        PresetJobResult done;
+        done.kind = PresetJobResult::Kind::save;
+        done.presetFile = destination;
+        done.result = PresetFile::write (destination, state, samplePaths, embedSamples,
+                                         [] { return currentPoolJobShouldExit(); });
+        if (! currentPoolJobShouldExit())
+            postPresetJobResult (std::move (done));
+    });
+}
+
+void IntersectProcessor::loadPresetAsync (const juce::File& presetFile)
+{
+    if (stemJob.getState() != StemJobState::idle)
+    {
+        setUiStatusMessage ("Finish or cancel stem separation before loading a preset", true);
+        return;
+    }
+
+    const int generation = presetLoadGeneration.fetch_add (1, std::memory_order_acq_rel) + 1;
+    const auto cacheDir = AppFiles::getPresetSampleCacheDir();
+
+    fileLoadPool.addJob ([this, presetFile, generation, cacheDir]
+    {
+        auto superseded = [this, generation]
+        {
+            return currentPoolJobShouldExit()
+                || presetLoadGeneration.load (std::memory_order_acquire) != generation;
+        };
+
+        PresetJobResult done;
+        done.kind = PresetJobResult::Kind::load;
+        done.generation = generation;
+        done.presetFile = presetFile;
+
+        PresetFile::Contents contents;
+        done.result = PresetFile::read (presetFile, contents);
+        if (done.result.wasOk())
+        {
+            const auto resolved = PresetFile::resolveSamples (presetFile, contents, cacheDir, superseded);
+            for (size_t i = 0; i < resolved.size(); ++i)
+            {
+                if (resolved[i] != juce::File())
+                    done.resolvedSamples[contents.samples[i].savedPath] = resolved[i];
+                else
+                    ++done.missingSamples;
+            }
+            done.state = std::move (contents.state);
+        }
+
+        if (! superseded())
+            postPresetJobResult (std::move (done));
+    });
+}
+
+void IntersectProcessor::postPresetJobResult (PresetJobResult result)
+{
+    {
+        const juce::ScopedLock sl (presetJobLock);
+        completedPresetJobs.push_back (std::move (result));
+    }
+    triggerAsyncUpdate();
+}
+
+void IntersectProcessor::handlePresetJobCompletionOnMessageThread()
+{
+    std::vector<PresetJobResult> finished;
+    {
+        const juce::ScopedLock sl (presetJobLock);
+        finished.swap (completedPresetJobs);
+    }
+
+    for (const auto& job : finished)
+    {
+        if (job.kind == PresetJobResult::Kind::load)
+        {
+            applyLoadedPreset (job);
+            continue;
+        }
+
+        if (job.result.failed())
+        {
+            setUiStatusMessage (job.result.getErrorMessage(), true);
+            continue;
+        }
+
+        lastSavedPresetFile = job.presetFile;
+        ++presetSaveVersion;
+        setUiStatusMessage ("Saved preset " + job.presetFile.getFileNameWithoutExtension(), false,
+                            UiStatusMessage::Source::transientInfo);
+    }
+}
+
+void IntersectProcessor::applyLoadedPreset (const PresetJobResult& job)
+{
+    // A later preset load, sample load or host restore happened while this one was in flight.
+    if (job.generation != presetLoadGeneration.load (std::memory_order_acquire))
+        return;
+
+    if (job.result.failed())
+    {
+        setUiStatusMessage (job.result.getErrorMessage(), true);
+        return;
+    }
+
+    if (stemJob.getState() != StemJobState::idle)
+    {
+        setUiStatusMessage ("Finish or cancel stem separation before loading a preset", true);
+        return;
+    }
+
+    // Queue the current kit as an undo step first, so UNDO brings it back.
+    enqueueUiUndoSnapshot();
+
+    RestoreOptions options;
+    options.preserveUserPrefs = true;
+    options.resolveSamplePath = [&job] (const juce::String& savedPath)
+    {
+        if (const auto it = job.resolvedSamples.find (savedPath); it != job.resolvedSamples.end())
+            return it->second;
+
+        // Unresolved: keep the saved path so the relink flow can name the missing file.
+        return juce::File::isAbsolutePath (savedPath) ? juce::File (savedPath) : juce::File();
+    };
+
+    if (! restoreState (job.state.getData(), (int) job.state.getSize(), options))
+        return;   // restoreState reported the problem
+
+    updateHostDisplay (ChangeDetails().withNonParameterStateChanged (true));
+
+    const auto name = job.presetFile.getFileNameWithoutExtension();
+    if (job.missingSamples > 0)
+        setUiStatusMessage ("Loaded preset " + name + " - " + juce::String (job.missingSamples)
+                                + (job.missingSamples == 1 ? " sample" : " samples") + " not found",
+                            true);
+    else
+        setUiStatusMessage ("Loaded preset " + name, false, UiStatusMessage::Source::transientInfo);
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()

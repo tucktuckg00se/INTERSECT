@@ -2,6 +2,7 @@
 #include "UIHelpers.h"
 #include "IntersectLookAndFeel.h"
 #include "LinuxDesktopSupport.h"
+#include "../AppFiles.h"
 #include "../Constants.h"
 #include "../PluginProcessor.h"
 #include "../audio/AudioAnalysis.h"
@@ -1341,10 +1342,10 @@ void WaveformView::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseW
 
 bool WaveformView::isInterestedInFileDrag (const juce::StringArray& files)
 {
-    for (auto& f : files)
+    for (const auto& path : files)
     {
-        auto ext = juce::File (f).getFileExtension().toLowerCase();
-        if (ext == ".wav" || ext == ".ogg" || ext == ".aiff" || ext == ".aif" || ext == ".flac" || ext == ".mp3")
+        const juce::File file (path);
+        if (AppFiles::isSupportedAudioFile (file) || AppFiles::isPresetFile (file))
             return true;
     }
     return false;
@@ -1352,34 +1353,7 @@ bool WaveformView::isInterestedInFileDrag (const juce::StringArray& files)
 
 void WaveformView::filesDropped (const juce::StringArray& files, int, int)
 {
-    if (! files.isEmpty())
-    {
-        std::vector<juce::File> droppedFiles;
-        droppedFiles.reserve (files.size());
-        for (const auto& path : files)
-        {
-            juce::File file (path);
-            if (file.existsAsFile())
-            {
-                const auto ext = file.getFileExtension().toLowerCase();
-                if (ext != ".wav" && ext != ".ogg" && ext != ".aiff" && ext != ".aif" && ext != ".flac" && ext != ".mp3")
-                    continue;
-                droppedFiles.push_back (file);
-            }
-        }
-
-        if (droppedFiles.empty())
-            return;
-
-        const bool append = processor.sampleData.isLoaded();
-        processor.loadFilesAsync (droppedFiles, append);
-        if (! append)
-        {
-            processor.zoom.store (1.0f);
-            processor.scroll.store (0.0f);
-        }
-        prevCacheKey = {};
-    }
+    loadDroppedFiles (files);
 }
 
 bool WaveformView::isInterestedInDragSource (const juce::DragAndDropTarget::SourceDetails& dragSourceDetails)
@@ -1393,26 +1367,42 @@ void WaveformView::itemDropped (const juce::DragAndDropTarget::SourceDetails& dr
     if (! text.startsWith ("INTERSECT_BROWSER_FILES\n"))
         return;
 
-    auto paths = juce::StringArray::fromLines (text.fromFirstOccurrenceOf ("\n", false, false));
-    std::vector<juce::File> droppedFiles;
-    droppedFiles.reserve ((size_t) paths.size());
+    loadDroppedFiles (juce::StringArray::fromLines (text.fromFirstOccurrenceOf ("\n", false, false)));
+}
+
+// Shared by OS and browser drops. A preset replaces the whole kit, so the first one in a drop
+// wins and everything else is ignored; otherwise audio files follow the usual replace/append rule.
+void WaveformView::loadDroppedFiles (const juce::StringArray& paths)
+{
+    std::vector<juce::File> audioFiles;
+    audioFiles.reserve ((size_t) paths.size());
 
     for (const auto& path : paths)
     {
-        const juce::File file (path.trim());
+        const auto trimmed = path.trim();
+        if (! juce::File::isAbsolutePath (trimmed))
+            continue;
+
+        const juce::File file (trimmed);
         if (! file.existsAsFile())
             continue;
 
-        const auto ext = file.getFileExtension().toLowerCase();
-        if (ext == ".wav" || ext == ".ogg" || ext == ".aiff" || ext == ".aif" || ext == ".flac" || ext == ".mp3")
-            droppedFiles.push_back (file);
+        if (AppFiles::isPresetFile (file))
+        {
+            processor.loadPresetAsync (file);
+            prevCacheKey = {};
+            return;
+        }
+
+        if (AppFiles::isSupportedAudioFile (file))
+            audioFiles.push_back (file);
     }
 
-    if (droppedFiles.empty())
+    if (audioFiles.empty())
         return;
 
     const bool append = processor.sampleData.isLoaded();
-    processor.loadFilesAsync (droppedFiles, append);
+    processor.loadFilesAsync (audioFiles, append);
     if (! append)
     {
         processor.zoom.store (1.0f);

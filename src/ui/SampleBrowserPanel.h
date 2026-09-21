@@ -23,15 +23,34 @@ public:
     juce::StringArray getBookmarks() const;
     void refreshThemeColours();
 
+    /** Optional user presets folder, listed under PRESETS next to the default one. */
+    void setCustomPresetsFolder (const juce::File& folder);
+    juce::File getCustomPresetsFolder() const { return customPresetsFolder; }
+
+    /** Navigates to the file's folder and selects it (e.g. a preset that was just saved). */
+    void revealFile (const juce::File& file);
+
     std::function<void (const std::vector<juce::File>&)> onFilesChosen;
+    std::function<void (const juce::File&)> onPresetChosen;
+    /** SAVE menu choice: whether to embed samples, and the folder the save dialog should start in. */
+    std::function<void (bool embedSamples, const juce::File& startFolder)> onSavePresetRequested;
     std::function<void()> onBookmarksChanged;
 
 private:
     enum class LocationKind
     {
         section,
+        presets,
         drive,
         bookmark,
+    };
+
+    enum class FileKind
+    {
+        other,
+        directory,
+        audio,
+        preset,
     };
 
     struct LocationRow
@@ -45,8 +64,7 @@ private:
     struct FileRow
     {
         juce::File file;
-        bool directory = false;
-        bool audio = false;
+        FileKind kind = FileKind::other;
     };
 
     class LocationListModel : public juce::ListBoxModel
@@ -115,6 +133,9 @@ private:
     void removeBookmark (const juce::File& dir);
     bool hasBookmark (const juce::File& dir) const;
     std::vector<juce::File> getSelectedAudioFiles() const;
+    void showSaveMenu();
+    juce::File getPresetSaveStartFolder() const;
+    bool isInPresetsFolder (const juce::File& dir) const;
     juce::String makeDragDescriptionForRows (const juce::SparseSet<int>& rows) const;
     void beginPathEditing();
     void endPathEditing (bool resetTextToCurrentDirectory);
@@ -124,7 +145,7 @@ private:
     void updateSplitterCursor (juce::Point<int> position);
     int getDefaultLocationSectionHeight (const juce::Rectangle<int>& area) const;
     int clampLocationSectionHeight (int height, const juce::Rectangle<int>& area) const;
-    bool isSupportedAudioFile (const juce::File& file) const;
+    static FileKind classifyFile (const juce::File& file);
     juce::String locationPrefixForKind (LocationKind kind) const;
     juce::String formatFileMeta (const FileRow& row) const;
 
@@ -139,6 +160,7 @@ private:
     juce::TextButton forwardButton { juce::String::charToString (0x2192) }; // →
     juce::TextButton upButton { juce::String::charToString (0x2191) };      // ↑
     juce::TextButton refreshButton { juce::String::charToString (0x21BB) }; // ↻
+    juce::TextButton saveButton { "SAVE" };
     SearchToggleButton searchToggleButton;
     juce::Label titleLabel;
     PathDisplay pathDisplay { *this };
@@ -154,6 +176,7 @@ private:
     std::vector<LocationRow> locations;
     std::vector<FileRow> files;
     juce::StringArray bookmarkPaths;
+    juce::File customPresetsFolder;
     juce::File currentDirectory;
     juce::Array<juce::File> history;
     int historyIndex = -1;

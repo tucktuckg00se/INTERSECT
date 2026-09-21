@@ -36,10 +36,13 @@ Toggled by the `FILES` button in the header. The browser docks to the side of th
 | `←` / `→` | Back / forward through visited folders | Disabled at ends of history |
 | `↑` | Go up one directory | Same as pressing `Backspace` while the browser has focus |
 | `↻` | Refresh the current directory listing | Re-reads the folder from disk |
+| `SAVE` | Save the current kit as a preset | **Save Preset...** or **Save Preset with Samples...** (embeds the audio for sharing) — see [Presets]({{ site.baseurl }}{% link presets.md %}) |
 | Path display | Click to edit the current path inline | Press `Return` to navigate |
 | File list | Double-click a folder to enter it; double-click an audio file (or select files and press `Return`) to load | Multi-select supported when appending |
+| Presets in the file list | `.intersectpreset` files, marked `P`; double-click, press `Return`, or right-click → **Load Preset** | Loading a preset replaces the whole kit; `UNDO` brings the previous one back |
+| Presets locations | `Default` presets folder, plus your custom presets folder if one is set in **SET → Presets** | The default folder is created the first time you open it |
 | Bookmarks | Pinned shortcuts to favorite folders | Right-click a folder row to **Add Bookmark**; right-click a bookmark entry to **Remove Bookmark** — bookmarks persist with user settings |
-| Drag-and-drop | Drag selected files from the browser onto the waveform | Follows the same replace/append rule as double-click loads |
+| Drag-and-drop | Drag selected files from the browser onto the waveform | Follows the same replace/append rule as double-click loads; dropping a preset loads it instead |
 
 Loading behavior matches the rest of INTERSECT: into an empty session, the first load replaces and resets zoom/scroll; when a sample is already loaded, further loads append to the session.
 

@@ -6,7 +6,7 @@ description: "Where INTERSECT writes user settings and what each key does — th
 
 # Settings file
 
-INTERSECT persists user-wide preferences (the ones that aren't part of a saved session) to a single file: `settings.yaml`. This includes the active theme, UI scale, NRPN settings, sample browser bookmarks, and the stem separation model folder.
+INTERSECT persists user-wide preferences (the ones that aren't part of a saved session) to a single file: `settings.yaml`. This includes the active theme, UI scale, NRPN settings, sample browser bookmarks, the custom presets folder, and the stem separation model folder.
 
 ## Where it lives
 
@@ -16,7 +16,7 @@ INTERSECT persists user-wide preferences (the ones that aren't part of a saved s
 | macOS | `~/Library/Application Support/INTERSECT/settings.yaml` |
 | Linux | `~/.config/INTERSECT/settings.yaml` |
 
-The folder is created on first launch. `themes/`, downloaded ONNX Runtime bundles, and downloaded stem models also live alongside it.
+The folder is created on first launch. `themes/`, `presets/` (your saved presets), `preset-samples/` (audio unpacked from presets saved with samples), downloaded ONNX Runtime bundles, and downloaded stem models also live alongside it.
 
 ## When it's written
 
@@ -28,6 +28,7 @@ The folder is created on first launch. `themes/`, downloaded ONNX Runtime bundle
 - Toggle the sample browser (`FILES`) or change browser bookmarks
 - Change any NRPN setting in **SET → NRPN Settings**
 - Select a stem model folder or compute device in **SET → Stem Separation**
+- Choose or clear a custom presets folder in **SET → Presets**
 
 If the settings folder can't be created (sandboxed plugin host, read-only home), the save is skipped silently — INTERSECT still runs with the in-memory defaults.
 
@@ -47,6 +48,7 @@ sampleBrowserBookmarks:
   - /home/you/samples/breaks
   - /home/you/samples/oneshots
 stemModelFolder: /home/you/.config/INTERSECT/stem-models
+presetFolder: /home/you/Sync/intersect-presets
 stemComputeDevice: cuda
 ```
 
@@ -63,6 +65,7 @@ stemComputeDevice: cuda
 | `sampleBrowserVisible` | bool | `true` / `false` | Whether the `FILES` browser side panel is open. |
 | `sampleBrowserBookmarks` | list | YAML-style nested list of paths | Pinned folders shown in the sample browser. |
 | `stemModelFolder` | string | filesystem path | Folder INTERSECT scans for ONNX stem models. |
+| `presetFolder` | string | filesystem path | Custom presets folder, listed in the browser alongside the default `presets/` folder. Omitted when none is set. |
 | `stemComputeDevice` | string | `cpu`, `cuda`, `migraphx`, `directml`, `coreml` (depends on platform) | Active stem-separation device. |
 
 ## Legacy keys
@@ -90,6 +93,7 @@ Only copy the file from inside `themes/`. The `theme:` line in someone else's `s
 ## Related
 
 - [Themes]({{ site.baseurl }}{% link themes.md %}) — what the `theme:` value points at.
+- [Presets]({{ site.baseurl }}{% link presets.md %}) — what the `presetFolder:` value adds to the browser.
 - [NRPN MIDI routing]({{ site.baseurl }}{% link nrpn-midi.md %}) — what the `nrpn*` keys control.
 - [Installation → Stem separation setup]({{ site.baseurl }}{% link installation.md %}#stem-separation-setup) — what the `stem*` keys point at.
 - [Parameter reference]({{ site.baseurl }}{% link parameter-reference.md %}) — for in-session parameters (those live in the saved project, not in `settings.yaml`).

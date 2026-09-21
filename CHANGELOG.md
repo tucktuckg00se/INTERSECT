@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Built-in presets (#47): save the whole kit (samples, slices and all settings) as an `.intersectpreset` file from the new `SAVE` button in the FILES browser, and load it by double-clicking it, choosing **Load Preset**, or dropping it on the waveform. **Save Preset with Samples** puts the audio inside the preset so a single file can be shared. Presets live in a `presets` folder next to your themes, you can add your own presets folder in **SET → Presets**, and loading a preset can be undone.
+
 ## [0.15.4] - 2026-07-25
 
 ### Added

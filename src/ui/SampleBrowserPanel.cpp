@@ -1,5 +1,6 @@
 #include "SampleBrowserPanel.h"
 #include "IntersectLookAndFeel.h"
+#include "../AppFiles.h"
 #include <algorithm>
 
 namespace
@@ -8,6 +9,9 @@ enum MenuIds
 {
     kAddBookmark = 1,
     kRemoveBookmark,
+    kLoadPreset,
+    kSavePreset,
+    kSavePresetWithSamples,
 };
 
 const juce::String kBrowserDragPrefix = "INTERSECT_BROWSER_FILES\n";
@@ -150,6 +154,11 @@ SampleBrowserPanel::SampleBrowserPanel()
     upButton.setTooltip ("Up folder");
     refreshButton.setTooltip ("Refresh");
 
+    saveButton.getProperties().set (IntersectLookAndFeel::outlineOnlyButtonProperty, true);
+    saveButton.setTooltip ("Save the current kit as a preset");
+    saveButton.onClick = [this] { showSaveMenu(); };
+    addAndMakeVisible (saveButton);
+
     addAndMakeVisible (searchToggleButton);
     searchToggleButton.onClick = [this] { setSearchInputMode (! searchInputMode); };
 
@@ -180,7 +189,11 @@ SampleBrowserPanel::SampleBrowserPanel()
     searchStatusLabel.setFont (IntersectLookAndFeel::makeFont (10.0f));
     addChildComponent (searchStatusLabel);
 
-    searcher.isAudioFile = [this] (const juce::File& f) { return isSupportedAudioFile (f); };
+    // Runs on the search thread for non-directories only, so check extensions without another stat.
+    searcher.isListedFile = [] (const juce::File& f)
+    {
+        return AppFiles::isSupportedAudioFile (f) || AppFiles::isPresetFile (f);
+    };
     searcher.onComplete = [this] (const DirectorySearch::Result& r) { applySearchResults (r); };
 
     backButton.onClick = [this]
@@ -272,6 +285,8 @@ void SampleBrowserPanel::resized()
     navArea.removeFromLeft (gap);
     refreshButton.setBounds (navArea.removeFromLeft (navW));
 
+    titleRow.removeFromRight (gap * 2);
+    saveButton.setBounds (titleRow.removeFromRight (40));
     titleRow.removeFromRight (8);
     titleLabel.setBounds (titleRow);
 
@@ -399,6 +414,39 @@ juce::StringArray SampleBrowserPanel::getBookmarks() const
     return bookmarkPaths;
 }
 
+void SampleBrowserPanel::setCustomPresetsFolder (const juce::File& folder)
+{
+    customPresetsFolder = folder;
+    rebuildLocations();
+}
+
+void SampleBrowserPanel::revealFile (const juce::File& file)
+{
+    const auto dir = file.getParentDirectory();
+    if (! dir.isDirectory())
+        return;
+
+    if (samePath (dir, currentDirectory))
+    {
+        refreshFiles();
+        rebuildLocations();
+    }
+    else
+    {
+        setCurrentDirectory (dir);
+    }
+
+    for (int row = 0; row < (int) files.size(); ++row)
+    {
+        if (samePath (files[(size_t) row].file, file))
+        {
+            fileList.selectRow (row);
+            fileList.scrollToEnsureRowIsOnscreen (row);
+            break;
+        }
+    }
+}
+
 int SampleBrowserPanel::LocationListModel::getNumRows()
 {
     return owner.getNumLocationRows();
@@ -502,12 +550,21 @@ void SampleBrowserPanel::paintFileRow (int row, juce::Graphics& g, int width, in
 
     auto textBounds = rowBounds.reduced (6, 0);
     g.setFont (IntersectLookAndFeel::makeFont (9.5f, true));
-    g.setColour (item.directory ? getTheme().color1.brighter (0.25f) : getTheme().waveform.withAlpha (0.92f));
-    g.drawText (item.directory ? "D" : "W", textBounds.removeFromLeft (18), juce::Justification::centredLeft, true);
+    switch (item.kind)
+    {
+        case FileKind::directory: g.setColour (getTheme().color1.brighter (0.25f)); break;
+        case FileKind::preset:    g.setColour (getTheme().accent); break;
+        case FileKind::audio:
+        case FileKind::other:     g.setColour (getTheme().waveform.withAlpha (0.92f)); break;
+    }
+    const auto glyph = item.kind == FileKind::directory ? "D"
+                     : item.kind == FileKind::preset    ? "P"
+                                                        : "W";
+    g.drawText (glyph, textBounds.removeFromLeft (18), juce::Justification::centredLeft, true);
 
     auto metaBounds = textBounds.removeFromRight (46);
     g.setFont (IntersectLookAndFeel::makeFont (9.5f));
-    g.setColour (item.audio || item.directory ? getTheme().text2 : getTheme().text0.withAlpha (0.55f));
+    g.setColour (item.kind != FileKind::other ? getTheme().text2 : getTheme().text0.withAlpha (0.55f));
     g.drawText (item.file.getFileName(), textBounds, juce::Justification::centredLeft, true);
     g.setColour (getTheme().text0.withAlpha (0.8f));
     g.drawText (formatFileMeta (item), metaBounds, juce::Justification::centredRight, true);
@@ -524,6 +581,11 @@ void SampleBrowserPanel::locationRowClicked (int row, const juce::MouseEvent& e)
     if (row >= 0 && row < (int) locations.size())
     {
         const auto& item = locations[(size_t) row];
+
+        // The default presets folder is created on first visit rather than at startup.
+        if (item.kind == LocationKind::presets && samePath (item.file, AppFiles::getPresetsDir()))
+            (void) item.file.createDirectory();
+
         if (item.kind != LocationKind::section && ! item.unavailable && item.file.isDirectory())
             setCurrentDirectory (item.file);
     }
@@ -565,6 +627,16 @@ void SampleBrowserPanel::rebuildLocations()
 
         locations.push_back ({ kind, label, file, ! file.isDirectory() });
     };
+
+    addSection ("Presets");
+    locations.push_back ({ LocationKind::presets, "Default", AppFiles::getPresetsDir(), false });
+    if (customPresetsFolder != juce::File() && ! samePath (customPresetsFolder, AppFiles::getPresetsDir()))
+    {
+        auto label = customPresetsFolder.getFileName();
+        if (label.isEmpty())
+            label = customPresetsFolder.getFullPathName();
+        locations.push_back ({ LocationKind::presets, label, customPresetsFolder, ! customPresetsFolder.isDirectory() });
+    }
 
     addSection ("Bookmarks");
     for (const auto& path : bookmarkPaths)
@@ -662,10 +734,9 @@ void SampleBrowserPanel::populateCurrentDirectoryFiles()
 
         for (const auto& child : children)
         {
-            const bool isDir = child.isDirectory();
-            const bool isAudio = isSupportedAudioFile (child);
-            if (isDir || isAudio)
-                files.push_back ({ child, isDir, isAudio });
+            const auto kind = classifyFile (child);
+            if (kind != FileKind::other)
+                files.push_back ({ child, kind });
         }
     }
 
@@ -706,14 +777,19 @@ void SampleBrowserPanel::activateFileRow (int row)
     if (row < 0 || row >= (int) files.size())
         return;
 
-    const auto& item = files[(size_t) row];
-    if (item.directory)
+    const auto item = files[(size_t) row];
+    if (item.kind == FileKind::directory)
     {
         setCurrentDirectory (item.file);
         return;
     }
 
-    if (item.audio && item.file.existsAsFile() && onFilesChosen != nullptr)
+    if (! item.file.existsAsFile())
+        return;
+
+    if (item.kind == FileKind::preset && onPresetChosen != nullptr)
+        onPresetChosen (item.file);
+    else if (item.kind == FileKind::audio && onFilesChosen != nullptr)
         onFilesChosen ({ item.file });
 }
 
@@ -762,13 +838,16 @@ void SampleBrowserPanel::showFileMenu (int row, juce::Point<int> position)
         return;
 
     const auto item = files[(size_t) row];
-    if (! item.directory)
-        return;
 
     juce::PopupMenu menu;
     menu.setLookAndFeel (&getLookAndFeel());
-    if (! hasBookmark (item.file))
+    if (item.kind == FileKind::preset)
+        menu.addItem (kLoadPreset, "Load Preset");
+    else if (item.kind == FileKind::directory && ! hasBookmark (item.file))
         menu.addItem (kAddBookmark, "Add Bookmark");
+
+    if (menu.getNumItems() == 0)
+        return;
 
     menu.showMenuAsync (IntersectLookAndFeel::makeEditorMenuOptions (*this)
                             .withTargetScreenArea ({ position, { 1, 1 } }),
@@ -776,7 +855,51 @@ void SampleBrowserPanel::showFileMenu (int row, juce::Point<int> position)
         {
             if (result == kAddBookmark)
                 addBookmark (item.file);
+            else if (result == kLoadPreset && item.file.existsAsFile() && onPresetChosen != nullptr)
+                onPresetChosen (item.file);
         });
+}
+
+void SampleBrowserPanel::showSaveMenu()
+{
+    juce::PopupMenu menu;
+    menu.setLookAndFeel (&getLookAndFeel());
+    menu.addItem (kSavePreset, "Save Preset...");
+    menu.addItem (kSavePresetWithSamples, "Save Preset with Samples...");
+
+    menu.showMenuAsync (IntersectLookAndFeel::makeEditorMenuOptions (*this)
+                            .withTargetComponent (&saveButton),
+        [safe = juce::Component::SafePointer<SampleBrowserPanel> (this)] (int result)
+        {
+            if (safe == nullptr || safe->onSavePresetRequested == nullptr)
+                return;
+
+            if (result == kSavePreset || result == kSavePresetWithSamples)
+                safe->onSavePresetRequested (result == kSavePresetWithSamples,
+                                             safe->getPresetSaveStartFolder());
+        });
+}
+
+// Stay in the folder being browsed when it is a presets folder (or inside one); otherwise start
+// in the custom presets folder, falling back to the default one.
+juce::File SampleBrowserPanel::getPresetSaveStartFolder() const
+{
+    if (isInPresetsFolder (currentDirectory))
+        return currentDirectory;
+
+    if (customPresetsFolder.isDirectory())
+        return customPresetsFolder;
+
+    return AppFiles::getPresetsDir();
+}
+
+bool SampleBrowserPanel::isInPresetsFolder (const juce::File& dir) const
+{
+    for (const auto& root : { AppFiles::getPresetsDir(), customPresetsFolder })
+        if (root != juce::File() && (samePath (dir, root) || dir.isAChildOf (root)))
+            return true;
+
+    return false;
 }
 
 void SampleBrowserPanel::addBookmark (const juce::File& dir)
@@ -821,7 +944,7 @@ std::vector<juce::File> SampleBrowserPanel::getSelectedAudioFiles() const
         if (row >= 0 && row < (int) files.size())
         {
             const auto& item = files[(size_t) row];
-            if (item.audio && item.file.existsAsFile())
+            if (item.kind == FileKind::audio && item.file.existsAsFile())
                 selected.push_back (item.file);
         }
     }
@@ -837,7 +960,7 @@ juce::String SampleBrowserPanel::makeDragDescriptionForRows (const juce::SparseS
         if (row >= 0 && row < (int) files.size())
         {
             const auto& item = files[(size_t) row];
-            if (item.audio && item.file.existsAsFile())
+            if ((item.kind == FileKind::audio || item.kind == FileKind::preset) && item.file.existsAsFile())
                 paths.add (item.file.getFullPathName());
         }
     }
@@ -961,7 +1084,7 @@ void SampleBrowserPanel::applySearchResults (const DirectorySearch::Result& resu
     files.clear();
     files.reserve (result.matches.size());
     for (const auto& m : result.matches)
-        files.push_back ({ m.file, m.directory, m.audio });
+        files.push_back ({ m.file, m.directory ? FileKind::directory : classifyFile (m.file) });
 
     fileList.deselectAllRows();
     fileList.updateContent();
@@ -1029,7 +1152,7 @@ void SampleBrowserPanel::refreshThemeColours()
     searchToggleButton.repaint();
     clearSearchButton.repaint();
     updateSearchStatusLabel();   // re-theme the search status/truncation strip if it is showing
-    for (auto* button : { &backButton, &forwardButton, &upButton, &refreshButton })
+    for (auto* button : { &backButton, &forwardButton, &upButton, &refreshButton, &saveButton })
         button->repaint();
     locationList.repaint();
     fileList.repaint();
@@ -1084,7 +1207,7 @@ void SampleBrowserPanel::updateListThemeColours()
     searchEditor.setColour (juce::TextEditor::highlightColourId, getTheme().accent.withAlpha (0.35f));
     searchEditor.setTextToShowWhenEmpty (kSearchPlaceholder, getTheme().text0.withAlpha (0.55f));
 
-    for (auto* button : { &backButton, &forwardButton, &upButton, &refreshButton })
+    for (auto* button : { &backButton, &forwardButton, &upButton, &refreshButton, &saveButton })
     {
         button->setColour (juce::TextButton::buttonColourId,
                            (button->isMouseOverOrDragging() ? getTheme().surface5 : getTheme().surface4).withAlpha (0.95f));
@@ -1142,17 +1265,22 @@ int SampleBrowserPanel::clampLocationSectionHeight (int height, const juce::Rect
     return juce::jlimit (minLocationH, maxLocationH, height);
 }
 
-bool SampleBrowserPanel::isSupportedAudioFile (const juce::File& file) const
+SampleBrowserPanel::FileKind SampleBrowserPanel::classifyFile (const juce::File& file)
 {
-    const auto ext = file.getFileExtension().toLowerCase();
-    return ext == ".wav" || ext == ".ogg" || ext == ".aiff"
-        || ext == ".aif" || ext == ".flac" || ext == ".mp3";
+    if (file.isDirectory())
+        return FileKind::directory;
+    if (AppFiles::isSupportedAudioFile (file))
+        return FileKind::audio;
+    if (AppFiles::isPresetFile (file))
+        return FileKind::preset;
+    return FileKind::other;
 }
 
 juce::String SampleBrowserPanel::locationPrefixForKind (LocationKind kind) const
 {
     switch (kind)
     {
+        case LocationKind::presets: return "P";
         case LocationKind::drive: return "D";
         case LocationKind::bookmark: return "*";
         case LocationKind::section: break;
@@ -1162,7 +1290,7 @@ juce::String SampleBrowserPanel::locationPrefixForKind (LocationKind kind) const
 
 juce::String SampleBrowserPanel::formatFileMeta (const FileRow& row) const
 {
-    if (row.directory)
+    if (row.kind == FileKind::directory)
         return "DIR";
 
     const auto bytes = row.file.getSize();

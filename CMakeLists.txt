@@ -134,6 +134,7 @@ juce_add_binary_data(IntersectFonts SOURCES
 target_sources(Intersect PRIVATE
     src/PluginProcessor.cpp
     src/PluginEditor.cpp
+    src/PresetFile.cpp
     src/StandaloneApp.cpp
     src/audio/SampleData.cpp
     src/audio/SliceManager.cpp
@@ -192,6 +193,7 @@ endif()
 target_link_libraries(Intersect
     PRIVATE
         juce::juce_audio_utils
+        juce::juce_cryptography
         juce::juce_dsp
         bungee_lib
         IntersectFonts

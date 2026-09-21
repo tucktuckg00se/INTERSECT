@@ -44,6 +44,7 @@ public:
     std::vector<int> transientPreviewPositions;
 
 private:
+    void loadDroppedFiles (const juce::StringArray& paths);
     struct ViewState
     {
         int numFrames = 0;
