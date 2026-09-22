@@ -33,6 +33,8 @@ enum SettingsMenuItemId
     kMenuPresetDefaultFolder = 5000,
     kMenuPresetCustomFolder,
     kMenuPresetClearCustomFolder,
+    kMenuPresetOpenDefaultFolder,
+    kMenuPresetOpenCustomFolder,
 };
 
 float measureTextWidth (const juce::Font& font, const juce::String& text)
@@ -61,7 +63,7 @@ juce::String formatNrpnStatus (int channel)
 
 HeaderBar::HeaderBar (IntersectProcessor& p) : processor (p)
 {
-    for (auto* btn : { &browserBtn, &undoBtn, &redoBtn, &panicBtn, &settingsBtn })
+    for (auto* btn : { &browserBtn, &saveBtn, &undoBtn, &redoBtn, &panicBtn, &settingsBtn })
     {
         addAndMakeVisible (*btn);
         btn->setAlwaysOnTop (true);
@@ -81,13 +83,20 @@ HeaderBar::HeaderBar (IntersectProcessor& p) : processor (p)
 
     undoBtn.setTooltip ("Undo (Ctrl+Z)");
     redoBtn.setTooltip ("Redo (Ctrl+Shift+Z)");
-    browserBtn.setTooltip ("Show or hide file browser");
+    browserBtn.setTooltip ("Open the file browser");
     settingsBtn.setTooltip ("Settings");
 
     browserBtn.onClick = [this]
     {
         if (onBrowserToggle != nullptr)
             onBrowserToggle();
+    };
+
+    saveBtn.setTooltip ("Save the kit to your preset library");
+    saveBtn.onClick = [this]
+    {
+        if (onSaveRequested != nullptr)
+            onSaveRequested();
     };
 
     undoBtn.onClick = [this]
@@ -137,10 +146,12 @@ void HeaderBar::resized()
     const int redoW = buttonWidth (redoBtn.getButtonText(), 44);
     const int undoW = buttonWidth (undoBtn.getButtonText(), 44);
     const int browserW = buttonWidth (browserBtn.getButtonText(), 46);
+    const int saveW = buttonWidth (saveBtn.getButtonText(), 44);
     const int rightStripW = undoW + redoW + panicW + setW + buttonGap * 3;
     const auto centredY = area.getY() + (area.getHeight() - buttonHeight) / 2;
 
     browserBtn.setBounds (area.getX(), centredY, browserW, buttonHeight);
+    saveBtn.setBounds (browserBtn.getRight() + buttonGap, centredY, saveW, buttonHeight);
 
     auto buttonArea = area.removeFromRight (rightStripW);
     juce::FlexBox buttons;
@@ -156,7 +167,7 @@ void HeaderBar::resized()
     buttons.items.add (juce::FlexItem (settingsBtn).withWidth ((float) setW).withHeight ((float) buttonHeight));
     buttons.performLayout (buttonArea.toFloat());
 
-    const int leftGuard = browserW + 12;
+    const int leftGuard = browserW + buttonGap + saveW + 12;
     const int rightGuard = rightStripW + 12;
     sampleInfoBounds = getLocalBounds().reduced (juce::jmax (leftGuard, rightGuard), 0)
                                      .withHeight (contentHeight)
@@ -165,12 +176,12 @@ void HeaderBar::resized()
 
 void HeaderBar::paint (juce::Graphics& g)
 {
-    for (auto* btn : { &browserBtn, &undoBtn, &redoBtn, &panicBtn, &settingsBtn })
+    for (auto* btn : { &browserBtn, &saveBtn, &undoBtn, &redoBtn, &panicBtn, &settingsBtn })
     {
         auto text = getTheme().text2.withAlpha (btn->isMouseOverOrDragging() ? 1.0f : 0.88f);
         btn->setColour (juce::TextButton::buttonColourId,
                         (btn->isMouseOverOrDragging() ? getTheme().surface5 : getTheme().surface4).withAlpha (0.94f));
-        btn->setColour (juce::TextButton::textColourOnId, text);
+        btn->setColour (juce::TextButton::textColourOnId, btn->getToggleState() ? getTheme().accent : text);
         btn->setColour (juce::TextButton::textColourOffId, text);
     }
 
@@ -286,6 +297,10 @@ void HeaderBar::showSettingsPopup()
                              ? "Custom Folder: " + customPresetsFolder.getFullPathName()
                              : juce::String ("Choose Custom Folder..."));
     presetsMenu.addItem (kMenuPresetClearCustomFolder, "Clear Custom Folder", customPresetsFolder != juce::File());
+    presetsMenu.addSeparator();
+    presetsMenu.addItem (kMenuPresetOpenDefaultFolder, "Open Presets Folder");
+    if (customPresetsFolder != juce::File())
+        presetsMenu.addItem (kMenuPresetOpenCustomFolder, "Open Custom Presets Folder", customPresetsFolder.isDirectory());
     menu.addSubMenu ("Presets", presetsMenu);
 
     const auto stemFolder = processor.getResolvedStemModelFolder();
@@ -464,6 +479,21 @@ void HeaderBar::showSettingsPopup()
                             editor->setCustomPresetsFolder (chosenFolder);
                     });
             }
+            else if (result == kMenuPresetOpenDefaultFolder)
+            {
+                // Opens in the system file manager (Explorer / Finder / xdg-open); created on first use.
+                const auto dir = AppFiles::getPresetsDir();
+                if (dir.createDirectory().wasOk())
+                    dir.startAsProcess();
+                else
+                    processor.showTransientStatusMessage ("Couldn't create " + dir.getFullPathName(), true);
+            }
+            else if (result == kMenuPresetOpenCustomFolder)
+            {
+                const auto dir = editor->getCustomPresetsFolder();
+                if (dir.isDirectory())
+                    dir.startAsProcess();
+            }
             else if (result == kMenuPresetClearCustomFolder)
             {
                 editor->setCustomPresetsFolder ({});
@@ -526,6 +556,13 @@ void HeaderBar::showSettingsPopup()
                     processor.setActiveOrtBundle (bundles[(size_t) idx].id);
             }
         });
+}
+
+void HeaderBar::setBrowserActive (bool isActive)
+{
+    browserBtn.setToggleState (isActive, juce::dontSendNotification);
+    browserBtn.setTooltip (isActive ? "Close the file browser (Esc)" : "Open the file browser");
+    repaint();
 }
 
 void HeaderBar::openRelinkBrowser()

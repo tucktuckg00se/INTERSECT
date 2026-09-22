@@ -1,12 +1,12 @@
 ---
 title: Settings file
 nav_order: 10
-description: "Where INTERSECT writes user settings and what each key does — themes, scale, NRPN, sample-browser bookmarks, stem model folder."
+description: "Where INTERSECT writes user settings and what each key does — themes, scale, NRPN, file-browser bookmarks and folders, audition, stem model folder."
 ---
 
 # Settings file
 
-INTERSECT persists user-wide preferences (the ones that aren't part of a saved session) to a single file: `settings.yaml`. This includes the active theme, UI scale, NRPN settings, sample browser bookmarks, the custom presets folder, and the stem separation model folder.
+INTERSECT persists user-wide preferences (the ones that aren't part of a saved session) to a single file: `settings.yaml`. This includes the active theme, UI scale, NRPN settings, file-browser bookmarks, recent and last-used folders, audition settings, the custom presets folder, and the stem separation model folder.
 
 ## Where it lives
 
@@ -16,7 +16,7 @@ INTERSECT persists user-wide preferences (the ones that aren't part of a saved s
 | macOS | `~/Library/Application Support/INTERSECT/settings.yaml` |
 | Linux | `~/.config/INTERSECT/settings.yaml` |
 
-The folder is created on first launch. `themes/`, `presets/` (your saved presets), `preset-samples/` (audio unpacked from presets saved with samples), downloaded ONNX Runtime bundles, and downloaded stem models also live alongside it.
+The folder is created on first launch. `themes/`, `presets/` (your saved presets), `preset-samples/` (audio unpacked from presets exported with samples), downloaded ONNX Runtime bundles, and downloaded stem models also live alongside it.
 
 ## When it's written
 
@@ -25,7 +25,8 @@ The folder is created on first launch. `themes/`, `presets/` (your saved presets
 - Adjust UI scale in **SET**
 - Pick a different theme in **SET → Themes**
 - Change middle-C octave in **SET**
-- Toggle the sample browser (`FILES`) or change browser bookmarks
+- Close the file browser (`FILES`) — this saves the folder you were in
+- Change browser bookmarks, add or load from a new folder (recent folders), or change `AUTO` or the audition volume
 - Change any NRPN setting in **SET → NRPN Settings**
 - Select a stem model folder or compute device in **SET → Stem Separation**
 - Choose or clear a custom presets folder in **SET → Presets**
@@ -43,10 +44,14 @@ nrpnEnabled: false
 nrpnChannel: 0
 nrpnBlockCc: true
 middleC: 4
-sampleBrowserVisible: true
 sampleBrowserBookmarks:
   - /home/you/samples/breaks
   - /home/you/samples/oneshots
+browserRecentFolders:
+  - /home/you/samples/breaks
+browserLastFolder: /home/you/samples/breaks
+auditionAutoPlay: true
+auditionGainDb: -6.0
 stemModelFolder: /home/you/.config/INTERSECT/stem-models
 presetFolder: /home/you/Sync/intersect-presets
 stemComputeDevice: cuda
@@ -62,8 +67,11 @@ stemComputeDevice: cuda
 | `nrpnChannel` | int | 0 to 16 (0 = omni) | MIDI channel filter for NRPN editing. |
 | `nrpnBlockCc` | bool | `true` / `false` | If true, NRPN edit CCs are stripped from MIDI output instead of passing through. |
 | `middleC` | int | 3, 4, or 5 | Which octave the note name display calls middle C. Doesn't change stored MIDI data. |
-| `sampleBrowserVisible` | bool | `true` / `false` | Whether the `FILES` browser side panel is open. |
-| `sampleBrowserBookmarks` | list | YAML-style nested list of paths | Pinned folders shown in the sample browser. |
+| `sampleBrowserBookmarks` | list | YAML-style nested list of paths | Pinned folders shown under `BOOKMARKS` in the file browser. |
+| `browserRecentFolders` | list | YAML-style nested list of paths, newest first (max 8) | Folders you recently added or loaded files from, shown under `RECENT`. |
+| `browserLastFolder` | string | filesystem path | The folder the file browser opens in. Falls back to your home folder if it no longer exists. |
+| `auditionAutoPlay` | bool | `true` / `false` | Whether selecting a file in the browser previews it (`AUTO`). |
+| `auditionGainDb` | float | -24.0 to 6.0 | Browser audition volume in dB (`VOL`). |
 | `stemModelFolder` | string | filesystem path | Folder INTERSECT scans for ONNX stem models. |
 | `presetFolder` | string | filesystem path | Custom presets folder, listed in the browser alongside the default `presets/` folder. Omitted when none is set. |
 | `stemComputeDevice` | string | `cpu`, `cuda`, `migraphx`, `directml`, `coreml` (depends on platform) | Active stem-separation device. |
@@ -72,6 +80,7 @@ stemComputeDevice: cuda
 
 | Old key | Behaviour |
 | --- | --- |
+| `sampleBrowserVisible` | Whether the old side-panel browser was open. Ignored: the file browser always starts closed. |
 | `stemModelPath` | Single-file path (pre-folder builds). If present and valid, INTERSECT migrates it by treating the file's parent directory as the new `stemModelFolder` and rewriting the file on next save. |
 
 Old keys you no longer need can be left in the file safely — unknown keys are ignored.

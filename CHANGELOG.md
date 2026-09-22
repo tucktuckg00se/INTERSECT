@@ -7,7 +7,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
-- Built-in presets (#47): save the whole kit (samples, slices and all settings) as an `.intersectpreset` file from the new `SAVE` button in the FILES browser, and load it by double-clicking it, choosing **Load Preset**, or dropping it on the waveform. **Save Preset with Samples** puts the audio inside the preset so a single file can be shared. Presets live in a `presets` folder next to your themes, you can add your own presets folder in **SET → Presets**, and loading a preset can be undone.
+- Built-in presets (#47): the new `SAVE` button in the header saves the whole kit (samples, slices and all settings) straight into your preset library and opens it in the browser with the name ready to type. Load a preset by double-clicking it or dropping it on the sample lane; loading can be undone. Right-click a preset to rename it or to export a copy, optionally with the audio embedded so a single file can be shared. Presets live in a `presets` folder next to your themes, and you can add your own presets folder in **SET → Presets**.
+- Previewing in the file browser: selecting a file shows its waveform, length and format and plays it (turn `AUTO` off to only play on demand). `Space` plays or pauses, `→` restarts from the top, and the preview has its own volume.
+- The file browser remembers the folder you were in and lists your recent folders, plus Home, Desktop, Documents, Music and Downloads.
+- The folder button next to the browser's path opens files or a folder with your system's file dialog.
+
+### Changed
+- The FILES browser is now a full view that takes over the editing area instead of a narrow side panel, so file names fit and the whole plugin can render larger on small screens. Files show their length and sample rate, and columns can be sorted.
+- Double-clicking a file in the browser adds it to the kit; `Shift` + double-click (or `Shift` + `Return`) replaces the kit instead. Both can be undone.
+
+### Fixed
+- Right-click menus in the file browser (such as **Add Bookmark**) now open at the mouse pointer instead of off to the side.
 
 ## [0.15.4] - 2026-07-25
 

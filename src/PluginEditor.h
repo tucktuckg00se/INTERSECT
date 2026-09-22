@@ -4,7 +4,7 @@
 #include "ui/IntersectLookAndFeel.h"
 #include "ui/HeaderBar.h"
 #include "ui/SampleLane.h"
-#include "ui/SampleBrowserPanel.h"
+#include "ui/browser/BrowserView.h"
 #include "ui/SignalChainBar.h"
 #include "ui/SliceLane.h"
 #include "ui/WaveformView.h"
@@ -29,7 +29,7 @@ public:
     void setMiddleCOctave (int octave);
     int getMiddleCOctave() const { return middleCOctave; }
     float getEffectiveUiScale() const noexcept { return lastAppliedScale; }
-    juce::File getCustomPresetsFolder() const { return sampleBrowser.getCustomPresetsFolder(); }
+    juce::File getCustomPresetsFolder() const { return browser.getCustomPresetsFolder(); }
     void setCustomPresetsFolder (const juce::File& folder);
 
 private:
@@ -43,9 +43,15 @@ private:
     void timerCallback() override;
     void ensureDefaultThemes();
     void loadUserSettings();
-    void setSampleBrowserVisible (bool shouldBeVisible);
-    void loadBrowserFiles (const std::vector<juce::File>& files);
-    void openPresetSaveDialog (bool embedSamples, const juce::File& startFolder);
+    void setBrowserVisible (bool shouldBeVisible);
+    void addFilesToKit (const std::vector<juce::File>& files);
+    void replaceKitWithFiles (const std::vector<juce::File>& files);
+    void loadPreset (const juce::File& preset);
+    void handleDroppedFiles (const std::vector<juce::File>& files);
+    void openFileDialog();
+    void saveKitToLibrary();
+    void exportPreset (const juce::File& preset, bool embedSamples);
+    void persistSettings();
     juce::String getDefaultPresetName() const;
     float computeEffectiveScale (float desiredScale) const;
     bool updateUiTransform();
@@ -67,13 +73,13 @@ private:
     bool lastWaveformAnimating = false;
     bool lastPreviewActive = false;
     float savedScale = -1.0f;
-    bool sampleBrowserVisible = false;
+    bool browserVisible = false;
     uint32_t lastUiSnapshotVersion = 0;
     uint32_t lastPresetSaveVersion = 0;
     DeleteTarget deleteTarget = DeleteTarget::slice;
 
     IntersectLookAndFeel lnf;
-    SampleBrowserPanel sampleBrowser;
+    BrowserView browser;
     HeaderBar       headerBar;
     SampleLane      sampleLane;
     SignalChainBar  signalChainBar;
@@ -84,6 +90,9 @@ private:
 
     juce::TooltipWindow tooltipWindow { this, 500 };
     std::unique_ptr<juce::FileChooser> presetChooser;
+    std::unique_ptr<juce::FileChooser> openChooser;
+    juce::File pendingRenamePreset;   // a SAVE whose new file should open for renaming once written
+    juce::File lastExportFolder;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (IntersectEditor)
 };

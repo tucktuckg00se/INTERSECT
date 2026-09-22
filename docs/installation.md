@@ -96,7 +96,7 @@ To update to a newer release, download the latest zip and overwrite the existing
 
 Delete the plugin file(s) from the install paths in the table above, then rescan in your DAW.
 
-To wipe your user data as well — themes, UI scale, NRPN settings, sample-browser bookmarks, stem model folder — delete the INTERSECT settings folder for your OS:
+To wipe your user data as well — themes, UI scale, NRPN settings, browser bookmarks and recent folders, saved presets, stem model folder — delete the INTERSECT settings folder for your OS:
 
 | OS | Settings folder |
 | --- | --- |

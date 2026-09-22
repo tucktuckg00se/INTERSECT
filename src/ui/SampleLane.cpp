@@ -2,6 +2,7 @@
 #include "StemExportPanel.h"
 #include "IntersectLookAndFeel.h"
 #include "WaveformView.h"
+#include "browser/BrowserTypes.h"
 #include "../PluginProcessor.h"
 #include <algorithm>
 #include <array>
@@ -234,6 +235,27 @@ void SampleLane::paint (juce::Graphics& g)
         }
     }
 
+    if (visible.empty() && showEmptyHint)
+    {
+        g.setColour (getTheme().text0.withAlpha (0.9f));
+        g.setFont (IntersectLookAndFeel::makeFont (8.5f));
+        g.drawText ("Kit is empty - double-click a file below, or drag it here, to add it",
+                    getLocalBounds().reduced (8, 0), juce::Justification::centred, true);
+    }
+
+    if (browserDragHover)
+    {
+        g.setColour (getTheme().accent.withAlpha (0.12f));
+        g.fillRect (getLocalBounds());
+        g.setColour (getTheme().accent.withAlpha (0.9f));
+        g.drawRect (getLocalBounds(), 1);
+        if (visible.empty())
+        {
+            g.setFont (IntersectLookAndFeel::makeFont (8.5f, true));
+            g.drawText ("Drop to add to the kit", getLocalBounds(), juce::Justification::centred, false);
+        }
+    }
+
     if (dragging && dragTargetIndex >= 0)
     {
         int insertX = getWidth() - 1;
@@ -337,8 +359,44 @@ void SampleLane::mouseUp (const juce::MouseEvent&)
     repaint();
 }
 
+void SampleLane::setShowEmptyHint (bool shouldShow)
+{
+    showEmptyHint = shouldShow;
+    repaint();
+}
+
+bool SampleLane::isInterestedInDragSource (const SourceDetails& details)
+{
+    return Browser::isBrowserDrag (details.description.toString());
+}
+
+void SampleLane::itemDragEnter (const SourceDetails&)
+{
+    browserDragHover = true;
+    repaint();
+}
+
+void SampleLane::itemDragExit (const SourceDetails&)
+{
+    browserDragHover = false;
+    repaint();
+}
+
+void SampleLane::itemDropped (const SourceDetails& details)
+{
+    browserDragHover = false;
+    repaint();
+
+    const auto files = Browser::parseDragDescription (details.description.toString());
+    if (! files.empty() && onFilesDropped != nullptr)
+        onFilesDropped (files);
+}
+
 void SampleLane::showStemExportPanel (int sampleId)
 {
+    if (onStemPanelRequested != nullptr)
+        onStemPanelRequested();
+
     dismissStemExportPanel();
     stemExportPanel = std::make_unique<StemExportPanel> (processor, sampleId);
 

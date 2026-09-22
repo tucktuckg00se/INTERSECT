@@ -13,7 +13,8 @@ description: "Every button, parameter, gesture, and keyboard shortcut in the INT
 | Status text | Copy warning/error message | Only active when a warning or error is being shown |
 | `UNDO / REDO` | History navigation | Buttons in the header |
 | `PANIC` | Kill active voices immediately | Also stops lazy chop |
-| `FILES` | Toggle the built-in sample browser side panel | See [Sample browser]({{ site.baseurl }}{% link interface.md %}#sample-browser) |
+| `FILES` | Open or close the file browser | See [File browser]({{ site.baseurl }}{% link interface.md %}#file-browser) |
+| `SAVE` | Save the kit to your preset library | See [Presets]({{ site.baseurl }}{% link presets.md %}) |
 | `SET` | Theme, scale, NRPN, middle-C, and stem-separation popup | See [NRPN MIDI routing]({{ site.baseurl }}{% link nrpn-midi.md %}#set-button--nrpn-settings) and the [Settings file]({{ site.baseurl }}{% link settings-file.md %}) reference for what gets persisted |
 
 ## Signal chain bar
@@ -176,7 +177,19 @@ All three parameter cells support drag-to-edit (drag up/down) and double-click t
 | `Right Arrow` or `Tab` | Select next slice |
 | `Left Arrow` or `Shift + Tab` | Select previous slice |
 | `Esc` | Close Auto Chop panel |
-| `Return` | Load the selected file(s) (when the sample browser has focus) |
-| `Backspace` | Browser: navigate up one directory level (when the sample browser has focus) |
+
+While the file browser is open, the editing shortcuts above are paused and these apply instead:
+
+| Key | Action |
+| --- | --- |
+| `Up` / `Down` | Move through files (previews them when `AUTO` is on) |
+| `Space` | Play / pause the selected file's preview |
+| `Right` | Restart the preview from the top (never pauses); on a folder, open it |
+| `F2` | Rename the selected preset |
+| `Left` / `Backspace` | Up one folder |
+| `Return` | Add the selected file(s) to the kit |
+| `Shift + Return` | Load the selected file(s), replacing the kit |
+| `/` or `Ctrl/Cmd + F` | Search |
+| `Esc` | Clear the search, then close the browser |
 
 Single-letter action shortcuts are intentionally unbound so DAW keyboard-MIDI note entry remains available.

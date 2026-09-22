@@ -147,7 +147,11 @@ target_sources(Intersect PRIVATE
     src/params/ParamLayout.cpp
     src/ui/IntersectLookAndFeel.cpp
     src/ui/HeaderBar.cpp
-    src/ui/SampleBrowserPanel.cpp
+    src/ui/browser/BrowserView.cpp
+    src/ui/browser/Breadcrumb.cpp
+    src/ui/browser/FileTable.cpp
+    src/ui/browser/PlacesList.cpp
+    src/ui/browser/PreviewPane.cpp
     src/ui/SampleLane.cpp
     src/ui/SignalChainBar.cpp
     src/ui/WaveformView.cpp
@@ -158,6 +162,7 @@ target_sources(Intersect PRIVATE
     src/ui/AutoChopPanel.cpp
     src/ui/StemExportPanel.cpp
     src/audio/StemSeparationJob.cpp
+    src/audio/AuditionPlayer.cpp
 )
 
 target_include_directories(Intersect PRIVATE

@@ -14,6 +14,7 @@
 #include "audio/StemModelDownloadJob.h"
 #include "audio/OrtBundleDownloadJob.h"
 #include "audio/StemSeparationJob.h"
+#include "audio/AuditionPlayer.h"
 #include "UndoManager.h"
 #include "params/GlobalParamSnapshot.h"
 #include "params/ParamUndoState.h"
@@ -237,9 +238,22 @@ public:
     // Message thread only. File work runs on fileLoadPool; results land via handleAsyncUpdate.
     void savePresetAsync (const juce::File& destination, bool embedSamples);
     void loadPresetAsync (const juce::File& presetFile);
+    /** Copies a preset file elsewhere; with embedSamples the copy carries every sample it can find. */
+    void exportPresetAsync (const juce::File& source, const juce::File& destination, bool embedSamples);
     // Bumped each time a preset save finishes successfully, so the editor can reveal the file.
     uint32_t getPresetSaveVersion() const noexcept { return presetSaveVersion; }
     juce::File getLastSavedPresetFile() const { return lastSavedPresetFile; }
+
+    // Browser audition: previews a file on the main output without touching the kit.
+    // Message thread only. Decoding runs on auditionPool; playback is mixed in processBlock.
+    /** Plays the file from the start (decoding it first unless it is the loaded clip). */
+    void auditionFileAsync (const juce::File& file);
+    void pauseAudition()  { auditionPlayer.pause(); }
+    void resumeAudition() { auditionPlayer.resume(); }
+    void stopAudition();
+    void setAuditionGainDb (float db) { auditionPlayer.setGainDb (db); }
+    /** Current audition state for the browser. Also frees clips the audio thread has let go of. */
+    AuditionStatus pollAuditionStatus();
 
     struct UiSliceSnapshot
     {
@@ -425,14 +439,14 @@ private:
 
     struct PresetJobResult
     {
-        enum class Kind { save, load };
+        enum class Kind { save, load, exportCopy };
         Kind kind = Kind::save;
         int generation = 0;
         juce::File presetFile;
         juce::Result result = juce::Result::ok();
         juce::MemoryBlock state;                               // load only
         std::map<juce::String, juce::File> resolvedSamples;    // load only: saved path -> local file
-        int missingSamples = 0;                                // load only
+        int missingSamples = 0;                                // load, exportCopy
     };
 
     // Returns false if the state was rejected; a malformed slice table can leave it partly applied.
@@ -441,6 +455,7 @@ private:
     void postPresetJobResult (PresetJobResult result);
     void handlePresetJobCompletionOnMessageThread();
     void applyLoadedPreset (const PresetJobResult& job);
+    void handleAuditionCompletionOnMessageThread();
 
     void drainCommands();
     void handleCommand (const Command& cmd);
@@ -582,6 +597,23 @@ private:
     juce::File lastSavedPresetFile;                      // message thread only
 
     juce::ThreadPool fileLoadPool { 1 };
+
+    // Audition. The player is read by the audio thread; the rest is message-thread state plus the
+    // decode result handed over under auditionLock. auditionPool is declared after them so its
+    // worker stops before they are destroyed.
+    struct AuditionJobResult
+    {
+        int generation = 0;
+        std::shared_ptr<const AuditionClip> clip;
+    };
+    static constexpr double kMaxAuditionSeconds = 120.0;   // longer files preview their start
+    AuditionPlayer auditionPlayer;
+    std::atomic<int> auditionGeneration { 0 };
+    juce::File auditionFile;                                            // message thread only
+    AuditionStatus::State auditionPendingState = AuditionStatus::State::idle; // decoding/failed, message thread
+    juce::CriticalSection auditionLock;
+    std::optional<AuditionJobResult> completedAudition;                 // guarded by auditionLock
+    juce::ThreadPool auditionPool { 1 };
     std::atomic<int> nextLoadToken { 0 };
     std::atomic<int> nextSessionSampleId { 0 };
     std::atomic<int> latestLoadToken { 0 };

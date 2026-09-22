@@ -7,12 +7,25 @@ class IntersectProcessor;
 class StemExportPanel;
 class WaveformView;
 
-class SampleLane : public juce::Component
+class SampleLane : public juce::Component,
+                   public juce::DragAndDropTarget
 {
 public:
     SampleLane (IntersectProcessor& p, WaveformView& wv);
     ~SampleLane() override;
     std::function<void()> onInteraction;
+    /** Files dragged here from the browser. */
+    std::function<void (const std::vector<juce::File>&)> onFilesDropped;
+    /** STEMS was clicked; the panel opens over the waveform, so the browser must close. */
+    std::function<void()> onStemPanelRequested;
+
+    /** While browsing, an empty lane explains how to add files. */
+    void setShowEmptyHint (bool shouldShow);
+
+    bool isInterestedInDragSource (const SourceDetails& details) override;
+    void itemDragEnter (const SourceDetails& details) override;
+    void itemDragExit (const SourceDetails& details) override;
+    void itemDropped (const SourceDetails& details) override;
 
     void paint (juce::Graphics& g) override;
     void mouseDown (const juce::MouseEvent& e) override;
@@ -47,4 +60,6 @@ private:
     int dragStartX = 0;
     int dragTargetIndex = -1;
     bool dragging = false;
+    bool browserDragHover = false;
+    bool showEmptyHint = false;
 };

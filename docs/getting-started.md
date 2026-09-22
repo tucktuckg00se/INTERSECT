@@ -23,7 +23,7 @@ Add an INTERSECT instance to a MIDI track in your DAW, open the editor, and have
 
 Drag your audio file from your file manager onto the waveform area. The waveform fills the editor; the sample lane (the strip above the slice lane) shows a single block representing this sample.
 
-Alternative: click **FILES** in the header to open the built-in sample browser, then double-click a file.
+Alternative: click **FILES** in the header to open the file browser. Select a file to hear it, then double-click it to add it. Click **FILES** again to return to the editor.
 
 ## 2. Draw your first slice
 

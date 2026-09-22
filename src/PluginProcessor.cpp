@@ -389,6 +389,7 @@ IntersectProcessor::IntersectProcessor()
 IntersectProcessor::~IntersectProcessor()
 {
         cancelPendingUpdate();
+	    auditionPool.removeAllJobs (true, 2000);
 	    fileLoadPool.removeAllJobs (true, 5000);
 	    auto* pending = completedLoadData.exchange (nullptr, std::memory_order_acq_rel);
 	    delete pending;
@@ -497,6 +498,7 @@ void IntersectProcessor::handleAsyncUpdate()
     handleStemJobCompletionOnMessageThread();
     handleDownloadCompletionsOnMessageThread();
     handlePresetJobCompletionOnMessageThread();
+    handleAuditionCompletionOnMessageThread();
 }
 
 void IntersectProcessor::handleDownloadCompletionsOnMessageThread()
@@ -2492,6 +2494,7 @@ void IntersectProcessor::handleCommand (const Command& cmd)
 
         case CmdPanic:
             voicePool.killAll();
+            auditionPlayer.stopFromAudioThread();
             lazyChop.stop (voicePool, sliceManager);
             std::fill (std::begin (heldNotes), std::end (heldNotes), false);
             break;
@@ -3180,7 +3183,10 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     if (uiSnapshotDirty.exchange (false, std::memory_order_acq_rel))
         publishUiSliceSnapshot();
 
-    if (! canRender)
+    // Browser audition plays on the main bus, even when no sample is loaded.
+    const bool auditioned = auditionPlayer.renderAdd (busL[0], busR[0], numSamples);
+
+    if (! canRender && ! auditioned)
         return;
 
     // Sanitise once after all ranges have been mixed: clamp / NaN-guard every active bus
@@ -4034,6 +4040,37 @@ void IntersectProcessor::loadPresetAsync (const juce::File& presetFile)
     });
 }
 
+void IntersectProcessor::exportPresetAsync (const juce::File& source, const juce::File& destination, bool embedSamples)
+{
+    if (embedSamples)
+        setUiStatusMessage ("Exporting preset with samples...", false, UiStatusMessage::Source::transientInfo);
+
+    const auto cacheDir = AppFiles::getPresetSampleCacheDir();
+    fileLoadPool.addJob ([this, source, destination, embedSamples, cacheDir]
+    {
+        PresetJobResult done;
+        done.kind = PresetJobResult::Kind::exportCopy;
+        done.presetFile = destination;
+
+        if (embedSamples)
+        {
+            done.result = PresetFile::exportWithSamples (source, destination, cacheDir, done.missingSamples,
+                                                         [] { return currentPoolJobShouldExit(); });
+        }
+        else
+        {
+            // Copy through a temp file so a failed export never leaves a half-written preset.
+            juce::TemporaryFile temp (destination);
+            const bool copied = source.copyFileTo (temp.getFile()) && temp.overwriteTargetFileWithTemporary();
+            done.result = copied ? juce::Result::ok()
+                                 : juce::Result::fail ("Couldn't export " + source.getFileNameWithoutExtension());
+        }
+
+        if (! currentPoolJobShouldExit())
+            postPresetJobResult (std::move (done));
+    });
+}
+
 void IntersectProcessor::postPresetJobResult (PresetJobResult result)
 {
     {
@@ -4056,6 +4093,20 @@ void IntersectProcessor::handlePresetJobCompletionOnMessageThread()
         if (job.kind == PresetJobResult::Kind::load)
         {
             applyLoadedPreset (job);
+            continue;
+        }
+
+        if (job.kind == PresetJobResult::Kind::exportCopy)
+        {
+            const auto name = job.presetFile.getFileNameWithoutExtension();
+            if (job.result.failed())
+                setUiStatusMessage (job.result.getErrorMessage(), true);
+            else if (job.missingSamples > 0)
+                setUiStatusMessage ("Exported " + name + " - " + juce::String (job.missingSamples)
+                                        + (job.missingSamples == 1 ? " sample" : " samples") + " not found, not embedded",
+                                    true);
+            else
+                setUiStatusMessage ("Exported " + name, false, UiStatusMessage::Source::transientInfo);
             continue;
         }
 
@@ -4116,6 +4167,92 @@ void IntersectProcessor::applyLoadedPreset (const PresetJobResult& job)
                             true);
     else
         setUiStatusMessage ("Loaded preset " + name, false, UiStatusMessage::Source::transientInfo);
+}
+
+void IntersectProcessor::auditionFileAsync (const juce::File& file)
+{
+    const int generation = auditionGeneration.fetch_add (1) + 1;
+    auditionFile = file;
+
+    // Already decoded (e.g. PLAY again after STOP): start straight away.
+    if (const auto clip = auditionPlayer.getClip(); clip != nullptr && clip->file == file)
+    {
+        auditionPendingState = AuditionStatus::State::idle;
+        auditionPlayer.play (clip);
+        return;
+    }
+
+    auditionPlayer.stop();
+    auditionPendingState = AuditionStatus::State::decoding;
+    const double rate = currentSampleRate > 0.0 ? currentSampleRate : 44100.0;
+
+    auditionPool.addJob ([this, file, generation, rate]
+    {
+        auto superseded = [this, generation]
+        {
+            return currentPoolJobShouldExit() || auditionGeneration.load() != generation;
+        };
+
+        auto clip = AuditionClip::decode (file, rate, kMaxAuditionSeconds, superseded);
+        if (superseded())
+            return;
+
+        {
+            const juce::ScopedLock sl (auditionLock);
+            completedAudition = AuditionJobResult { generation, std::move (clip) };
+        }
+        triggerAsyncUpdate();
+    });
+}
+
+void IntersectProcessor::stopAudition()
+{
+    ++auditionGeneration;   // drops a decode that is still running
+    auditionPendingState = AuditionStatus::State::idle;
+    auditionPlayer.stop();
+}
+
+void IntersectProcessor::handleAuditionCompletionOnMessageThread()
+{
+    std::optional<AuditionJobResult> done;
+    {
+        const juce::ScopedLock sl (auditionLock);
+        done.swap (completedAudition);
+    }
+
+    if (! done.has_value() || done->generation != auditionGeneration.load())
+        return;
+
+    if (done->clip != nullptr)
+    {
+        auditionPendingState = AuditionStatus::State::idle;
+        auditionPlayer.play (done->clip);
+    }
+    else
+    {
+        auditionPendingState = AuditionStatus::State::failed;
+    }
+}
+
+AuditionStatus IntersectProcessor::pollAuditionStatus()
+{
+    auditionPlayer.releaseRetiredClips();
+
+    AuditionStatus status;
+    status.file = auditionFile;
+    status.clip = auditionPlayer.getClip();
+    status.position = auditionPlayer.getPosition();
+    if (auditionPendingState != AuditionStatus::State::idle)
+        status.state = auditionPendingState;
+    else if (auditionPlayer.isPlaying())
+        status.state = AuditionStatus::State::playing;
+    else if (status.clip == nullptr)
+        status.state = AuditionStatus::State::idle;
+    else if (status.position > 0.0f && status.position < 1.0f)
+        status.state = AuditionStatus::State::paused;   // part-way through, not playing
+    else
+        status.state = AuditionStatus::State::stopped;
+    return status;
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()

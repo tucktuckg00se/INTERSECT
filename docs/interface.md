@@ -1,7 +1,7 @@
 ---
 title: Interface
 nav_order: 7
-description: "Tour of every visible area of the INTERSECT editor — header bar, sample lane, slice lane, waveform, sample browser, time/zoom bar, action bar, and signal chain."
+description: "Tour of every visible area of the INTERSECT editor — header bar, sample lane, slice lane, waveform, file browser, time/zoom bar, action bar, and signal chain."
 ---
 
 # Interface layout
@@ -13,7 +13,8 @@ description: "Tour of every visible area of the INTERSECT editor — header bar,
 | Status text | Shows warnings, errors, and missing-file notices | Click warning/error text to copy the message |
 | `UNDO` / `REDO` | History navigation | Same as `Ctrl/Cmd + Z` and `Ctrl/Cmd + Shift + Z` |
 | `PANIC` | Kills active voices immediately | Also stops lazy chop |
-| `FILES` | Toggle the built-in sample browser side panel | Visibility persists across sessions |
+| `FILES` | Open or close the file browser | Lit while the browser is open. See [File browser](#file-browser) |
+| `SAVE` | Save the kit to your preset library | Opens the browser on the new preset with its name ready to edit. See [Presets]({{ site.baseurl }}{% link presets.md %}) |
 | `SET` | Popup for theme, UI scale, and NRPN settings | Also shows current plugin version |
 
 ## Sample lane, slice lane, and waveform
@@ -27,24 +28,70 @@ description: "Tour of every visible area of the INTERSECT editor — header bar,
 | Playback cursors | Voice-position display | Shows active playheads |
 | Transient preview markers | Auto Chop preview | Dashed markers shown before applying transient split |
 
-## Sample browser
+## File browser
 
-Toggled by the `FILES` button in the header. The browser docks to the side of the editor and its visibility persists with your user settings.
+Click `FILES` in the header to open the browser. It takes over everything below the sample lane, so the header and the sample lane stay visible while you browse. Click `FILES` again or press `Esc` to go back to the editor. The browser always starts closed, and it remembers the last folder you were in.
 
-| Area | Function | Notes |
+The browser has three columns.
+
+### Places (left)
+
+| Section | What's there |
+| --- | --- |
+| `PRESETS` | The default presets folder, plus your custom presets folder if one is set in **SET → Presets** |
+| `LOCATIONS` | Home, Desktop, Documents, Music and Downloads |
+| `BOOKMARKS` | Folders you pinned. Right-click a folder to **Add Bookmark**; right-click a bookmark to remove it |
+| `RECENT` | The last 8 folders you added or loaded files from. Right-click one to remove it |
+| `DRIVES` | Disks and mounted volumes |
+
+### Files (middle)
+
+| Control | Function | Notes |
 | --- | --- | --- |
-| `←` / `→` | Back / forward through visited folders | Disabled at ends of history |
-| `↑` | Go up one directory | Same as pressing `Backspace` while the browser has focus |
-| `↻` | Refresh the current directory listing | Re-reads the folder from disk |
-| `SAVE` | Save the current kit as a preset | **Save Preset...** or **Save Preset with Samples...** (embeds the audio for sharing) — see [Presets]({{ site.baseurl }}{% link presets.md %}) |
-| Path display | Click to edit the current path inline | Press `Return` to navigate |
-| File list | Double-click a folder to enter it; double-click an audio file (or select files and press `Return`) to load | Multi-select supported when appending |
-| Presets in the file list | `.intersectpreset` files, marked `P`; double-click, press `Return`, or right-click → **Load Preset** | Loading a preset replaces the whole kit; `UNDO` brings the previous one back |
-| Presets locations | `Default` presets folder, plus your custom presets folder if one is set in **SET → Presets** | The default folder is created the first time you open it |
-| Bookmarks | Pinned shortcuts to favorite folders | Right-click a folder row to **Add Bookmark**; right-click a bookmark entry to **Remove Bookmark** — bookmarks persist with user settings |
-| Drag-and-drop | Drag selected files from the browser onto the waveform | Follows the same replace/append rule as double-click loads; dropping a preset loads it instead |
+| `←` / `→` / `↑` / `↻` | Back, forward, up one folder, refresh | Refresh also re-reads file details |
+| Path | Click a folder name to jump to it | Click the empty space (or double-click) to type a path |
+| Folder button (right of the path) | **Open Files...** picks audio or presets with the system dialog; **Open Folder...** browses to a folder you pick | Audio you open is added to the kit; a preset is loaded |
+| Search | Finds files and folders in this folder and every subfolder | Partial, case-insensitive. `/` or `Ctrl/Cmd + F` jumps here; `Esc` clears it |
+| `NAME` / `LEN` / `RATE` | Click a column header to sort by it; click again to reverse | Folders always stay on top |
 
-Loading behavior matches the rest of INTERSECT: into an empty session, the first load replaces and resets zoom/scroll; when a sample is already loaded, further loads append to the session.
+Presets show a kit icon and their sample count instead of a length. Right-click a preset to **Load**, **Rename** (or press `F2`), **Export...**, or **Export with Samples...**.
+
+### Preview (right)
+
+Shows what's selected: the file's waveform, length, sample rate, channels, bit depth and size. For a preset, its samples and whether their audio is embedded. For a folder, its path.
+
+| Control | Function | Notes |
+| --- | --- | --- |
+| `PLAY` / `PAUSE` | Hear the selected file without adding it | Pausing keeps your place; `PLAY` continues from there. Plays on the main output at the audition volume |
+| `AUTO` | Play files automatically as you select them | On by default; remembered |
+| `VOL` | Audition volume, −24 to +6 dB | Drag or scroll; double-click resets to −6 dB. Remembered |
+| `ADD` | Add the selected audio to the kit | The default action |
+| `LOAD` | Replace the kit with the selected audio and return to the editor | Clears the current samples and slices; `UNDO` brings them back |
+
+Files longer than two minutes preview their first two minutes. The audition stops when you add or load, change folder, close the browser, or press `PANIC`. Previews only play while your DAW is processing audio.
+
+### Adding and loading
+
+- **Double-click** a file, or select it and press `Return`, to **add** it to the kit. Adding to an empty kit loads it.
+- **Shift + double-click** or **Shift + Return** to **load** instead, replacing the kit and closing the browser.
+- **Drag** files onto the sample lane to add them. Dropping a preset there loads it.
+- Select several files (`Shift`/`Ctrl` + click, or `Shift` + arrows) and use `ADD` or `LOAD` to act on all of them.
+- Adding and loading can both be undone with `UNDO`.
+
+### Keyboard
+
+| Key | Action |
+| --- | --- |
+| `↑` / `↓` | Move through files (previews them when `AUTO` is on) |
+| `Space` | Play / pause the selected file's preview |
+| `→` | Restart the preview from the top, like a one-shot (never pauses). On a folder, opens it |
+| `←` / `Backspace` | Up one folder, landing on the folder you came from |
+| `Return` / `Shift + Return` | Add / load the selection |
+| `F2` | Rename the selected preset |
+| `/` or `Ctrl/Cmd + F` | Search |
+| `Esc` | Clear the search, then close the browser |
+
+On a folder or preset with nothing playing, `Space` isn't used by the browser, so it still reaches your DAW (usually its transport).
 
 ## Stem separation
 

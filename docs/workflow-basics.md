@@ -14,7 +14,7 @@ An INTERSECT instance loads **one or many samples** into a session. The first sa
 
 Loading happens off the audio thread — even a multi-minute file won't drop audio. Files saved at a different sample rate from the project are automatically resampled on load.
 
-You can drag samples directly onto the waveform, or open the built-in sample browser with the `FILES` button in the header bar (right-click a folder in the browser to bookmark it).
+You can drag samples directly onto the waveform, or open the file browser with the `FILES` button in the header bar. The browser previews files as you select them; double-click adds a file to the session, and Shift + double-click replaces the session with it. See [File browser]({{ site.baseurl }}{% link interface.md %}#file-browser).
 
 ## Slices
 

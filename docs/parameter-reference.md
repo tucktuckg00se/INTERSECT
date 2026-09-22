@@ -8,7 +8,7 @@ description: "Complete reference of every APVTS parameter INTERSECT exposes: ID,
 
 This page lists every parameter INTERSECT exposes via its `AudioProcessorValueTreeState` (APVTS). These are the parameters your DAW sees for automation, Bitwig modulators, Ableton M4L, Reaper JSFX, etc.
 
-For UI-only controls (NRPN settings, theme, scale, sample-browser visibility), see the [Settings file]({{ site.baseurl }}{% link settings-file.md %}) page — those persist in `settings.yaml`, not the plugin state.
+For UI-only controls (NRPN settings, theme, scale, file-browser bookmarks and audition settings), see the [Settings file]({{ site.baseurl }}{% link settings-file.md %}) page — those persist in `settings.yaml`, not the plugin state.
 
 Every parameter shown here is a **sample-wide default**. The signal chain bar's `SLICE` tab lets you override these per slice; per-slice overrides are stored in the saved session, not as APVTS parameters.
 

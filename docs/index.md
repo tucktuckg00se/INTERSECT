@@ -31,7 +31,7 @@ Start with the **[Getting started]({{ site.baseurl }}{% link getting-started.md 
 
 ### Concepts & interface
 - [Concepts]({{ site.baseurl }}{% link workflow-basics.md %}) — multi-sample sessions, slice creation, inheritance, algorithms
-- [Interface]({{ site.baseurl }}{% link interface.md %}) — header bar, sample browser, lanes, signal chain
+- [Interface]({{ site.baseurl }}{% link interface.md %}) — header bar, file browser, lanes, signal chain
 - [Controls and shortcuts]({{ site.baseurl }}{% link controls-reference.md %}) — every control, every keyboard shortcut
 
 ### Reference

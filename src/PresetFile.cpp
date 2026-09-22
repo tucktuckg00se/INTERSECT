@@ -127,6 +127,19 @@ juce::Result write (const juce::File& destination,
                     bool embedSamples,
                     const ShouldAbortFn& shouldAbort)
 {
+    std::vector<SampleSource> samples;
+    samples.reserve ((size_t) samplePaths.size());
+    for (const auto& path : samplePaths)
+        samples.push_back ({ path, fileFromSavedPath (path) });
+    return write (destination, state, samples, embedSamples, shouldAbort);
+}
+
+juce::Result write (const juce::File& destination,
+                    const juce::MemoryBlock& state,
+                    const std::vector<SampleSource>& samples,
+                    bool embedSamples,
+                    const ShouldAbortFn& shouldAbort)
+{
     const auto presetDir = destination.getParentDirectory();
     if (! presetDir.createDirectory())
         return juce::Result::fail ("Couldn't create folder " + presetDir.getFullPathName());
@@ -134,9 +147,9 @@ juce::Result write (const juce::File& destination,
     // Check the embed budget before writing anything.
     juce::int64 embeddedTotal = 0;
     if (embedSamples)
-        for (const auto& path : samplePaths)
-            if (const auto file = fileFromSavedPath (path); file.existsAsFile())
-                embeddedTotal += file.getSize();
+        for (const auto& sample : samples)
+            if (sample.source.existsAsFile())
+                embeddedTotal += sample.source.getSize();
 
     if (embeddedTotal > kMaxEmbeddedBytes)
         return juce::Result::fail ("Samples are too large to embed in a preset (over 2 GB)");
@@ -155,15 +168,16 @@ juce::Result write (const juce::File& destination,
         out.writeInt64 ((juce::int64) state.getSize());
         out.write (state.getData(), state.getSize());
 
-        out.writeInt (samplePaths.size());
-        for (const auto& path : samplePaths)
+        out.writeInt ((int) samples.size());
+        for (const auto& sample : samples)
         {
-            const auto file = fileFromSavedPath (path);
-            out.writeString (path);
+            const auto& file = sample.source;
+            out.writeString (sample.savedPath);
             out.writeString (file != juce::File()
                                  ? file.getRelativePathFrom (presetDir).replaceCharacter ('\\', '/')
                                  : juce::String());
-            out.writeString (file.getFileName());
+            out.writeString (file != juce::File() ? file.getFileName()
+                                                  : fileFromSavedPath (sample.savedPath).getFileName());
 
             const bool embed = embedSamples && file.existsAsFile();
             out.writeBool (embed);
@@ -275,5 +289,36 @@ std::vector<juce::File> resolveSamples (const juce::File& presetFile,
         resolved.push_back (shouldStop (shouldAbort) ? juce::File()
                                                      : resolveSample (presetFile, entry, cacheDir, shouldAbort));
     return resolved;
+}
+
+juce::Result exportWithSamples (const juce::File& source,
+                                const juce::File& destination,
+                                const juce::File& cacheDir,
+                                int& missingSamples,
+                                const ShouldAbortFn& shouldAbort)
+{
+    missingSamples = 0;
+
+    Contents contents;
+    if (auto result = read (source, contents); result.failed())
+        return result;
+
+    const auto resolved = resolveSamples (source, contents, cacheDir, shouldAbort);
+    if (shouldStop (shouldAbort))
+        return juce::Result::fail ("Preset export cancelled");
+
+    // Keep each entry's saved path as the key (the state blob refers to it); embed whatever local
+    // copy was found for it.
+    std::vector<SampleSource> samples;
+    samples.reserve (contents.samples.size());
+    for (size_t i = 0; i < contents.samples.size(); ++i)
+    {
+        const auto& found = i < resolved.size() ? resolved[i] : juce::File();
+        if (found == juce::File())
+            ++missingSamples;
+        samples.push_back ({ contents.samples[i].savedPath, found });
+    }
+
+    return write (destination, contents.state, samples, true, shouldAbort);
 }
 }

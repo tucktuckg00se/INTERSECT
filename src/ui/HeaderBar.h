@@ -10,11 +10,15 @@ class HeaderBar : public juce::Component,
 public:
     explicit HeaderBar (IntersectProcessor& p);
     std::function<void()> onBrowserToggle;
+    /** SAVE: save the kit straight into the preset library. */
+    std::function<void()> onSaveRequested;
     juce::String getTooltip() override;
     void paint (juce::Graphics& g) override;
     void resized() override;
     void mouseDown (const juce::MouseEvent& e) override;
     void adjustScale (float delta);
+    /** Lights the FILES button while the browser is open. */
+    void setBrowserActive (bool isActive);
 
 private:
     void showSettingsPopup();
@@ -22,6 +26,7 @@ private:
 
     IntersectProcessor& processor;
     juce::TextButton browserBtn { "FILES" };
+    juce::TextButton saveBtn  { "SAVE" };
     juce::TextButton undoBtn  { "UNDO" };
     juce::TextButton redoBtn  { "REDO" };
     juce::TextButton panicBtn { "PANIC" };
