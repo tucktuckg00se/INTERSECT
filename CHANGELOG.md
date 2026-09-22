@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-09-21
+
 ### Added
 - Built-in presets (#47): the new `SAVE` button in the header saves the whole kit (samples, slices and all settings) straight into your preset library and opens it in the browser with the name ready to type. Load a preset by double-clicking it or dropping it on the sample lane; loading can be undone. Right-click a preset to rename it or to export a copy, optionally with the audio embedded so a single file can be shared. Presets live in a `presets` folder next to your themes, and you can add your own presets folder in **SET → Presets**.
 - Previewing in the file browser: selecting a file shows its waveform, length and format and plays it (turn `AUTO` off to only play on demand). `Space` plays or pauses, `→` restarts from the top, and the preview has its own volume.
