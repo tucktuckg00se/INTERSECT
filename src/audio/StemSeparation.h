@@ -62,6 +62,8 @@ enum class OrtBundleId
     winX64DirectMl,
     winX64Cpu,
     macosArm64,
+    linuxArm64Cpu,   // appended so existing values keep their numbers
+    winArm64Cpu,
 };
 
 struct OrtBundleCatalogEntry
@@ -70,7 +72,7 @@ struct OrtBundleCatalogEntry
     juce::String menuLabel;         // e.g. "NVIDIA CUDA 12"
     juce::String directoryName;     // folder name under ort/ on disk
     juce::String providerName;      // "CUDA" / "DML" / "CoreML" / "MIGraphX" / "" for CPU-only
-    juce::String platformTag;       // "linux-x64" / "win-x64" / "macos-arm64"
+    juce::String platformTag;       // "linux-x64" / "linux-arm64" / "win-x64" / "win-arm64" / "macos-arm64"
     juce::String archiveFileName;   // tarball / zip name
     juce::String downloadUrl;       // populated by manifest at runtime (blank in built-in catalog)
     juce::int64  downloadBytes = 0;

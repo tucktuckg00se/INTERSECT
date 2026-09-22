@@ -121,15 +121,28 @@ inline void draw (juce::Graphics& g, Icon icon, juce::Rectangle<float> area, juc
 
         case Icon::home:
         {
-            const auto inner = box.reduced (size * 0.1f);
+            // Solid house (roof + walls as one shape) with the door cut out, matching the filled
+            // folder icons. Even-odd winding makes the door sub-path a hole.
+            const auto inner = box.reduced (size * 0.08f);
+            const float eaveY = inner.getY() + inner.getHeight() * 0.46f;
+            const float wallL = inner.getX() + inner.getWidth() * 0.16f;
+            const float wallR = inner.getRight() - inner.getWidth() * 0.16f;
+
             juce::Path p;
-            p.startNewSubPath (inner.getX(), inner.getY() + inner.getHeight() * 0.45f);
-            p.lineTo (inner.getCentreX(), inner.getY());
-            p.lineTo (inner.getRight(), inner.getY() + inner.getHeight() * 0.45f);
-            g.strokePath (p, juce::PathStrokeType (stroke, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-            g.drawRect (juce::Rectangle<float> (inner.getX() + inner.getWidth() * 0.18f, inner.getY() + inner.getHeight() * 0.42f,
-                                                inner.getWidth() * 0.64f, inner.getHeight() * 0.58f),
-                        stroke);
+            p.setUsingNonZeroWinding (false);
+            p.startNewSubPath (inner.getCentreX(), inner.getY());
+            p.lineTo (inner.getRight(), eaveY);
+            p.lineTo (wallR, eaveY);
+            p.lineTo (wallR, inner.getBottom());
+            p.lineTo (wallL, inner.getBottom());
+            p.lineTo (wallL, eaveY);
+            p.lineTo (inner.getX(), eaveY);
+            p.closeSubPath();
+
+            const float doorW = inner.getWidth() * 0.22f;
+            p.addRectangle (inner.getCentreX() - doorW * 0.5f, inner.getBottom() - inner.getHeight() * 0.34f,
+                            doorW, inner.getHeight() * 0.34f);
+            g.fillPath (p);
             break;
         }
     }

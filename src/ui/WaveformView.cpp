@@ -86,7 +86,7 @@ juce::String getEmptyWaveformPrompt()
 
 juce::String getWaylandEmptyStateHint()
 {
-    return "Wayland/XWayland session: drag-and-drop is unavailable";
+    return "Wayland/XWayland session: drag-and-drop may be unavailable";
 }
 
 void paintHintBanner (juce::Graphics& g, const juce::String& text, int componentWidth, int componentHeight)

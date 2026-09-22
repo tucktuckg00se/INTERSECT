@@ -11,10 +11,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Previewing in the file browser: selecting a file shows its waveform, length and format and plays it (turn `AUTO` off to only play on demand). `Space` plays or pauses, `→` restarts from the top, and the preview has its own volume.
 - The file browser remembers the folder you were in and lists your recent folders, plus Home, Desktop, Documents, Music and Downloads.
 - The folder button next to the browser's path opens files or a folder with your system's file dialog.
+- Windows ARM64 and Linux ARM64 (aarch64) builds. Stem separation works on both with a CPU runtime, downloaded from **SET → Stem Separation → ONNX Runtime** like on other platforms.
 
 ### Changed
 - The FILES browser is now a full view that takes over the editing area instead of a narrow side panel, so file names fit and the whole plugin can render larger on small screens. Files show their length and sample rate, and columns can be sorted.
 - Double-clicking a file in the browser adds it to the kit; `Shift` + double-click (or `Shift` + `Return`) replaces the kit instead. Both can be undone.
+- On Wayland, the notice under the waveform now says drag-and-drop *may* be unavailable, since it works in some setups.
+- The Home icon in the file browser is now solid, like the folder icons.
 
 ### Fixed
 - Right-click menus in the file browser (such as **Add Bookmark**) now open at the mouse pointer instead of off to the side.

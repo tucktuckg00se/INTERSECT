@@ -282,8 +282,13 @@ bool isStemOutputSelected (StemSelectionMask mask, int outputIndex)
 
 juce::String getCurrentPlatformTag()
 {
+    // The runtime must match the plugin's own architecture: an ARM64 process can't load x64 libraries.
    #if JUCE_WINDOWS
-    return "win-x64";
+    #if JUCE_ARM
+     return "win-arm64";
+    #else
+     return "win-x64";
+    #endif
    #elif JUCE_MAC
     #if JUCE_ARM
      return "macos-arm64";
@@ -291,7 +296,11 @@ juce::String getCurrentPlatformTag()
      return "macos-x64";
     #endif
    #elif JUCE_LINUX
-    return "linux-x64";
+    #if JUCE_ARM
+     return "linux-arm64";
+    #else
+     return "linux-x64";
+    #endif
    #else
     return {};
    #endif
@@ -314,6 +323,8 @@ static const std::vector<OrtBundleCatalogEntry>& buildOrtBundleCatalog()
         { OrtBundleId::linuxX64Cuda13,     "NVIDIA CUDA 13",     "linux-x64-cuda13",     "CUDA",     "linux-x64",   "onnxruntime-linux-x64-cuda13.zip",    "", 0, "libonnxruntime.so" },
         { OrtBundleId::linuxX64Migraphx,   "AMD MIGraphX",       "linux-x64-migraphx",   "MIGraphX", "linux-x64",   "onnxruntime-linux-x64-migraphx.zip",  "", 0, "libonnxruntime.so" },
         { OrtBundleId::macosArm64,         "CoreML",             "macos-arm64",          "CoreML",   "macos-arm64", "onnxruntime-macos-arm64.zip",         "", 0, "libonnxruntime.dylib" },
+        { OrtBundleId::linuxArm64Cpu,      "CPU only",           "linux-arm64-cpu",      "",         "linux-arm64", "onnxruntime-linux-arm64-cpu.zip",     "", 0, "libonnxruntime.so" },
+        { OrtBundleId::winArm64Cpu,        "CPU only",           "win-arm64-cpu",        "",         "win-arm64",   "onnxruntime-win-arm64-cpu.zip",       "", 0, "onnxruntime.dll" },
     };
     return catalog;
 }

@@ -1,7 +1,7 @@
 ---
 title: Installation
 nav_order: 2
-description: "Install INTERSECT on Windows, macOS, or Linux — plugin paths, macOS quarantine, ONNX Runtime bundles for stem separation, GPU requirements, and uninstall."
+description: "Install INTERSECT on Windows, macOS, or Linux (x64 and ARM64) — plugin paths, macOS quarantine, ONNX Runtime bundles for stem separation, GPU requirements, and uninstall."
 ---
 
 # Installation
@@ -13,9 +13,13 @@ Download the latest release zip from [Releases](https://github.com/tucktuckg00se
 | Platform | Minimum OS | Stem separation | Included binaries |
 | --- | --- | --- | --- |
 | Windows x64 | Windows 10 | On-demand ONNX Runtime bundle (CPU or DirectML GPU) | `INTERSECT.vst3`, `INTERSECT.exe` |
+| Windows ARM64 | Windows 11 on Arm | On-demand ONNX Runtime bundle (CPU) | `INTERSECT.vst3`, `INTERSECT.exe` |
 | Linux x64 | Ubuntu 22.04+ (glibc 2.35+) | On-demand ONNX Runtime bundle (CPU / NVIDIA CUDA 12 / NVIDIA CUDA 13 / AMD MIGraphX) | `INTERSECT.vst3`, `INTERSECT` (standalone) |
+| Linux ARM64 (aarch64) | Ubuntu 22.04+ or another aarch64 distro with glibc 2.35+ | On-demand ONNX Runtime bundle (CPU) | `INTERSECT.vst3`, `INTERSECT` (standalone) |
 | macOS arm64 (Apple Silicon) | macOS 10.13 (High Sierra) | On-demand ONNX Runtime bundle (CoreML) | `INTERSECT.vst3`, `INTERSECT.component`, `INTERSECT.app` |
 | macOS x64 (Intel) | macOS 10.13 (High Sierra) | Not available — ONNX Runtime 1.24 dropped x86_64 macOS support | `INTERSECT.vst3`, `INTERSECT.component`, `INTERSECT.app` |
+
+Pick the zip for your operating system **and** processor: `x64` for Intel/AMD, `arm64` for ARM (Apple Silicon, Snapdragon, Raspberry Pi and other aarch64 boards). An ARM64 plugin only loads in an ARM64-native DAW; an x64 DAW running under emulation needs the x64 plugin.
 
 Plugin zips are small (single-digit MB); the ONNX Runtime required for stem separation is downloaded on demand from inside the plugin — see [Stem separation setup](#stem-separation-setup).
 
@@ -78,6 +82,7 @@ After both are installed, open a sample's `STEMS` button to export.
 
 - **Linux — AMD MIGraphX** — requires ROCm installed. See [AMD's ROCm install guide](https://rocm.docs.amd.com/projects/install-on-linux/en/latest/). Experimental.
 - **Linux — CPU** — no extra installs required.
+- **Windows ARM64 and Linux ARM64** — the CPU bundle is the only option; no extra installs required.
 
 If a GPU runtime is missing or fails to load at export time, INTERSECT shows the error in the header status bar instead of silently failing; you can then switch `DEVICE` to CPU or install the missing runtime.
 

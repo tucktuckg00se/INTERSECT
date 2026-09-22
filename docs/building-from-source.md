@@ -139,12 +139,16 @@ The build does not bundle any ONNX Runtime shared library. Only the ORT C++ head
 
 ## Release workflow (repo maintainers)
 
-Pushing a tag matching `v*` triggers the GitHub Actions release workflow, which builds and packages four small plugin zips:
+Pushing a tag matching `v*` triggers the GitHub Actions release workflow, which builds and packages six small plugin zips:
 
 - Windows x64
+- Windows ARM64 (built natively on GitHub's `windows-11-arm` runner)
 - Linux x64
+- Linux ARM64 (built natively on GitHub's `ubuntu-22.04-arm` runner, same glibc 2.35 baseline as x64)
 - macOS arm64
 - macOS x64 (no stem separation — ONNX Runtime 1.24 dropped x86_64 macOS)
+
+The workflow can also be started by hand (**Actions → Release → Run workflow**) to build every platform from a branch without publishing a release. To build ARM64 on Windows yourself, configure with `cmake -B build -A ARM64` from a Visual Studio install that has the ARM64 build tools.
 
 ONNX Runtime bundles are published separately from the [intersect-ort-providers](https://github.com/tucktuckg00se/intersect-ort-providers) repo and downloaded on demand from the plugin.
 

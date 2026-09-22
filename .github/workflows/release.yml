@@ -4,6 +4,14 @@ on:
   push:
     tags:
       - 'v*'
+  # Manual runs build every platform (useful for checking the ARM builds) without publishing.
+  workflow_dispatch:
+
+# Tag pushes stamp the tag's version into the build and publish a release. Manual runs from a
+# branch let CMake fall back to its own version detection, name the zips after the branch, and
+# skip the release job.
+env:
+  IS_RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
 
 jobs:
   build-windows:
@@ -17,8 +25,11 @@ jobs:
           submodules: recursive
 
       - name: Get version
-        shell: bash
-        run: echo "PLUGIN_VERSION=$(echo '${{ github.ref_name }}' | sed 's/^v//' | sed 's/-rc\.[0-9]*//')" >> $GITHUB_ENV
+        run: |
+          if [ "$IS_RELEASE_TAG" = "true" ]; then
+            echo "PLUGIN_VERSION=$(echo '${{ github.ref_name }}' | sed 's/^v//' | sed 's/-rc\.[0-9]*//')" >> $GITHUB_ENV
+          fi
+          echo "ZIP_TAG=$(echo '${{ github.ref_name }}' | tr '/' '-')" >> $GITHUB_ENV
 
       - name: Configure
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DINTERSECT_VERSION=${{ env.PLUGIN_VERSION }}
@@ -35,12 +46,62 @@ jobs:
           mkdir staging
           cp -r "$ART_ROOT/VST3/INTERSECT.vst3" staging/
           cp -a "$ART_ROOT/Standalone/." staging/
-          cd staging && 7z a ../INTERSECT-${{ github.ref_name }}-Windows-x64.zip *
+          cd staging && 7z a ../INTERSECT-${{ env.ZIP_TAG }}-Windows-x64.zip *
 
       - uses: actions/upload-artifact@v5
         with:
           name: INTERSECT-Windows-x64
-          path: INTERSECT-${{ github.ref_name }}-Windows-x64.zip
+          path: INTERSECT-${{ env.ZIP_TAG }}-Windows-x64.zip
+
+  build-windows-arm64:
+    runs-on: windows-11-arm
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Get version
+        run: |
+          if ($env:IS_RELEASE_TAG -eq 'true') {
+            $version = '${{ github.ref_name }}' -replace '^v', '' -replace '-rc\.\d+', ''
+            "PLUGIN_VERSION=$version" >> $env:GITHUB_ENV
+          }
+          "ZIP_TAG=$('${{ github.ref_name }}' -replace '/', '-')" >> $env:GITHUB_ENV
+
+      - name: Ensure CMake
+        # Fall back to the CMake that ships inside Visual Studio if none is on PATH.
+        run: |
+          if (-not (Get-Command cmake -ErrorAction SilentlyContinue)) {
+            $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+            $cmakeBin = Join-Path $vs 'Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin'
+            if (-not (Test-Path $cmakeBin)) { throw 'CMake not found on PATH or in Visual Studio' }
+            $cmakeBin >> $env:GITHUB_PATH
+          }
+
+      - name: Configure
+        run: cmake -B build -A ARM64 -DCMAKE_BUILD_TYPE=Release "-DINTERSECT_VERSION=${{ env.PLUGIN_VERSION }}"
+
+      - name: Build
+        run: cmake --build build --config Release --target Intersect_All
+
+      - name: Package
+        run: |
+          $artRoot = 'build/Intersect_artefacts'
+          if (Test-Path "$artRoot/Release") { $artRoot = "$artRoot/Release" }
+          New-Item -ItemType Directory -Path staging | Out-Null
+          Copy-Item -Recurse "$artRoot/VST3/INTERSECT.vst3" staging/
+          Copy-Item -Recurse "$artRoot/Standalone/*" staging/
+          # Fail early if the VST3 isn't an ARM64 bundle.
+          if (-not (Test-Path 'staging/INTERSECT.vst3/Contents/arm64-win')) { throw 'VST3 has no arm64-win binary folder' }
+          Compress-Archive -Path staging/* -DestinationPath "INTERSECT-${{ env.ZIP_TAG }}-Windows-arm64.zip"
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: INTERSECT-Windows-arm64
+          path: INTERSECT-${{ env.ZIP_TAG }}-Windows-arm64.zip
 
   build-linux:
     runs-on: ubuntu-22.04
@@ -56,7 +117,11 @@ jobs:
 
       - name: Get version
         shell: bash
-        run: echo "PLUGIN_VERSION=$(echo '${{ github.ref_name }}' | sed 's/^v//' | sed 's/-rc\.[0-9]*//')" >> $GITHUB_ENV
+        run: |
+          if [ "$IS_RELEASE_TAG" = "true" ]; then
+            echo "PLUGIN_VERSION=$(echo '${{ github.ref_name }}' | sed 's/^v//' | sed 's/-rc\.[0-9]*//')" >> $GITHUB_ENV
+          fi
+          echo "ZIP_TAG=$(echo '${{ github.ref_name }}' | tr '/' '-')" >> $GITHUB_ENV
 
       - name: Configure
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DINTERSECT_VERSION=${{ env.PLUGIN_VERSION }}
@@ -67,100 +132,11 @@ jobs:
       - name: Audit Linux ABI baseline
         shell: bash
         run: |
-          set -euo pipefail
-
           ART_ROOT=build/Intersect_artefacts
           if [ -d "$ART_ROOT/Release" ]; then
             ART_ROOT="$ART_ROOT/Release"
           fi
-
-          STANDALONE="$ART_ROOT/Standalone/INTERSECT"
-          VST3="$ART_ROOT/VST3/INTERSECT.vst3/Contents/x86_64-linux/INTERSECT.so"
-          MAX_GLIBC="2.35"
-
-          ldd --version
-
-          find_linked_library() {
-            local binary="$1"
-            local soname="$2"
-            ldd "$binary" | awk -v soname="$soname" '$1 == soname { print $3; exit }'
-          }
-
-          fail_newer_glibc() {
-            local binary="$1"
-            local bad_versions=""
-            local version
-
-            while IFS= read -r version; do
-              if [ "$(printf '%s\n%s\n' "$MAX_GLIBC" "$version" | sort -V | tail -n 1)" != "$MAX_GLIBC" ]; then
-                bad_versions="${bad_versions}GLIBC_${version}"$'\n'
-              fi
-            done < <(readelf --version-info "$binary" | grep -oE 'GLIBC_[0-9]+(\.[0-9]+)+' | sed 's/^GLIBC_//' | sort -Vu)
-
-            if [ -n "$bad_versions" ]; then
-              echo "::error file=$binary::Requires glibc newer than GLIBC_$MAX_GLIBC"
-              printf '%s' "$bad_versions"
-              return 1
-            fi
-          }
-
-          fail_unavailable_symbols() {
-            local binary="$1"
-            local soname="$2"
-            local pattern="$3"
-            local provider
-            local symbols
-            local missing=""
-
-            symbols=$(readelf --version-info "$binary" | grep -oE "$pattern" | sort -Vu || true)
-            if [ -z "$symbols" ]; then
-              return 0
-            fi
-
-            provider=$(find_linked_library "$binary" "$soname")
-            if [ -z "$provider" ] || [ ! -f "$provider" ]; then
-              echo "::error file=$binary::Could not locate $soname via ldd"
-              return 1
-            fi
-
-            while IFS= read -r symbol; do
-              if ! grep -Fxq "$symbol" < <(strings "$provider"); then
-                missing="${missing}${symbol}"$'\n'
-              fi
-            done <<< "$symbols"
-
-            if [ -n "$missing" ]; then
-              echo "::error file=$binary::Requires symbols not provided by $provider"
-              printf '%s' "$missing"
-              return 1
-            fi
-          }
-
-          audit_binary() {
-            local binary="$1"
-            local ldd_output
-
-            echo "Auditing $binary"
-            test -f "$binary"
-            if ! ldd_output=$(ldd "$binary" 2>&1); then
-              echo "$ldd_output"
-              echo "::error file=$binary::ldd failed"
-              return 1
-            fi
-
-            echo "$ldd_output"
-            if echo "$ldd_output" | grep -q 'not found'; then
-              echo "::error file=$binary::Unresolved shared library dependency"
-              return 1
-            fi
-
-            fail_newer_glibc "$binary"
-            fail_unavailable_symbols "$binary" libstdc++.so.6 'GLIBCXX_[0-9]+(\.[0-9]+)+|CXXABI_[0-9]+(\.[0-9]+)+'
-            fail_unavailable_symbols "$binary" libasound.so.2 'ALSA_[0-9]+(\.[0-9]+)+([a-z0-9]+)?'
-          }
-
-          audit_binary "$STANDALONE"
-          audit_binary "$VST3"
+          .github/scripts/audit-linux-abi.sh "$ART_ROOT"
 
       - name: Package
         run: |
@@ -171,12 +147,65 @@ jobs:
           mkdir staging
           cp -r "$ART_ROOT/VST3/INTERSECT.vst3" staging/
           cp -a "$ART_ROOT/Standalone/." staging/
-          cd staging && zip -r ../INTERSECT-${{ github.ref_name }}-Linux-x64.zip .
+          cd staging && zip -r ../INTERSECT-${{ env.ZIP_TAG }}-Linux-x64.zip .
 
       - uses: actions/upload-artifact@v5
         with:
           name: INTERSECT-Linux-x64
-          path: INTERSECT-${{ github.ref_name }}-Linux-x64.zip
+          path: INTERSECT-${{ env.ZIP_TAG }}-Linux-x64.zip
+
+  build-linux-arm64:
+    # Same Ubuntu 22.04 base as x64, so the glibc 2.35 baseline carries over.
+    runs-on: ubuntu-22.04-arm
+    steps:
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libfreetype-dev libx11-dev libxrandr-dev libxcursor-dev libxinerama-dev libwebkit2gtk-4.1-dev libcurl4-openssl-dev
+
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Get version
+        shell: bash
+        run: |
+          if [ "$IS_RELEASE_TAG" = "true" ]; then
+            echo "PLUGIN_VERSION=$(echo '${{ github.ref_name }}' | sed 's/^v//' | sed 's/-rc\.[0-9]*//')" >> $GITHUB_ENV
+          fi
+          echo "ZIP_TAG=$(echo '${{ github.ref_name }}' | tr '/' '-')" >> $GITHUB_ENV
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DINTERSECT_VERSION=${{ env.PLUGIN_VERSION }}
+
+      - name: Build
+        run: cmake --build build --config Release --target Intersect_All
+
+      - name: Audit Linux ABI baseline
+        shell: bash
+        run: |
+          ART_ROOT=build/Intersect_artefacts
+          if [ -d "$ART_ROOT/Release" ]; then
+            ART_ROOT="$ART_ROOT/Release"
+          fi
+          .github/scripts/audit-linux-abi.sh "$ART_ROOT"
+
+      - name: Package
+        run: |
+          ART_ROOT=build/Intersect_artefacts
+          if [ -d "$ART_ROOT/Release" ]; then
+            ART_ROOT="$ART_ROOT/Release"
+          fi
+          mkdir staging
+          cp -r "$ART_ROOT/VST3/INTERSECT.vst3" staging/
+          cp -a "$ART_ROOT/Standalone/." staging/
+          test -d staging/INTERSECT.vst3/Contents/aarch64-linux
+          cd staging && zip -r ../INTERSECT-${{ env.ZIP_TAG }}-Linux-arm64.zip .
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: INTERSECT-Linux-arm64
+          path: INTERSECT-${{ env.ZIP_TAG }}-Linux-arm64.zip
 
   build-macos-arm64:
     runs-on: macos-latest
@@ -187,7 +216,11 @@ jobs:
 
       - name: Get version
         shell: bash
-        run: echo "PLUGIN_VERSION=$(echo '${{ github.ref_name }}' | sed 's/^v//' | sed 's/-rc\.[0-9]*//')" >> $GITHUB_ENV
+        run: |
+          if [ "$IS_RELEASE_TAG" = "true" ]; then
+            echo "PLUGIN_VERSION=$(echo '${{ github.ref_name }}' | sed 's/^v//' | sed 's/-rc\.[0-9]*//')" >> $GITHUB_ENV
+          fi
+          echo "ZIP_TAG=$(echo '${{ github.ref_name }}' | tr '/' '-')" >> $GITHUB_ENV
 
       - name: Configure
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=10.13 -DINTERSECT_VERSION=${{ env.PLUGIN_VERSION }}
@@ -215,12 +248,12 @@ jobs:
           cp -r "$ART_ROOT/VST3/INTERSECT.vst3" staging/
           cp -r "$ART_ROOT/Standalone/INTERSECT.app" staging/
           cp -r "$ART_ROOT/AU/INTERSECT.component" staging/
-          cd staging && zip -r ../INTERSECT-${{ github.ref_name }}-macOS-arm64.zip .
+          cd staging && zip -r ../INTERSECT-${{ env.ZIP_TAG }}-macOS-arm64.zip .
 
       - uses: actions/upload-artifact@v5
         with:
           name: INTERSECT-macOS-arm64
-          path: INTERSECT-${{ github.ref_name }}-macOS-arm64.zip
+          path: INTERSECT-${{ env.ZIP_TAG }}-macOS-arm64.zip
 
   build-macos-x64:
     runs-on: macos-15-intel
@@ -231,7 +264,11 @@ jobs:
 
       - name: Get version
         shell: bash
-        run: echo "PLUGIN_VERSION=$(echo '${{ github.ref_name }}' | sed 's/^v//' | sed 's/-rc\.[0-9]*//')" >> $GITHUB_ENV
+        run: |
+          if [ "$IS_RELEASE_TAG" = "true" ]; then
+            echo "PLUGIN_VERSION=$(echo '${{ github.ref_name }}' | sed 's/^v//' | sed 's/-rc\.[0-9]*//')" >> $GITHUB_ENV
+          fi
+          echo "ZIP_TAG=$(echo '${{ github.ref_name }}' | tr '/' '-')" >> $GITHUB_ENV
 
       - name: Configure
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=10.13 -DINTERSECT_VERSION=${{ env.PLUGIN_VERSION }}
@@ -259,15 +296,16 @@ jobs:
           cp -r "$ART_ROOT/VST3/INTERSECT.vst3" staging/
           cp -r "$ART_ROOT/Standalone/INTERSECT.app" staging/
           cp -r "$ART_ROOT/AU/INTERSECT.component" staging/
-          cd staging && zip -r ../INTERSECT-${{ github.ref_name }}-macOS-x64.zip .
+          cd staging && zip -r ../INTERSECT-${{ env.ZIP_TAG }}-macOS-x64.zip .
 
       - uses: actions/upload-artifact@v5
         with:
           name: INTERSECT-macOS-x64
-          path: INTERSECT-${{ github.ref_name }}-macOS-x64.zip
+          path: INTERSECT-${{ env.ZIP_TAG }}-macOS-x64.zip
 
   release:
-    needs: [build-windows, build-linux, build-macos-arm64, build-macos-x64]
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-windows, build-windows-arm64, build-linux, build-linux-arm64, build-macos-arm64, build-macos-x64]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -302,6 +340,8 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-rc') }}
           files: |
             artifacts/INTERSECT-Windows-x64/INTERSECT-${{ github.ref_name }}-Windows-x64.zip
+            artifacts/INTERSECT-Windows-arm64/INTERSECT-${{ github.ref_name }}-Windows-arm64.zip
             artifacts/INTERSECT-Linux-x64/INTERSECT-${{ github.ref_name }}-Linux-x64.zip
+            artifacts/INTERSECT-Linux-arm64/INTERSECT-${{ github.ref_name }}-Linux-arm64.zip
             artifacts/INTERSECT-macOS-arm64/INTERSECT-${{ github.ref_name }}-macOS-arm64.zip
             artifacts/INTERSECT-macOS-x64/INTERSECT-${{ github.ref_name }}-macOS-x64.zip

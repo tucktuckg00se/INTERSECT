@@ -15,7 +15,7 @@ INTERSECT is a sample slicer instrument plugin (VST3/AU/Standalone) with multi-s
 
 ## Install
 
-Download the latest release zip from [Releases](https://github.com/tucktuckg00se/INTERSECT/releases) and copy the plugin files into your system plugin folder.
+Download the latest release zip for your system from [Releases](https://github.com/tucktuckg00se/INTERSECT/releases) (Windows and Linux come in `x64` and `arm64`; macOS in `arm64` and `x64`) and copy the plugin files into your system plugin folder.
 
 | Format | Windows | macOS | Linux |
 | --- | --- | --- | --- |
