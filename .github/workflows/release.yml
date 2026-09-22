@@ -136,7 +136,7 @@ jobs:
           if [ -d "$ART_ROOT/Release" ]; then
             ART_ROOT="$ART_ROOT/Release"
           fi
-          .github/scripts/audit-linux-abi.sh "$ART_ROOT"
+          bash .github/scripts/audit-linux-abi.sh "$ART_ROOT"
 
       - name: Package
         run: |
@@ -188,7 +188,7 @@ jobs:
           if [ -d "$ART_ROOT/Release" ]; then
             ART_ROOT="$ART_ROOT/Release"
           fi
-          .github/scripts/audit-linux-abi.sh "$ART_ROOT"
+          bash .github/scripts/audit-linux-abi.sh "$ART_ROOT"
 
       - name: Package
         run: |
