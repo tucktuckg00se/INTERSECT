@@ -23,13 +23,6 @@ public:
     void resized() override;
     bool keyPressed (const juce::KeyPress& key) override;
 
-    /** Starts a drag of the selected sample's slices as a .mid file; dropping it in a DAW creates a MIDI clip. */
-    void startMidiDrag (juce::Component* dragSource, const juce::MouseEvent& e);
-    /** Click on the MIDI button: save the selected sample's slices as a .mid file via a file browser. */
-    void saveMidiAs();
-    bool shouldDropFilesWhenDraggedExternally (const juce::DragAndDropTarget::SourceDetails& sourceDetails,
-                                               juce::StringArray& files, bool& canMoveFiles) override;
-
     juce::StringArray getAvailableThemes();
     void applyTheme (const juce::String& themeName);
     void saveUserSettings (float scale, const juce::String& themeName);
@@ -100,10 +93,12 @@ private:
     std::unique_ptr<juce::FileChooser> openChooser;
     juce::File pendingRenamePreset;   // a SAVE whose new file should open for renaming once written
     juce::File lastExportFolder;
-    juce::File midiExportFile;        // temp .mid handed to the OS when a MIDI drag leaves the window
 
-    bool writeMidiExport (const juce::File& dest);
-    juce::String getMidiExportFileName() const;
+    // MIDI export of one session sample's slices (sample lane MIDI button).
+    bool writeMidiExport (const juce::File& dest, int sampleId);
+    juce::String getMidiExportBaseName (int sampleId) const;
+    juce::File writeMidiForDrag (int sampleId);
+    void saveMidiAs (int sampleId);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (IntersectEditor)
 };

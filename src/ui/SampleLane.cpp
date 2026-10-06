@@ -82,12 +82,17 @@ std::vector<SampleLane::VisibleSample> SampleLane::buildVisibleSamples() const
         const int deleteW = juce::jmin (16, juce::jmax (12, blockW / 6));
         const int cancelW = juce::jmin (54, juce::jmax (34, blockW / 2));
         const int stemsW = jobRunning ? cancelW : juce::jmin (44, juce::jmax (18, blockW / 3));
+        const int midiW = jobRunning ? 0 : juce::jmin (40, juce::jmax (18, blockW / 4));
         int right = x2 - 3;
         visible.deleteBounds = { right - deleteW, buttonY, deleteW, buttonH };
         right = visible.deleteBounds.getX() - 2;
         visible.stemsBounds = { right - stemsW, buttonY, stemsW, buttonH };
-        visible.deleteBounds = visible.deleteBounds.getIntersection ({ x1 + 1, buttonY, juce::jmax (1, blockW - 2), buttonH });
-        visible.stemsBounds = visible.stemsBounds.getIntersection ({ x1 + 1, buttonY, juce::jmax (1, blockW - 2), buttonH });
+        right = visible.stemsBounds.getX() - 2;
+        visible.midiBounds = { right - midiW, buttonY, midiW, buttonH };
+        const juce::Rectangle<int> inner { x1 + 1, buttonY, juce::jmax (1, blockW - 2), buttonH };
+        visible.deleteBounds = visible.deleteBounds.getIntersection (inner);
+        visible.stemsBounds = visible.stemsBounds.getIntersection (inner);
+        visible.midiBounds = visible.midiBounds.getIntersection (inner);
         out.push_back (std::move (visible));
     }
 
@@ -164,7 +169,8 @@ void SampleLane::paint (juce::Graphics& g)
                 labelX = end + 1;
         }
 
-        const int maxLabelRight = juce::jmin (sample.stemsBounds.getX() - 2, getWidth());
+        const int buttonsLeft = sample.midiBounds.isEmpty() ? sample.stemsBounds.getX() : sample.midiBounds.getX();
+        const int maxLabelRight = juce::jmin (buttonsLeft - 2, getWidth());
         const int availableLabelW = juce::jmax (1, maxLabelRight - labelX - 2);
         if (availableLabelW >= 8)
         {
@@ -205,6 +211,11 @@ void SampleLane::paint (juce::Graphics& g)
                         getTheme().surface4.withAlpha (0.92f),
                         getTheme().text2.withAlpha (0.92f));
         }
+        if (! sample.midiBounds.isEmpty())
+            drawButton (sample.midiBounds,
+                        sample.midiBounds.getWidth() < 24 ? "M" : "MIDI",
+                        getTheme().surface4.withAlpha (0.92f),
+                        getTheme().text2.withAlpha (0.92f));
         drawButton (sample.deleteBounds,
                     "X",
                     juce::Colours::black.withAlpha (0.18f),
@@ -289,6 +300,16 @@ void SampleLane::mouseDown (const juce::MouseEvent& e)
         return;
     }
 
+    if (it != visible.end() && it->midiBounds.contains (pos))
+    {
+        processor.selectedSessionSampleId.store (hitId, std::memory_order_relaxed);
+        processor.markUiSnapshotDirty();
+        midiPressSampleId = hitId;
+        midiDragStarted = false;
+        repaint();
+        return;
+    }
+
     if (it != visible.end() && it->stemsBounds.contains (pos))
     {
         processor.selectedSessionSampleId.store (hitId, std::memory_order_relaxed);
@@ -327,6 +348,28 @@ void SampleLane::mouseDown (const juce::MouseEvent& e)
 
 void SampleLane::mouseDrag (const juce::MouseEvent& e)
 {
+    if (midiPressSampleId >= 0)
+    {
+        if (midiDragStarted || e.getDistanceFromDragStart() < 4)
+            return;
+
+        midiDragStarted = true;
+        const auto file = writeMidiForDrag != nullptr ? writeMidiForDrag (midiPressSampleId) : juce::File();
+        if (! file.existsAsFile())
+            return;
+
+        // Start the OS drag right here, while the pointer is still over this component (JUCE's
+        // documented requirement). JUCE's X11 drag source writes "file://" + path without
+        // percent-encoding, so hand it an encoded URI on Linux; other platforms want plain paths.
+       #if JUCE_LINUX || JUCE_BSD
+        const auto item = juce::URL (file).toString (false);
+       #else
+        const auto item = file.getFullPathName();
+       #endif
+        juce::DragAndDropContainer::performExternalDragDropOfFiles (juce::StringArray { item }, false, this);
+        return;
+    }
+
     if (dragSampleId < 0)
         return;
 
@@ -348,8 +391,24 @@ void SampleLane::mouseDrag (const juce::MouseEvent& e)
     repaint();
 }
 
-void SampleLane::mouseUp (const juce::MouseEvent&)
+void SampleLane::mouseUp (const juce::MouseEvent& e)
 {
+    if (midiPressSampleId >= 0)
+    {
+        const int sampleId = midiPressSampleId;
+        const bool wasDrag = midiDragStarted;
+        midiPressSampleId = -1;
+        midiDragStarted = false;
+
+        const auto visible = buildVisibleSamples();
+        const auto it = std::find_if (visible.begin(), visible.end(),
+                                      [sampleId] (const VisibleSample& s) { return s.sampleId == sampleId; });
+        if (! wasDrag && it != visible.end() && it->midiBounds.contains (e.getPosition())
+            && onMidiSaveRequested != nullptr)
+            onMidiSaveRequested (sampleId);
+        return;
+    }
+
     if (dragging && dragSampleId >= 0 && dragTargetIndex >= 0)
         processor.reorderSessionSampleAsync (dragSampleId, dragTargetIndex);
 
@@ -357,6 +416,23 @@ void SampleLane::mouseUp (const juce::MouseEvent&)
     dragTargetIndex = -1;
     dragging = false;
     repaint();
+}
+
+juce::String SampleLane::getTooltip()
+{
+    const auto pos = getMouseXYRelative();
+    for (const auto& sample : buildVisibleSamples())
+    {
+        if (sample.midiBounds.contains (pos))
+            return "Drag into your DAW for a MIDI clip of this sample's slices, or click to save a .mid file";
+        if (sample.stemsBounds.contains (pos))
+            return isStemJobRunningForSample (processor.getUiSliceSnapshot(), sample.sampleId)
+                       ? "Cancel stem separation"
+                       : "Separate this sample into stems";
+        if (sample.deleteBounds.contains (pos))
+            return "Remove this sample from the kit";
+    }
+    return {};
 }
 
 void SampleLane::setShowEmptyHint (bool shouldShow)
