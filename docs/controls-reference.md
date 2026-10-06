@@ -15,7 +15,6 @@ description: "Every button, parameter, gesture, and keyboard shortcut in the INT
 | `PANIC` | Kill active voices immediately | Also stops lazy chop |
 | `FILES` | Open or close the file browser | See [File browser]({{ site.baseurl }}{% link interface.md %}#file-browser) |
 | `SAVE` | Save the kit to your preset library | See [Presets]({{ site.baseurl }}{% link presets.md %}) |
-| `MIDI` | Export the selected sample's slices as a MIDI file | Drag into your DAW, or click to save a `.mid` file |
 | `SET` | Theme, scale, NRPN, middle-C, and stem-separation popup | See [NRPN MIDI routing]({{ site.baseurl }}{% link nrpn-midi.md %}#set-button--nrpn-settings) and the [Settings file]({{ site.baseurl }}{% link settings-file.md %}) reference for what gets persisted |
 
 ## Signal chain bar
@@ -146,6 +145,8 @@ All three parameter cells support drag-to-edit (drag up/down) and double-click t
 | Drag-and-drop file onto loaded session | Append to current session |
 | Click sample in sample lane | Select sample |
 | Drag sample in sample lane | Reorder session samples |
+| Drag a sample's `MIDI` button | Drop a MIDI clip of that sample's slices into your DAW |
+| Click a sample's `MIDI` button | Save that sample's slices as a `.mid` file |
 | Click slice | Select slice |
 | Click empty waveform in `ADD` mode | Begin draw-slice gesture |
 | Drag `S` / `E` edge handles | Resize selected slice |
