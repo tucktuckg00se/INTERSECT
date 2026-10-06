@@ -1,5 +1,4 @@
 #include "MidiExport.h"
-#include "../PluginProcessor.h"
 #include <algorithm>
 #include <cmath>
 #include <vector>
@@ -9,175 +8,145 @@ namespace intersectMidi
 namespace
 {
 constexpr int kTicksPerQuarter = 960;
+constexpr int kDefaultVelocity = 100;
 
-float dbToLinear (float dB)
+// Maps a frame offset within the sample to quarter-note beats.
+class BeatMap
 {
-    if (dB <= -100.0f) return 0.0f;
-    return std::pow (10.0f, dB / 20.0f);
-}
-
-void writeVarQuantity (std::vector<uint8_t>& out, uint32_t value)
-{
-    uint8_t buffer[5] {};
-    int len = 1;
-    buffer[0] = static_cast<uint8_t> (value & 0x7f);
-
-    for (int i = 1; i < 5; ++i)
+public:
+    BeatMap (const SampleData::SessionSample* sample, double sampleRate, float fallbackBpm)
+        : rate (sampleRate)
     {
-        value >>= 7;
-        if (value == 0)
-            break;
-        buffer[i] = static_cast<uint8_t> ((value & 0x7f) | 0x80);
-        ++len;
+        if (sample != nullptr && ! sample->beatAnchors.empty() && sample->anchorTempoBpm > 0.0f)
+        {
+            anchors = &sample->beatAnchors;
+            bpm = sample->anchorTempoBpm;
+        }
+        else
+        {
+            bpm = fallbackBpm;
+        }
     }
 
-    for (int i = len - 1; i >= 0; --i)
-        out.push_back (buffer[(size_t) i]);
-}
+    float getBpm() const { return bpm; }
 
-void writeUInt32BE (std::vector<uint8_t>& out, uint32_t v)
-{
-    out.push_back (static_cast<uint8_t> (v >> 24));
-    out.push_back (static_cast<uint8_t> (v >> 16));
-    out.push_back (static_cast<uint8_t> (v >> 8));
-    out.push_back (static_cast<uint8_t> (v));
-}
+    double toBeats (int frame) const
+    {
+        const double beatsPerFrame = (double) bpm / (60.0 * rate);
+        if (anchors == nullptr)
+            return frame * beatsPerFrame;
 
-void writeUInt16BE (std::vector<uint8_t>& out, uint16_t v)
-{
-    out.push_back (static_cast<uint8_t> (v >> 8));
-    out.push_back (static_cast<uint8_t> (v));
-}
+        // Piecewise-linear between REX slice starts: each rendered slice (including its
+        // transient tail) spans exactly the gap to the next slice's musical position.
+        const auto& a = *anchors;
+        auto next = std::upper_bound (a.begin(), a.end(), frame,
+                                      [] (int f, const SampleData::SessionSample::BeatAnchor& anchor)
+                                      { return f < anchor.frame; });
+        if (next == a.begin())
+            return a.front().beat - (a.front().frame - frame) * beatsPerFrame;
 
-struct NoteEvent
-{
-    int startTick = 0;
-    int endTick = 0;
-    int note = 0;
-    int velocity = 100;
+        const auto& prev = *(next - 1);
+        if (next == a.end() || next->frame <= prev.frame)
+            return prev.beat + (frame - prev.frame) * beatsPerFrame;
+
+        const double t = (double) (frame - prev.frame) / (double) (next->frame - prev.frame);
+        return prev.beat + t * (next->beat - prev.beat);
+    }
+
+private:
+    const std::vector<SampleData::SessionSample::BeatAnchor>* anchors = nullptr;
+    double rate = 44100.0;
+    float bpm = 120.0f;
 };
 
-struct MidiEvent
+int velocityFor (const Slice& s)
 {
-    int tick = 0;
-    uint8_t status = 0;
-    uint8_t data1 = 0;
-    uint8_t data2 = 0;
-};
+    if ((s.lockMask & kLockVolume) == 0)
+        return kDefaultVelocity;
 
-} // namespace
+    const float gain = s.volume <= -100.0f ? 0.0f : juce::Decibels::decibelsToGain (s.volume);
+    return juce::jlimit (1, 127, juce::roundToInt (127.0f * juce::jlimit (0.0f, 1.0f, gain)));
+}
 
-juce::MemoryBlock buildKitMidiFile (const IntersectProcessor::UiSliceSnapshot& ui, float globalBpm)
+// Kit BPM for non-REX samples: the first active slice's locked tempo, else the global BPM.
+float kitTempo (const IntersectProcessor::UiSliceSnapshot& ui, int sampleId, float globalBpm)
 {
-    juce::MemoryBlock out;
-
-    if (ui.numSlices <= 0 || ui.sampleSampleRate <= 0.0)
-        return out;
-
-    // Kit BPM: the first active slice's resolved tempo (locked slices keep their own).
-    float bpm = globalBpm > 0.0f ? globalBpm : 120.0f;
     for (int i = 0; i < ui.numSlices; ++i)
     {
         const auto& s = ui.slices[(size_t) i];
-        if (! s.active)
+        if (! s.active || (sampleId >= 0 && s.sampleId != sampleId))
             continue;
-        bpm = (s.lockMask & kLockBpm) != 0 ? s.bpm : bpm;
+        if ((s.lockMask & kLockBpm) != 0 && s.bpm > 0.0f)
+            return s.bpm;
         break;
     }
-    bpm = juce::jlimit (20.0f, 300.0f, bpm > 0.0f ? bpm : 120.0f);
+    return globalBpm;
+}
+} // namespace
 
-    const double ticksPerSecond = (double) kTicksPerQuarter * bpm / 60.0;
-    const double sampleRate = ui.sampleSampleRate;
+juce::MemoryBlock buildKitMidiFile (const IntersectProcessor::UiSliceSnapshot& ui,
+                                    const SampleData::SessionSample* sample,
+                                    float kitBpm)
+{
+    if (ui.numSlices <= 0 || ui.sampleSampleRate <= 0.0)
+        return {};
 
-    std::vector<NoteEvent> notes;
+    const int sampleId = sample != nullptr ? sample->sampleId : -1;
+    const float fallbackBpm = juce::jlimit (20.0f, 999.0f, kitTempo (ui, sampleId, kitBpm > 0.0f ? kitBpm : 120.0f));
+    const BeatMap beats (sample, ui.sampleSampleRate, fallbackBpm);
+
+    struct Note { int on, off, note, velocity; };
+    std::vector<Note> notes;
     for (int i = 0; i < ui.numSlices; ++i)
     {
         const auto& s = ui.slices[(size_t) i];
-        if (! s.active || s.endSample <= s.startSample)
+        if (! s.active || (sample != nullptr && s.sampleId != sampleId))
             continue;
 
-        NoteEvent e;
-        e.startTick = (int) std::llround ((double) s.startSample / sampleRate * ticksPerSecond);
-        e.endTick   = juce::jmax (e.startTick + 1,
-                                  (int) std::llround ((double) s.endSample / sampleRate * ticksPerSecond));
-        e.note      = juce::jlimit (0, kMidiNoteCount - 1, s.midiNote);
-        // Slice volume (dB) shapes the velocity; keep a floor so quiet slices stay playable.
-        e.velocity  = juce::jlimit (1, 127, juce::roundToInt (127.0f * juce::jlimit (0.0f, 1.0f, dbToLinear (s.volume))));
-        notes.push_back (e);
+        const int start = sample != nullptr ? s.startInSample : s.startSample;
+        const int end   = sample != nullptr ? s.endInSample   : s.endSample;
+        if (end <= start)
+            continue;
+
+        const int on  = juce::jmax (0, (int) std::llround (beats.toBeats (start) * kTicksPerQuarter));
+        const int off = juce::jmax (on + 1, (int) std::llround (beats.toBeats (end) * kTicksPerQuarter));
+        notes.push_back ({ on, off, juce::jlimit (0, kMidiNoteCount - 1, s.midiNote), velocityFor (s) });
     }
 
     if (notes.empty())
-        return out;
+        return {};
 
-    // Time order; note-offs before note-ons within the same tick.
-    std::stable_sort (notes.begin(), notes.end(),
-                      [] (const NoteEvent& a, const NoteEvent& b)
-                      {
-                          if (a.startTick != b.startTick)
-                              return a.startTick < b.startTick;
-                          return a.endTick < b.endTick;
-                      });
+    juce::MidiMessageSequence track;
+    track.addEvent (juce::MidiMessage::tempoMetaEvent (juce::roundToInt (60'000'000.0 / beats.getBpm())), 0.0);
 
-    // Tempo first, at tick 0.
-    std::vector<uint8_t> track;
-    const uint32_t usPerQuarter = (uint32_t) std::llround (60'000'000.0 / bpm);
-    writeVarQuantity (track, 0);
-    track.push_back (0xFF);
-    track.push_back (0x51);
-    track.push_back (0x03);
-    track.push_back ((uint8_t) (usPerQuarter >> 16));
-    track.push_back ((uint8_t) (usPerQuarter >> 8));
-    track.push_back ((uint8_t) usPerQuarter);
+    // Note-offs first: addEvent() places an event after others with the same timestamp, so a
+    // note ending exactly where the next one starts is released before it retriggers.
+    for (const auto& n : notes)
+        track.addEvent (juce::MidiMessage::noteOff (1, n.note), (double) n.off);
+    for (const auto& n : notes)
+        track.addEvent (juce::MidiMessage::noteOn (1, n.note, (juce::uint8) n.velocity), (double) n.on);
+    track.updateMatchedPairs();
 
-    // Expand to an event list and sort by tick so overlapping notes stay in order.
-    std::vector<MidiEvent> events;
-    events.reserve (notes.size() * 2);
-    for (const auto& e : notes)
-    {
-        events.push_back ({ e.startTick, 0x90, (uint8_t) e.note, (uint8_t) e.velocity });
-        events.push_back ({ e.endTick,   0x80, (uint8_t) e.note, 0x00 });
-    }
-    std::stable_sort (events.begin(), events.end(),
-                      [] (const MidiEvent& a, const MidiEvent& b)
-                      {
-                          if (a.tick != b.tick)
-                              return a.tick < b.tick;
-                          return a.status < b.status;   // note-offs before note-ons on the same tick
-                      });
+    juce::MidiFile file;
+    file.setTicksPerQuarterNote (kTicksPerQuarter);
+    file.addTrack (track);
 
-    int lastTick = 0;
-    for (const auto& ev : events)
-    {
-        writeVarQuantity (track, (uint32_t) (ev.tick - lastTick));
-        track.push_back (ev.status);
-        track.push_back (ev.data1);
-        track.push_back (ev.data2);
-        lastTick = ev.tick;
-    }
-
-    std::vector<uint8_t> file;
-    file.reserve (track.size() + 14);
-    file.push_back ('M'); file.push_back ('T'); file.push_back ('h'); file.push_back ('d');
-    writeUInt32BE (file, 6);
-    writeUInt16BE (file, 0);    // format 0
-    writeUInt16BE (file, 1);    // one track
-    writeUInt16BE (file, (uint16_t) kTicksPerQuarter);
-    file.push_back ('M'); file.push_back ('T'); file.push_back ('r'); file.push_back ('k');
-    writeUInt32BE (file, (uint32_t) track.size());
-    file.insert (file.end(), track.begin(), track.end());
-
-    out.setSize (file.size());
-    std::copy (file.begin(), file.end(), static_cast<uint8_t*> (out.getData()));
-    return out;
+    juce::MemoryOutputStream out;
+    if (! file.writeTo (out, 0))
+        return {};
+    return out.getMemoryBlock();
 }
 
-bool writeKitMidiFile (const juce::File& dest, const IntersectProcessor::UiSliceSnapshot& ui, float globalBpm)
+bool writeKitMidiFile (const juce::File& dest,
+                       const IntersectProcessor::UiSliceSnapshot& ui,
+                       const SampleData::SessionSample* sample,
+                       float kitBpm)
 {
-    const auto data = buildKitMidiFile (ui, globalBpm);
+    const auto data = buildKitMidiFile (ui, sample, kitBpm);
     if (data.getSize() == 0)
         return false;
 
-    return dest.replaceWithData (data.getData(), (int) data.getSize());
+    return dest.replaceWithData (data.getData(), data.getSize());
 }
 
 } // namespace intersectMidi

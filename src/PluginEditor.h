@@ -23,9 +23,9 @@ public:
     void resized() override;
     bool keyPressed (const juce::KeyPress& key) override;
 
-    /** Starts a drag of the kit's slices as a .mid file; dropping it in a DAW creates a MIDI clip. */
+    /** Starts a drag of the selected sample's slices as a .mid file; dropping it in a DAW creates a MIDI clip. */
     void startMidiDrag (juce::Component* dragSource, const juce::MouseEvent& e);
-    /** Right-click on the MIDI button: save the kit as a .mid file via a file browser. */
+    /** Click on the MIDI button: save the selected sample's slices as a .mid file via a file browser. */
     void saveMidiAs();
     bool shouldDropFilesWhenDraggedExternally (const juce::DragAndDropTarget::SourceDetails& sourceDetails,
                                                juce::StringArray& files, bool& canMoveFiles) override;
@@ -101,6 +101,9 @@ private:
     juce::File pendingRenamePreset;   // a SAVE whose new file should open for renaming once written
     juce::File lastExportFolder;
     juce::File midiExportFile;        // temp .mid handed to the OS when a MIDI drag leaves the window
+
+    bool writeMidiExport (const juce::File& dest);
+    juce::String getMidiExportFileName() const;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (IntersectEditor)
 };

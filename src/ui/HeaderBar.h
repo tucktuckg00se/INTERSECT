@@ -4,25 +4,19 @@
 
 class IntersectProcessor;
 
-/** A text button that reports right-clicks and starts a drag-out when pressed and moved. */
+/** A text button that also starts a drag-out when pressed and moved. */
 class MidiExportButton : public juce::TextButton
 {
 public:
     std::function<void(const juce::MouseEvent&)> onDragStart;
-    std::function<void()> onRightClick;
 
-    explicit MidiExportButton (const juce::String& text) : juce::TextButton (text) {}
+    using juce::TextButton::TextButton;
+
+    /** True while handling the release of a press that turned into a drag (onClick should ignore it). */
+    bool lastPressWasDrag() const { return dragStarted; }
 
     void mouseDown (const juce::MouseEvent& e) override
     {
-        if (e.mods.isRightButtonDown())
-        {
-            if (onRightClick != nullptr)
-                onRightClick();
-            return;
-        }
-
-        downPos = e.getPosition();
         dragStarted = false;
         juce::TextButton::mouseDown (e);
     }
@@ -30,7 +24,7 @@ public:
     void mouseDrag (const juce::MouseEvent& e) override
     {
         // A small movement threshold keeps plain clicks from starting a drag.
-        if (! dragStarted && e.getPosition().getDistanceFrom (downPos) >= 4.0f)
+        if (! dragStarted && e.getDistanceFromDragStart() >= 4)
         {
             dragStarted = true;
             if (onDragStart != nullptr)
@@ -40,14 +34,7 @@ public:
         juce::TextButton::mouseDrag (e);
     }
 
-    void mouseUp (const juce::MouseEvent& e) override
-    {
-        dragStarted = false;
-        juce::TextButton::mouseUp (e);
-    }
-
 private:
-    juce::Point<int> downPos {};
     bool dragStarted = false;
 };
 
@@ -59,9 +46,9 @@ public:
     std::function<void()> onBrowserToggle;
     /** SAVE: save the kit straight into the preset library. */
     std::function<void()> onSaveRequested;
-    /** MIDI button: drag started outside the window (export a .mid file). */
+    /** MIDI button: drag started (export the slices as a .mid file to drop in a DAW). */
     std::function<void(const juce::MouseEvent&)> onMidiDragStart;
-    /** MIDI button: right-click (save the kit as a .mid file via browser). */
+    /** MIDI button: click (save the slices as a .mid file via a file browser). */
     std::function<void()> onMidiSaveRequested;
     /** The MIDI export button (drag source for external drags). */
     juce::Component* getMidiButton() { return &midiBtn; }

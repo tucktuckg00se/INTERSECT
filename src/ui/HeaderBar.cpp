@@ -99,15 +99,15 @@ HeaderBar::HeaderBar (IntersectProcessor& p) : processor (p)
             onSaveRequested();
     };
 
-    midiBtn.setTooltip ("Drag out to drop a MIDI file into your DAW; right-click to save");
+    midiBtn.setTooltip ("Export slices as MIDI: drag out into your DAW, or click to save a .mid file");
     midiBtn.onDragStart = [this] (const juce::MouseEvent& e)
     {
         if (onMidiDragStart != nullptr)
             onMidiDragStart (e);
     };
-    midiBtn.onRightClick = [this]
+    midiBtn.onClick = [this]
     {
-        if (onMidiSaveRequested != nullptr)
+        if (! midiBtn.lastPressWasDrag() && onMidiSaveRequested != nullptr)
             onMidiSaveRequested();
     };
 
