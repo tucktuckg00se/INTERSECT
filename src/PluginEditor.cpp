@@ -389,24 +389,52 @@ bool IntersectEditor::keyPressed (const juce::KeyPress& key)
     return false;
 }
 
-// Drag the MIDI button out of the window: the kit's slices become a .mid file that DAWs turn
+// Writes the selected session sample's slices as a .mid file (see intersectMidi::buildKitMidiFile).
+bool IntersectEditor::writeMidiExport (const juce::File& dest)
+{
+    const auto& ui = processor.getUiSliceSnapshot();
+    const auto sampleSnap = processor.sampleData.getSnapshot();
+    const SampleData::SessionSample* sample = nullptr;
+    if (sampleSnap != nullptr)
+    {
+        for (const auto& s : sampleSnap->sessionSamples)
+            if (s.sampleId == ui.selectedSessionSampleId)
+                sample = &s;
+        if (sample == nullptr && ! sampleSnap->sessionSamples.empty())
+            sample = &sampleSnap->sessionSamples.front();
+    }
+
+    const float globalBpm = processor.apvts.getRawParameterValue (ParamIds::defaultBpm)->load();
+    return intersectMidi::writeKitMidiFile (dest, ui, sample, globalBpm);
+}
+
+juce::String IntersectEditor::getMidiExportFileName() const
+{
+    const auto& ui = processor.getUiSliceSnapshot();
+    juce::String name;
+    for (int i = 0; i < ui.numSessionSamples; ++i)
+        if (ui.sessionSamples[(size_t) i].sampleId == ui.selectedSessionSampleId)
+            name = ui.sessionSamples[(size_t) i].fileName.toString();
+    if (name.isEmpty())
+        name = ui.sampleFileName.toString();
+
+    name = juce::File::createLegalFileName (juce::File (name).getFileNameWithoutExtension());
+    return (name.isEmpty() ? juce::String ("INTERSECT slices") : name) + ".mid";
+}
+
+// Drag the MIDI button out of the window: the slices become a .mid file that DAWs turn
 // into a MIDI clip on drop. The file is written up front because the OS drag needs a real path.
 void IntersectEditor::startMidiDrag (juce::Component* dragSource, const juce::MouseEvent& e)
 {
-    const auto& ui = processor.getUiSliceSnapshot();
-    if (ui.numSlices <= 0)
-        return;
-
-    const float globalBpm = processor.apvts.getRawParameterValue (ParamIds::defaultBpm)->load();
-
     auto folder = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("INTERSECT");
     if (! folder.createDirectory())
         return;
 
-    midiExportFile = folder.getChildFile ("slices.mid");
-    if (! intersectMidi::writeKitMidiFile (midiExportFile, ui, globalBpm))
+    midiExportFile = folder.getChildFile (getMidiExportFileName());
+    if (! writeMidiExport (midiExportFile))
     {
         midiExportFile = juce::File();
+        processor.showTransientStatusMessage ("No slices to export as MIDI", true);
         return;
     }
 
@@ -415,16 +443,24 @@ void IntersectEditor::startMidiDrag (juce::Component* dragSource, const juce::Mo
 
 void IntersectEditor::saveMidiAs()
 {
-    const auto& ui = processor.getUiSliceSnapshot();
-    if (ui.numSlices <= 0)
+    if (processor.getUiSliceSnapshot().numSlices <= 0)
+    {
+        processor.showTransientStatusMessage ("No slices to export as MIDI", true);
         return;
+    }
+
+    const auto folder = lastExportFolder.isDirectory()
+        ? lastExportFolder
+        : juce::File::getSpecialLocation (juce::File::userHomeDirectory);
 
     auto fileChooser = std::make_shared<juce::FileChooser> (
-        "Save Kit as MIDI File",
-        juce::File(),
+        "Save Slices as MIDI File",
+        folder.getChildFile (getMidiExportFileName()),
         "*.mid");
 
-    fileChooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles,
+    fileChooser->launchAsync (juce::FileBrowserComponent::saveMode
+                                  | juce::FileBrowserComponent::canSelectFiles
+                                  | juce::FileBrowserComponent::warnAboutOverwriting,
         [this, fileChooser] (const juce::FileChooser& chooser)
         {
             auto file = chooser.getResult();
@@ -434,8 +470,8 @@ void IntersectEditor::saveMidiAs()
             if (file.getFileExtension().isEmpty())
                 file = file.withFileExtension ("mid");
 
-            const float globalBpm = processor.apvts.getRawParameterValue (ParamIds::defaultBpm)->load();
-            if (intersectMidi::writeKitMidiFile (file, processor.getUiSliceSnapshot(), globalBpm))
+            lastExportFolder = file.getParentDirectory();
+            if (writeMidiExport (file))
                 processor.showTransientStatusMessage ("MIDI saved to " + file.getFullPathName(), false);
             else
                 processor.showTransientStatusMessage ("Couldn't write " + file.getFullPathName(), true);
