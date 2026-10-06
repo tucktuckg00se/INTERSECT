@@ -16,12 +16,15 @@
 #include "audio/StemSeparationJob.h"
 #include "audio/AuditionPlayer.h"
 #include "UndoManager.h"
-#include "params/GlobalParamSnapshot.h"
+#include "params/ParamFields.h"
+#include "params/SampleParams.h"
+#include "params/SampleParamTable.h"
 #include "params/ParamUndoState.h"
 #include "params/ParamIds.h"
 #include "params/ParamLayout.h"
 
 class IntersectProcessor : public juce::AudioProcessor,
+                           public ParamFieldIds,   // FieldBpm, ... (IntersectProcessor::FieldBpm)
                            private juce::AsyncUpdater
 {
 public:
@@ -82,6 +85,7 @@ public:
         CmdSelectSlice,
         CmdSetRootNote,
         CmdStemSeparate,
+        CmdSetSampleParam,   // intParam1 = sampleId, intParam2 = field, floatParam1 = value (SAMPLE-tab units)
     };
 
     enum LoadKind
@@ -96,51 +100,6 @@ public:
         SampleStateEmpty = 0,
         SampleStateLoaded,
         SampleStateMissingAwaitingRelink,
-    };
-
-    // Param field identifiers for CmdSetSliceParam
-    enum SliceParamField
-    {
-        FieldBpm = 0,
-        FieldPitch,
-        FieldAlgorithm,
-        FieldRepitchMode,
-        FieldAttack,
-        FieldDecay,
-        FieldSustain,
-        FieldRelease,
-        FieldMuteGroup,
-        FieldMidiNote,
-        FieldStretchEnabled,
-        FieldTonality,
-        FieldFormant,
-        FieldFormantComp,
-        FieldGrainMode,
-        FieldVolume,
-        FieldReleaseTail,
-        FieldReverse,
-        FieldOutputBus,
-        FieldLoop,
-        FieldOneShot,
-        FieldCentsDetune,
-        FieldFilterEnabled,
-        FieldFilterType,
-        FieldFilterSlope,
-        FieldFilterCutoff,
-        FieldFilterReso,
-        FieldFilterDrive,
-        FieldFilterKeyTrack,
-        FieldFilterEnvAttack,
-        FieldFilterEnvDecay,
-        FieldFilterEnvSustain,
-        FieldFilterEnvRelease,
-        FieldFilterEnvAmount,
-        FieldFilterAsym,
-        FieldCrossfade,
-        FieldLoopStart,
-        FieldLoopLength,
-        FieldHighNote,
-        FieldSliceRootNote,
     };
 
     enum class MidiEditAction
@@ -263,6 +222,7 @@ public:
             int startSample = 0;
             int numFrames = 0;
             RtText<256> fileName;
+            SampleParams params;   // this sample's own sample-level parameters
         };
 
         int numSessionSamples = 0;
@@ -285,6 +245,16 @@ public:
         float stemDownloadProgress = 0.0f;
         std::array<UiSessionSample, SampleData::kMaxSessionSamples> sessionSamples {};
         std::array<Slice, SliceManager::kMaxSlices> slices {};
+
+        /** The sample-level parameters of a session sample (factory defaults if unknown). */
+        const SampleParams& sampleParamsFor (int sampleId) const
+        {
+            static const SampleParams defaults = SampleParams::factoryDefaults();
+            for (int i = 0; i < numSessionSamples; ++i)
+                if (sessionSamples[(size_t) i].sampleId == sampleId)
+                    return sessionSamples[(size_t) i].params;
+            return defaults;
+        }
     };
 
     const UiSliceSnapshot& getUiSliceSnapshot() const
@@ -523,7 +493,10 @@ private:
     UndoManager::Snapshot makeSnapshot();
     void captureSnapshot();
     void restoreSnapshot (const UndoManager::Snapshot& snap);
-    GlobalParamSnapshot loadGlobalParamSnapshot() const;
+    // Sample-level parameters (audio thread). Every slice resolves against its own sample's
+    // set; previews (lazy chop, shift preview) use the selected sample's set.
+    const SampleParams& paramsForSample (int sampleId) const { return sampleParams.get (sampleId); }
+    const SampleParams& selectedSampleParams() const;
     bool enqueueOverflowCommand (Command cmd);
     void drainOverflowCommands (bool& handledAny);
     bool enqueueCoalescedCommand (const Command& cmd);
@@ -544,6 +517,9 @@ private:
     std::atomic<bool> pendingSetSliceParam { false };
     std::atomic<uint64_t> pendingSetSliceParamPayload { 0 };
     std::atomic<int> pendingSetSliceParamIdx { -1 };
+    std::atomic<bool> pendingSetSampleParam { false };
+    std::atomic<uint64_t> pendingSetSampleParamPayload { 0 };
+    std::atomic<int> pendingSetSampleParamSampleId { -1 };
     std::atomic<bool> pendingSetSliceBounds { false };
     std::atomic<uint32_t> pendingSetSliceBoundsSequence { 0 };
     std::atomic<int> pendingSetSliceBoundsIdx { -1 };
@@ -576,6 +552,8 @@ private:
     };
     std::array<StemMetaEntry, SampleData::kMaxSessionSamples> stemMetaEntries {};
     int stemMetaEntryCount = 0;
+
+    SampleParamTable sampleParams;   // audio-thread owned; restoreState writes it like stemMetaEntries
     void setStemMeta (int sampleId, const StemMetadata& meta);
     StemMetadata getStemMeta (int sampleId) const;
 
@@ -640,40 +618,7 @@ private:
     mutable juce::CriticalSection pendingStateFileLock;
 
     // Cached parameter pointers
-    std::atomic<float>* masterVolParam  = nullptr;
-    std::atomic<float>* bpmParam        = nullptr;
-    std::atomic<float>* pitchParam      = nullptr;
-    std::atomic<float>* algoParam       = nullptr;
-    std::atomic<float>* repitchModeParam = nullptr;
-    std::atomic<float>* attackParam     = nullptr;
-    std::atomic<float>* decayParam      = nullptr;
-    std::atomic<float>* sustainParam    = nullptr;
-    std::atomic<float>* releaseParam    = nullptr;
-    std::atomic<float>* muteGroupParam  = nullptr;
-    std::atomic<float>* stretchParam    = nullptr;
-    std::atomic<float>* tonalityParam   = nullptr;
-    std::atomic<float>* formantParam    = nullptr;
-    std::atomic<float>* formantCompParam = nullptr;
-    std::atomic<float>* grainModeParam   = nullptr;
-    std::atomic<float>* releaseTailParam = nullptr;
-    std::atomic<float>* reverseParam     = nullptr;
-    std::atomic<float>* loopParam        = nullptr;
-    std::atomic<float>* oneShotParam     = nullptr;
     std::atomic<float>* maxVoicesParam   = nullptr;
-    std::atomic<float>* centsDetuneParam = nullptr;
-    std::atomic<float>* filterEnabledParam    = nullptr;
-    std::atomic<float>* filterTypeParam       = nullptr;
-    std::atomic<float>* filterSlopeParam      = nullptr;
-    std::atomic<float>* filterCutoffParam     = nullptr;
-    std::atomic<float>* filterResoParam       = nullptr;
-    std::atomic<float>* filterDriveParam      = nullptr;
-    std::atomic<float>* filterAsymParam       = nullptr;
-    std::atomic<float>* filterKeyTrackParam   = nullptr;
-    std::atomic<float>* filterEnvAttackParam  = nullptr;
-    std::atomic<float>* filterEnvDecayParam   = nullptr;
-    std::atomic<float>* filterEnvSustainParam = nullptr;
-    std::atomic<float>* filterEnvReleaseParam = nullptr;
-    std::atomic<float>* filterEnvAmountParam  = nullptr;
     std::atomic<float>* uiScaleParam          = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (IntersectProcessor)

@@ -73,9 +73,8 @@ static constexpr uint64_t kValidLockMask =
     | kLockLoopStart | kLockLoopLength
     | kLockHighNote | kLockSliceRootNote;
 
-// Copies a global parameter value into a slice field based on the lock bit.
-// Used when locking a parameter to snapshot the current effective value.
-static void copyGlobalToSlice (Slice& s, const GlobalParamSnapshot& g, uint64_t bit)
+// Copies the slice's sample-level value into the slice when a lock is switched on.
+static void copySampleParamToSlice (Slice& s, const SampleParams& g, uint64_t bit)
 {
     switch (bit)
     {
@@ -112,8 +111,8 @@ static void copyGlobalToSlice (Slice& s, const GlobalParamSnapshot& g, uint64_t 
         case kLockFilterEnvRelease: s.filterEnvReleaseSec = g.filterEnvReleaseSec;  break;
         case kLockFilterEnvAmount:  s.filterEnvAmount = g.filterEnvAmount;          break;
         case kLockFilterAsym:       s.filterAsym = g.filterAsym;                  break;
-        // kLockOutputBus: no global default — slice default (0) is correct.
-        // kLockLoopStart / kLockLoopLength: no global default — slice defaults (0) are correct.
+        // kLockOutputBus: no sample-level default — slice default (0) is correct.
+        // kLockLoopStart / kLockLoopLength: no sample-level default — slice defaults (0) are correct.
         default: break;
     }
 }
@@ -181,6 +180,7 @@ constexpr std::array<double, 6> kLegacyCommonSampleRates { 44100.0, 48000.0, 882
 static bool isCoalescableCommand (IntersectProcessor::CommandType type)
 {
     return type == IntersectProcessor::CmdSetSliceParam
+        || type == IntersectProcessor::CmdSetSampleParam
         || type == IntersectProcessor::CmdSetSliceBounds;
 }
 
@@ -194,6 +194,7 @@ static bool isCriticalCommand (IntersectProcessor::CommandType type)
         case IntersectProcessor::CmdStretch:
         case IntersectProcessor::CmdToggleLock:
         case IntersectProcessor::CmdSetSliceParam:
+        case IntersectProcessor::CmdSetSampleParam:
         case IntersectProcessor::CmdSetSliceBounds:
         case IntersectProcessor::CmdRepackMidi:
         case IntersectProcessor::CmdFileLoadCompleted:
@@ -253,28 +254,29 @@ void unpackPendingSliceParamPayload (uint64_t payload, int& field, float& value)
     value = fb.f;
 }
 
-PreviewStretchParams makePreviewStretchParams (const GlobalParamSnapshot& globals,
+PreviewStretchParams makePreviewStretchParams (const SampleParams& sampleLevel,
                                                float dawBpm,
                                                double sampleRate,
                                                const SampleData* sample)
 {
     PreviewStretchParams params;
-    params.stretchEnabled = globals.stretchEnabled;
-    params.algorithm = globals.algorithm;
-    params.repitchMode = globals.repitchMode;
-    params.bpm = globals.bpm;
-    params.pitch = globals.pitchSemitones;
+    params.stretchEnabled = sampleLevel.stretchEnabled;
+    params.algorithm = sampleLevel.algorithm;
+    params.repitchMode = sampleLevel.repitchMode;
+    params.bpm = sampleLevel.bpm;
+    params.pitch = sampleLevel.pitchSemitones;
     params.dawBpm = dawBpm;
-    params.tonality = globals.tonalityHz;
-    params.formant = globals.formantSemitones;
-    params.formantComp = globals.formantComp;
-    params.grainMode = globals.grainMode;
+    params.tonality = sampleLevel.tonalityHz;
+    params.formant = sampleLevel.formantSemitones;
+    params.formantComp = sampleLevel.formantComp;
+    params.grainMode = sampleLevel.grainMode;
     params.sampleRate = sampleRate;
     params.sample = sample;
     return params;
 }
 
-VoiceStartParams makeVoiceStartParams (const GlobalParamSnapshot& globals,
+VoiceStartParams makeVoiceStartParams (const SampleParams& sampleLevel,
+                                       int rootNote,
                                        int note,
                                        float velocity,
                                        float dawBpm)
@@ -282,42 +284,42 @@ VoiceStartParams makeVoiceStartParams (const GlobalParamSnapshot& globals,
     VoiceStartParams params;
     params.note = note;
     params.velocity = velocity;
-    params.globalBpm = globals.bpm;
-    params.globalPitch = globals.pitchSemitones;
-    params.globalAlgorithm = globals.algorithm;
-    params.globalRepitchMode = globals.repitchMode;
-    params.globalAttackSec = globals.attackSec;
-    params.globalDecaySec = globals.decaySec;
-    params.globalSustain = globals.sustain;
-    params.globalReleaseSec = globals.releaseSec;
-    params.globalMuteGroup = globals.muteGroup;
-    params.globalStretch = globals.stretchEnabled;
+    params.sampleBpm = sampleLevel.bpm;
+    params.samplePitch = sampleLevel.pitchSemitones;
+    params.sampleAlgorithm = sampleLevel.algorithm;
+    params.sampleRepitchMode = sampleLevel.repitchMode;
+    params.sampleAttackSec = sampleLevel.attackSec;
+    params.sampleDecaySec = sampleLevel.decaySec;
+    params.sampleSustain = sampleLevel.sustain;
+    params.sampleReleaseSec = sampleLevel.releaseSec;
+    params.sampleMuteGroup = sampleLevel.muteGroup;
+    params.sampleStretch = sampleLevel.stretchEnabled;
     params.dawBpm = dawBpm;
-    params.globalTonality = globals.tonalityHz;
-    params.globalFormant = globals.formantSemitones;
-    params.globalFormantComp = globals.formantComp;
-    params.globalGrainMode = globals.grainMode;
-    params.globalVolume = globals.volumeDb;
-    params.globalReleaseTail = globals.releaseTail;
-    params.globalReverse = globals.reverse;
-    params.globalLoopMode = globals.loopMode;
-    params.globalOneShot = globals.oneShot;
-    params.globalCentsDetune = globals.centsDetune;
-    params.globalFilterEnabled = globals.filterEnabled;
-    params.globalFilterType = globals.filterType;
-    params.globalFilterSlope = globals.filterSlope;
-    params.globalFilterCutoff = globals.filterCutoffHz;
-    params.globalFilterReso = globals.filterReso;
-    params.globalFilterDrive = globals.filterDrive;
-    params.globalFilterAsym = globals.filterAsym;
-    params.globalFilterKeyTrack = globals.filterKeyTrack;
-    params.globalFilterEnvAttackSec = globals.filterEnvAttackSec;
-    params.globalFilterEnvDecaySec = globals.filterEnvDecaySec;
-    params.globalFilterEnvSustain = globals.filterEnvSustain;
-    params.globalFilterEnvReleaseSec = globals.filterEnvReleaseSec;
-    params.globalFilterEnvAmount = globals.filterEnvAmount;
-    params.globalCrossfadePct = globals.crossfadePct;
-    params.rootNote = globals.rootNote;
+    params.sampleTonality = sampleLevel.tonalityHz;
+    params.sampleFormant = sampleLevel.formantSemitones;
+    params.sampleFormantComp = sampleLevel.formantComp;
+    params.sampleGrainMode = sampleLevel.grainMode;
+    params.sampleVolume = sampleLevel.volumeDb;
+    params.sampleReleaseTail = sampleLevel.releaseTail;
+    params.sampleReverse = sampleLevel.reverse;
+    params.sampleLoopMode = sampleLevel.loopMode;
+    params.sampleOneShot = sampleLevel.oneShot;
+    params.sampleCentsDetune = sampleLevel.centsDetune;
+    params.sampleFilterEnabled = sampleLevel.filterEnabled;
+    params.sampleFilterType = sampleLevel.filterType;
+    params.sampleFilterSlope = sampleLevel.filterSlope;
+    params.sampleFilterCutoff = sampleLevel.filterCutoffHz;
+    params.sampleFilterReso = sampleLevel.filterReso;
+    params.sampleFilterDrive = sampleLevel.filterDrive;
+    params.sampleFilterAsym = sampleLevel.filterAsym;
+    params.sampleFilterKeyTrack = sampleLevel.filterKeyTrack;
+    params.sampleFilterEnvAttackSec = sampleLevel.filterEnvAttackSec;
+    params.sampleFilterEnvDecaySec = sampleLevel.filterEnvDecaySec;
+    params.sampleFilterEnvSustain = sampleLevel.filterEnvSustain;
+    params.sampleFilterEnvReleaseSec = sampleLevel.filterEnvReleaseSec;
+    params.sampleFilterEnvAmount = sampleLevel.filterEnvAmount;
+    params.sampleCrossfadePct = sampleLevel.crossfadePct;
+    params.rootNote = rootNote;
     return params;
 }
 } // namespace
@@ -342,40 +344,7 @@ IntersectProcessor::IntersectProcessor()
                           .withOutput ("Out 16", juce::AudioChannelSet::stereo(), false)),
       apvts (*this, nullptr, "PARAMETERS", ParamLayout::createLayout())
 {
-    masterVolParam = apvts.getRawParameterValue (ParamIds::masterVolume);
-    bpmParam       = apvts.getRawParameterValue (ParamIds::defaultBpm);
-    pitchParam     = apvts.getRawParameterValue (ParamIds::defaultPitch);
-    algoParam      = apvts.getRawParameterValue (ParamIds::defaultAlgorithm);
-    repitchModeParam = apvts.getRawParameterValue (ParamIds::defaultRepitchMode);
-    attackParam    = apvts.getRawParameterValue (ParamIds::defaultAttack);
-    decayParam     = apvts.getRawParameterValue (ParamIds::defaultDecay);
-    sustainParam   = apvts.getRawParameterValue (ParamIds::defaultSustain);
-    releaseParam   = apvts.getRawParameterValue (ParamIds::defaultRelease);
-    muteGroupParam = apvts.getRawParameterValue (ParamIds::defaultMuteGroup);
-    stretchParam   = apvts.getRawParameterValue (ParamIds::defaultStretchEnabled);
-    tonalityParam  = apvts.getRawParameterValue (ParamIds::defaultTonality);
-    formantParam   = apvts.getRawParameterValue (ParamIds::defaultFormant);
-    formantCompParam = apvts.getRawParameterValue (ParamIds::defaultFormantComp);
-    grainModeParam   = apvts.getRawParameterValue (ParamIds::defaultGrainMode);
-    releaseTailParam = apvts.getRawParameterValue (ParamIds::defaultReleaseTail);
-    reverseParam     = apvts.getRawParameterValue (ParamIds::defaultReverse);
-    loopParam        = apvts.getRawParameterValue (ParamIds::defaultLoop);
-    oneShotParam     = apvts.getRawParameterValue (ParamIds::defaultOneShot);
     maxVoicesParam   = apvts.getRawParameterValue (ParamIds::maxVoices);
-    centsDetuneParam = apvts.getRawParameterValue (ParamIds::defaultCentsDetune);
-    filterEnabledParam = apvts.getRawParameterValue (ParamIds::defaultFilterEnabled);
-    filterTypeParam = apvts.getRawParameterValue (ParamIds::defaultFilterType);
-    filterSlopeParam = apvts.getRawParameterValue (ParamIds::defaultFilterSlope);
-    filterCutoffParam = apvts.getRawParameterValue (ParamIds::defaultFilterCutoff);
-    filterResoParam = apvts.getRawParameterValue (ParamIds::defaultFilterReso);
-    filterDriveParam = apvts.getRawParameterValue (ParamIds::defaultFilterDrive);
-    filterAsymParam = apvts.getRawParameterValue (ParamIds::defaultFilterAsym);
-    filterKeyTrackParam = apvts.getRawParameterValue (ParamIds::defaultFilterKeyTrack);
-	    filterEnvAttackParam = apvts.getRawParameterValue (ParamIds::defaultFilterEnvAttack);
-	    filterEnvDecayParam = apvts.getRawParameterValue (ParamIds::defaultFilterEnvDecay);
-	    filterEnvSustainParam = apvts.getRawParameterValue (ParamIds::defaultFilterEnvSustain);
-	    filterEnvReleaseParam = apvts.getRawParameterValue (ParamIds::defaultFilterEnvRelease);
-	    filterEnvAmountParam = apvts.getRawParameterValue (ParamIds::defaultFilterEnvAmount);
 	    uiScaleParam = apvts.getRawParameterValue (ParamIds::uiScale);
 
     // Download jobs signal completion from their own thread. Coalesced with
@@ -399,9 +368,9 @@ IntersectProcessor::~IntersectProcessor()
 	    delete stemPending;
 }
 
-GlobalParamSnapshot IntersectProcessor::loadGlobalParamSnapshot() const
+const SampleParams& IntersectProcessor::selectedSampleParams() const
 {
-    return GlobalParamSnapshot::loadFrom (apvts, sliceManager.rootNote.load());
+    return paramsForSample (selectedSessionSampleId.load (std::memory_order_relaxed));
 }
 
 void IntersectProcessor::setStandaloneTransportBpm (float newBpm) noexcept
@@ -609,46 +578,9 @@ std::vector<juce::File> IntersectProcessor::getPendingStateFiles() const
 
 ParamUndoState IntersectProcessor::captureParamUndoState() const
 {
-    const auto load = [] (const std::atomic<float>* param, float fallback)
-    {
-        return param != nullptr ? param->load (std::memory_order_relaxed) : fallback;
-    };
-
     ParamUndoState state;
-    state.masterVolume = load (masterVolParam, state.masterVolume);
-    state.defaultBpm = load (bpmParam, state.defaultBpm);
-    state.defaultPitch = load (pitchParam, state.defaultPitch);
-    state.defaultAlgorithm = load (algoParam, state.defaultAlgorithm);
-    state.defaultRepitchMode = load (repitchModeParam, state.defaultRepitchMode);
-    state.defaultAttack = load (attackParam, state.defaultAttack);
-    state.defaultDecay = load (decayParam, state.defaultDecay);
-    state.defaultSustain = load (sustainParam, state.defaultSustain);
-    state.defaultRelease = load (releaseParam, state.defaultRelease);
-    state.defaultMuteGroup = load (muteGroupParam, state.defaultMuteGroup);
-    state.defaultLoop = load (loopParam, state.defaultLoop);
-    state.defaultStretchEnabled = load (stretchParam, state.defaultStretchEnabled);
-    state.defaultTonality = load (tonalityParam, state.defaultTonality);
-    state.defaultFormant = load (formantParam, state.defaultFormant);
-    state.defaultFormantComp = load (formantCompParam, state.defaultFormantComp);
-    state.defaultGrainMode = load (grainModeParam, state.defaultGrainMode);
-    state.defaultReleaseTail = load (releaseTailParam, state.defaultReleaseTail);
-    state.defaultReverse = load (reverseParam, state.defaultReverse);
-    state.defaultOneShot = load (oneShotParam, state.defaultOneShot);
-    state.defaultCentsDetune = load (centsDetuneParam, state.defaultCentsDetune);
-    state.defaultFilterEnabled = load (filterEnabledParam, state.defaultFilterEnabled);
-    state.defaultFilterType = load (filterTypeParam, state.defaultFilterType);
-    state.defaultFilterSlope = load (filterSlopeParam, state.defaultFilterSlope);
-    state.defaultFilterCutoff = load (filterCutoffParam, state.defaultFilterCutoff);
-    state.defaultFilterReso = load (filterResoParam, state.defaultFilterReso);
-    state.defaultFilterDrive = load (filterDriveParam, state.defaultFilterDrive);
-    state.defaultFilterAsym = load (filterAsymParam, state.defaultFilterAsym);
-    state.defaultFilterKeyTrack = load (filterKeyTrackParam, state.defaultFilterKeyTrack);
-    state.defaultFilterEnvAttack = load (filterEnvAttackParam, state.defaultFilterEnvAttack);
-    state.defaultFilterEnvDecay = load (filterEnvDecayParam, state.defaultFilterEnvDecay);
-    state.defaultFilterEnvSustain = load (filterEnvSustainParam, state.defaultFilterEnvSustain);
-    state.defaultFilterEnvRelease = load (filterEnvReleaseParam, state.defaultFilterEnvRelease);
-    state.defaultFilterEnvAmount = load (filterEnvAmountParam, state.defaultFilterEnvAmount);
-    state.maxVoices = load (maxVoicesParam, state.maxVoices);
+    if (maxVoicesParam != nullptr)
+        state.maxVoices = maxVoicesParam->load (std::memory_order_relaxed);
     return state;
 }
 
@@ -674,6 +606,10 @@ bool IntersectProcessor::enqueueUiUndoSnapshot()
     snap.selectedSlice = ui.selectedSlice;
     snap.rootNote = ui.rootNote;
     snap.params = captureParamUndoState();
+    // Message thread: take the sample-level params from the published UI snapshot, not the
+    // audio-thread table.
+    for (int i = 0; i < ui.numSessionSamples; ++i)
+        snap.sampleParams.set (ui.sessionSamples[(size_t) i].sampleId, ui.sessionSamples[(size_t) i].params);
     snap.midiSelectsSlice = midiSelectsSlice.load (std::memory_order_relaxed);
     snap.snapToZeroCrossing = snapToZeroCrossing.load (std::memory_order_relaxed);
 
@@ -690,46 +626,8 @@ bool IntersectProcessor::enqueueUiUndoSnapshot()
 
 void IntersectProcessor::applyParamUndoState (const ParamUndoState& state)
 {
-    const auto apply = [this] (const juce::String& paramId, float value)
-    {
-        if (auto* param = dynamic_cast<juce::RangedAudioParameter*> (apvts.getParameter (paramId)))
-            param->setValueNotifyingHost (param->convertTo0to1 (value));
-    };
-
-    apply (ParamIds::masterVolume, state.masterVolume);
-    apply (ParamIds::defaultBpm, state.defaultBpm);
-    apply (ParamIds::defaultPitch, state.defaultPitch);
-    apply (ParamIds::defaultAlgorithm, state.defaultAlgorithm);
-    apply (ParamIds::defaultRepitchMode, state.defaultRepitchMode);
-    apply (ParamIds::defaultAttack, state.defaultAttack);
-    apply (ParamIds::defaultDecay, state.defaultDecay);
-    apply (ParamIds::defaultSustain, state.defaultSustain);
-    apply (ParamIds::defaultRelease, state.defaultRelease);
-    apply (ParamIds::defaultMuteGroup, state.defaultMuteGroup);
-    apply (ParamIds::defaultLoop, state.defaultLoop);
-    apply (ParamIds::defaultStretchEnabled, state.defaultStretchEnabled);
-    apply (ParamIds::defaultTonality, state.defaultTonality);
-    apply (ParamIds::defaultFormant, state.defaultFormant);
-    apply (ParamIds::defaultFormantComp, state.defaultFormantComp);
-    apply (ParamIds::defaultGrainMode, state.defaultGrainMode);
-    apply (ParamIds::defaultReleaseTail, state.defaultReleaseTail);
-    apply (ParamIds::defaultReverse, state.defaultReverse);
-    apply (ParamIds::defaultOneShot, state.defaultOneShot);
-    apply (ParamIds::defaultCentsDetune, state.defaultCentsDetune);
-    apply (ParamIds::defaultFilterEnabled, state.defaultFilterEnabled);
-    apply (ParamIds::defaultFilterType, state.defaultFilterType);
-    apply (ParamIds::defaultFilterSlope, state.defaultFilterSlope);
-    apply (ParamIds::defaultFilterCutoff, state.defaultFilterCutoff);
-    apply (ParamIds::defaultFilterReso, state.defaultFilterReso);
-    apply (ParamIds::defaultFilterDrive, state.defaultFilterDrive);
-    apply (ParamIds::defaultFilterAsym, state.defaultFilterAsym);
-    apply (ParamIds::defaultFilterKeyTrack, state.defaultFilterKeyTrack);
-    apply (ParamIds::defaultFilterEnvAttack, state.defaultFilterEnvAttack);
-    apply (ParamIds::defaultFilterEnvDecay, state.defaultFilterEnvDecay);
-    apply (ParamIds::defaultFilterEnvSustain, state.defaultFilterEnvSustain);
-    apply (ParamIds::defaultFilterEnvRelease, state.defaultFilterEnvRelease);
-    apply (ParamIds::defaultFilterEnvAmount, state.defaultFilterEnvAmount);
-    apply (ParamIds::maxVoices, state.maxVoices);
+    if (auto* param = dynamic_cast<juce::RangedAudioParameter*> (apvts.getParameter (ParamIds::maxVoices)))
+        param->setValueNotifyingHost (param->convertTo0to1 (state.maxVoices));
 }
 
 bool IntersectProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -1492,6 +1390,7 @@ void IntersectProcessor::deleteSessionSample (int sampleId)
     {
         clearVoicesBeforeSampleSwap();
         sampleData.clear();
+        sampleParams.clear();
         sliceManager.clearAll();
         sampleMissing.store (false, std::memory_order_relaxed);
         sampleAvailability.store ((int) SampleStateEmpty, std::memory_order_relaxed);
@@ -1538,6 +1437,7 @@ void IntersectProcessor::deleteSessionSample (int sampleId)
     auto rebuilt = SampleData::rebuildWithSessionSamples (*sampleSnap, remainingSamples);
     clearVoicesBeforeSampleSwap();
     sampleData.applyDecodedSample (std::move (rebuilt));
+    sampleParams.syncToSession (sampleData.getSessionSamples());
     sampleMissing.store (false, std::memory_order_relaxed);
     sampleAvailability.store ((int) SampleStateLoaded, std::memory_order_relaxed);
     clearMissingFileInfo();
@@ -1595,6 +1495,7 @@ void IntersectProcessor::publishUiSliceSnapshot()
             uiSample.startSample = sample.startFrame;
             uiSample.numFrames = sample.numFrames;
             uiSample.fileName.assign (sample.fileName);
+            uiSample.params = paramsForSample (sample.sampleId);
         }
         else
         {
@@ -1695,6 +1596,15 @@ bool IntersectProcessor::enqueueCoalescedCommand (const Command& cmd)
         return true;
     }
 
+    if (cmd.type == CmdSetSampleParam)
+    {
+        pendingSetSampleParamPayload.store (packPendingSliceParamPayload (cmd.intParam2, cmd.floatParam1),
+                                            std::memory_order_relaxed);
+        pendingSetSampleParamSampleId.store (cmd.intParam1, std::memory_order_relaxed);
+        pendingSetSampleParam.store (true, std::memory_order_release);
+        return true;
+    }
+
     if (cmd.type == CmdSetSliceBounds)
     {
         const int end = cmd.numPositions > 0 ? cmd.positions[0] : (int) cmd.floatParam1;
@@ -1748,6 +1658,18 @@ void IntersectProcessor::drainCoalescedCommands (bool& handledAny)
                                         cmd.intParam1,
                                         cmd.floatParam1);
         cmd.sliceIdx = pendingSetSliceParamIdx.load (std::memory_order_relaxed);
+        handleCommand (cmd);
+        handledAny = true;
+    }
+
+    if (pendingSetSampleParam.exchange (false, std::memory_order_acq_rel))
+    {
+        Command cmd;
+        cmd.type = CmdSetSampleParam;
+        unpackPendingSliceParamPayload (pendingSetSampleParamPayload.load (std::memory_order_relaxed),
+                                        cmd.intParam2,
+                                        cmd.floatParam1);
+        cmd.intParam1 = pendingSetSampleParamSampleId.load (std::memory_order_relaxed);
         handleCommand (cmd);
         handledAny = true;
     }
@@ -1846,6 +1768,7 @@ UndoManager::Snapshot IntersectProcessor::makeSnapshot()
     snap.rootNote = sliceManager.rootNote.load();
 
     snap.params = captureParamUndoState();
+    snap.sampleParams = sampleParams;
     snap.midiSelectsSlice = midiSelectsSlice.load();
     snap.snapToZeroCrossing = snapToZeroCrossing.load();
     return snap;
@@ -1878,6 +1801,7 @@ void IntersectProcessor::restoreSnapshot (const UndoManager::Snapshot& snap)
     sliceManager.setNumSlices (snap.numSlices);
     sliceManager.selectedSlice = snap.selectedSlice;
     sliceManager.rootNote.store (snap.rootNote);
+    sampleParams = snap.sampleParams;
     selectedSessionSampleId.store (snap.selectedSessionSampleId, std::memory_order_relaxed);
     midiSelectsSlice.store (snap.midiSelectsSlice);
     snapToZeroCrossing.store (snap.snapToZeroCrossing);
@@ -1947,6 +1871,7 @@ void IntersectProcessor::handleCommand (const Command& cmd)
             break;
 
         case CmdSetSliceParam:
+        case CmdSetSampleParam:
         case CmdSetRootNote:
             if (! gestureSnapshotCaptured)
                 captureSnapshot();
@@ -2013,8 +1938,7 @@ void IntersectProcessor::handleCommand (const Command& cmd)
         case CmdLazyChopStart:
             if (sampleData.isLoaded())
             {
-                const auto globals = loadGlobalParamSnapshot();
-                const auto psp = makePreviewStretchParams (globals, dawBpm.load(), currentSampleRate, &sampleData);
+                const auto psp = makePreviewStretchParams (selectedSampleParams(), dawBpm.load(), currentSampleRate, &sampleData);
                 lazyChop.start (sampleData.getNumFrames(), sliceManager, psp,
                                 snapToZeroCrossing.load(), &sampleData.getBuffer());
             }
@@ -2041,18 +1965,23 @@ void IntersectProcessor::handleCommand (const Command& cmd)
             break;
         }
 
+        case CmdSetSampleParam:
+            if (auto* params = sampleParams.find (cmd.intParam1))
+                params->setField (cmd.intParam2, cmd.floatParam1);
+            break;
+
         case CmdToggleLock:
         {
             int sel = cmd.sliceIdx >= 0 ? cmd.sliceIdx : sliceManager.selectedSlice.load();
             if (sel >= 0 && sel < sliceManager.getNumSlices())
             {
-                const auto globals = loadGlobalParamSnapshot();
                 auto& s = sliceManager.getSlice (sel);
+                const auto& sampleLevel = paramsForSample (s.sampleId);
                 uint64_t bit = cmd.lockBitParam;
                 bool turningOn = !(s.lockMask & bit);
 
                 if (turningOn)
-                    copyGlobalToSlice (s, globals, bit);
+                    copySampleParamToSlice (s, sampleLevel, bit);
 
                 s.lockMask ^= bit;
             }
@@ -2064,34 +1993,34 @@ void IntersectProcessor::handleCommand (const Command& cmd)
             int sel = cmd.sliceIdx >= 0 ? cmd.sliceIdx : sliceManager.selectedSlice.load();
             if (sel >= 0 && sel < sliceManager.getNumSlices())
             {
-                const auto globals = loadGlobalParamSnapshot();
                 auto& s = sliceManager.getSlice (sel);
+                const auto& sampleLevel = paramsForSample (s.sampleId);
                 int field = cmd.intParam1;
                 float val = cmd.floatParam1;
                 constexpr float kCompareTolerance = 1.0e-4f;
 
-                auto setFloatField = [&s, kCompareTolerance] (float& target, float newValue, float globalValue, uint64_t lockBit)
+                auto setFloatField = [&s, kCompareTolerance] (float& target, float newValue, float sampleValue, uint64_t lockBit)
                 {
                     target = newValue;
-                    if (std::abs (target - globalValue) <= kCompareTolerance)
+                    if (std::abs (target - sampleValue) <= kCompareTolerance)
                         s.lockMask &= ~lockBit;
                     else
                         s.lockMask |= lockBit;
                 };
 
-                auto setIntField = [&s] (int& target, int newValue, int globalValue, uint64_t lockBit)
+                auto setIntField = [&s] (int& target, int newValue, int sampleValue, uint64_t lockBit)
                 {
                     target = newValue;
-                    if (target == globalValue)
+                    if (target == sampleValue)
                         s.lockMask &= ~lockBit;
                     else
                         s.lockMask |= lockBit;
                 };
 
-                auto setBoolField = [&s] (bool& target, bool newValue, bool globalValue, uint64_t lockBit)
+                auto setBoolField = [&s] (bool& target, bool newValue, bool sampleValue, uint64_t lockBit)
                 {
                     target = newValue;
-                    if (target == globalValue)
+                    if (target == sampleValue)
                         s.lockMask &= ~lockBit;
                     else
                         s.lockMask |= lockBit;
@@ -2100,107 +2029,107 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                 switch (field)
                 {
                     case FieldBpm:
-                        setFloatField (s.bpm, val, globals.bpm, kLockBpm);
+                        setFloatField (s.bpm, val, sampleLevel.bpm, kLockBpm);
                         break;
                     case FieldPitch:
-                        setFloatField (s.pitchSemitones, val, globals.pitchSemitones, kLockPitch);
+                        setFloatField (s.pitchSemitones, val, sampleLevel.pitchSemitones, kLockPitch);
                         break;
                     case FieldAlgorithm:
-                        setIntField (s.algorithm, (int) val, globals.algorithm, kLockAlgorithm);
+                        setIntField (s.algorithm, (int) val, sampleLevel.algorithm, kLockAlgorithm);
                         break;
                     case FieldRepitchMode:
-                        setIntField (s.repitchMode, (int) val, globals.repitchMode, kLockRepitchMode);
+                        setIntField (s.repitchMode, (int) val, sampleLevel.repitchMode, kLockRepitchMode);
                         break;
                     case FieldAttack:
-                        setFloatField (s.attackSec, val, globals.attackSec, kLockAttack);
+                        setFloatField (s.attackSec, val, sampleLevel.attackSec, kLockAttack);
                         break;
                     case FieldDecay:
-                        setFloatField (s.decaySec, val, globals.decaySec, kLockDecay);
+                        setFloatField (s.decaySec, val, sampleLevel.decaySec, kLockDecay);
                         break;
                     case FieldSustain:
-                        setFloatField (s.sustainLevel, val, globals.sustain, kLockSustain);
+                        setFloatField (s.sustainLevel, val, sampleLevel.sustain, kLockSustain);
                         break;
                     case FieldRelease:
-                        setFloatField (s.releaseSec, val, globals.releaseSec, kLockRelease);
+                        setFloatField (s.releaseSec, val, sampleLevel.releaseSec, kLockRelease);
                         break;
                     case FieldMuteGroup:
-                        setIntField (s.muteGroup, (int) val, globals.muteGroup, kLockMuteGroup);
+                        setIntField (s.muteGroup, (int) val, sampleLevel.muteGroup, kLockMuteGroup);
                         break;
                     case FieldStretchEnabled:
-                        setBoolField (s.stretchEnabled, val > 0.5f, globals.stretchEnabled, kLockStretch);
+                        setBoolField (s.stretchEnabled, val > 0.5f, sampleLevel.stretchEnabled, kLockStretch);
                         break;
                     case FieldTonality:
-                        setFloatField (s.tonalityHz, val, globals.tonalityHz, kLockTonality);
+                        setFloatField (s.tonalityHz, val, sampleLevel.tonalityHz, kLockTonality);
                         break;
                     case FieldFormant:
-                        setFloatField (s.formantSemitones, val, globals.formantSemitones, kLockFormant);
+                        setFloatField (s.formantSemitones, val, sampleLevel.formantSemitones, kLockFormant);
                         break;
                     case FieldFormantComp:
-                        setBoolField (s.formantComp, val > 0.5f, globals.formantComp, kLockFormantComp);
+                        setBoolField (s.formantComp, val > 0.5f, sampleLevel.formantComp, kLockFormantComp);
                         break;
                     case FieldGrainMode:
-                        setIntField (s.grainMode, (int) val, globals.grainMode, kLockGrainMode);
+                        setIntField (s.grainMode, (int) val, sampleLevel.grainMode, kLockGrainMode);
                         break;
                     case FieldVolume:
-                        setFloatField (s.volume, val, globals.volumeDb, kLockVolume);
+                        setFloatField (s.volume, val, sampleLevel.volumeDb, kLockVolume);
                         break;
                     case FieldReleaseTail:
-                        setBoolField (s.releaseTail, val > 0.5f, globals.releaseTail, kLockReleaseTail);
+                        setBoolField (s.releaseTail, val > 0.5f, sampleLevel.releaseTail, kLockReleaseTail);
                         break;
                     case FieldReverse:
-                        setBoolField (s.reverse, val > 0.5f, globals.reverse, kLockReverse);
+                        setBoolField (s.reverse, val > 0.5f, sampleLevel.reverse, kLockReverse);
                         break;
                     case FieldOutputBus:
                         s.outputBus = juce::jlimit (0, kMaxOutputBuses - 1, (int) val);
                         s.lockMask |= kLockOutputBus;
                         break;
                     case FieldLoop:
-                        setIntField (s.loopMode, (int) val, globals.loopMode, kLockLoop);
+                        setIntField (s.loopMode, (int) val, sampleLevel.loopMode, kLockLoop);
                         break;
                     case FieldOneShot:
-                        setBoolField (s.oneShot, val > 0.5f, globals.oneShot, kLockOneShot);
+                        setBoolField (s.oneShot, val > 0.5f, sampleLevel.oneShot, kLockOneShot);
                         break;
                     case FieldCentsDetune:
-                        setFloatField (s.centsDetune, val, globals.centsDetune, kLockCentsDetune);
+                        setFloatField (s.centsDetune, val, sampleLevel.centsDetune, kLockCentsDetune);
                         break;
                     case FieldFilterEnabled:
-                        setBoolField (s.filterEnabled, val > 0.5f, globals.filterEnabled, kLockFilterEnabled);
+                        setBoolField (s.filterEnabled, val > 0.5f, sampleLevel.filterEnabled, kLockFilterEnabled);
                         break;
                     case FieldFilterType:
-                        setIntField (s.filterType, juce::jlimit (0, 3, (int) val), globals.filterType, kLockFilterType);
+                        setIntField (s.filterType, juce::jlimit (0, 3, (int) val), sampleLevel.filterType, kLockFilterType);
                         break;
                     case FieldFilterSlope:
-                        setIntField (s.filterSlope, juce::jlimit (0, 1, (int) val), globals.filterSlope, kLockFilterSlope);
+                        setIntField (s.filterSlope, juce::jlimit (0, 1, (int) val), sampleLevel.filterSlope, kLockFilterSlope);
                         break;
                     case FieldFilterCutoff:
-                        setFloatField (s.filterCutoff, val, globals.filterCutoffHz, kLockFilterCutoff);
+                        setFloatField (s.filterCutoff, val, sampleLevel.filterCutoffHz, kLockFilterCutoff);
                         break;
                     case FieldFilterReso:
-                        setFloatField (s.filterReso, val, globals.filterReso, kLockFilterReso);
+                        setFloatField (s.filterReso, val, sampleLevel.filterReso, kLockFilterReso);
                         break;
                     case FieldFilterDrive:
-                        setFloatField (s.filterDrive, val, globals.filterDrive, kLockFilterDrive);
+                        setFloatField (s.filterDrive, val, sampleLevel.filterDrive, kLockFilterDrive);
                         break;
                     case FieldFilterKeyTrack:
-                        setFloatField (s.filterKeyTrack, val, globals.filterKeyTrack, kLockFilterKeyTrack);
+                        setFloatField (s.filterKeyTrack, val, sampleLevel.filterKeyTrack, kLockFilterKeyTrack);
                         break;
                     case FieldFilterEnvAttack:
-                        setFloatField (s.filterEnvAttackSec, val, globals.filterEnvAttackSec, kLockFilterEnvAttack);
+                        setFloatField (s.filterEnvAttackSec, val, sampleLevel.filterEnvAttackSec, kLockFilterEnvAttack);
                         break;
                     case FieldFilterEnvDecay:
-                        setFloatField (s.filterEnvDecaySec, val, globals.filterEnvDecaySec, kLockFilterEnvDecay);
+                        setFloatField (s.filterEnvDecaySec, val, sampleLevel.filterEnvDecaySec, kLockFilterEnvDecay);
                         break;
                     case FieldFilterEnvSustain:
-                        setFloatField (s.filterEnvSustain, val, globals.filterEnvSustain, kLockFilterEnvSustain);
+                        setFloatField (s.filterEnvSustain, val, sampleLevel.filterEnvSustain, kLockFilterEnvSustain);
                         break;
                     case FieldFilterEnvRelease:
-                        setFloatField (s.filterEnvReleaseSec, val, globals.filterEnvReleaseSec, kLockFilterEnvRelease);
+                        setFloatField (s.filterEnvReleaseSec, val, sampleLevel.filterEnvReleaseSec, kLockFilterEnvRelease);
                         break;
                     case FieldFilterEnvAmount:
-                        setFloatField (s.filterEnvAmount, val, globals.filterEnvAmount, kLockFilterEnvAmount);
+                        setFloatField (s.filterEnvAmount, val, sampleLevel.filterEnvAmount, kLockFilterEnvAmount);
                         break;
                     case FieldFilterAsym:
-                        setFloatField (s.filterAsym, val, globals.filterAsym, kLockFilterAsym);
+                        setFloatField (s.filterAsym, val, sampleLevel.filterAsym, kLockFilterAsym);
                         break;
                     case FieldCrossfade:
                         s.crossfadePct = juce::jlimit (0.0f, 100.0f, val);
@@ -2815,9 +2744,8 @@ void IntersectProcessor::processMidiEvent (const juce::MidiMessage& msg,
             const auto noteIndex = static_cast<size_t> (note);
             heldNotes[noteIndex] = true;
 
-            // Build params once; all param loads happen here, not inside the slice loop.
-            const auto globals = loadGlobalParamSnapshot();
-            auto p = makeVoiceStartParams (globals, note, velocity, dawBpm.load());
+            const int rootNote = sliceManager.rootNote.load();
+            const float hostBpm = dawBpm.load();
 
             const auto& sliceIndices = sliceManager.midiNoteToSlices (note);
             for (int sliceIdx : sliceIndices)
@@ -2836,10 +2764,13 @@ void IntersectProcessor::processMidiEvent (const juce::MidiMessage& msg,
 
                 int voiceIdx = voicePool.allocate();
 
-                // Handle mute groups
+                // Each slice inherits from its own session sample's parameters.
                 const auto& s = sliceManager.getSlice (sliceIdx);
+                auto p = makeVoiceStartParams (paramsForSample (s.sampleId), rootNote, note, velocity, hostBpm);
+
+                // Handle mute groups
                 int mg = (int) sliceManager.resolveParam (sliceIdx, kLockMuteGroup,
-                                                          (float) s.muteGroup, (float) p.globalMuteGroup);
+                                                          (float) s.muteGroup, (float) p.sampleMuteGroup);
                 voicePool.muteGroup (mg, voiceIdx);
 
                 p.sliceIdx = sliceIdx;
@@ -2933,8 +2864,7 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             voicePool.stopShiftPreview();
         else if (req >= 0 && ! lazyChop.isActive() && sampleData.isLoaded())
         {
-            const auto globals = loadGlobalParamSnapshot();
-            const auto psp = makePreviewStretchParams (globals, dawBpm.load(), currentSampleRate, &sampleData);
+            const auto psp = makePreviewStretchParams (selectedSampleParams(), dawBpm.load(), currentSampleRate, &sampleData);
             voicePool.startShiftPreview (req, sampleData.getNumFrames(), psp);
         }
     }
@@ -2971,6 +2901,8 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             {
                 clearVoicesBeforeSampleSwap();
                 sampleData.applyDecodedSample (std::move (decoded));
+                // New session samples start at factory defaults; removed ones lose their entry.
+                sampleParams.syncToSession (sampleData.getSessionSamples());
                 sampleMissing.store (false);
                 clearMissingFileInfo();
                 clearPendingStateFiles();
@@ -3012,7 +2944,12 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                             meta.parentSourceSampleId = pending->parentSourceSampleId;
                             meta.role = pending->roles[(size_t) i];
                             meta.isGenerated = true;
-                            setStemMeta (sessionSamples[(size_t) (firstStemIdx + i)].sampleId, meta);
+                            const int stemId = sessionSamples[(size_t) (firstStemIdx + i)].sampleId;
+                            setStemMeta (stemId, meta);
+                            // Stems play the same material as their source, so they start with its
+                            // sample-level settings (BPM, pitch, …) instead of factory defaults.
+                            const auto sourceParams = paramsForSample (pending->parentSourceSampleId);
+                            sampleParams.set (stemId, sourceParams);
                         }
                         delete pending;
                     }
@@ -3340,7 +3277,7 @@ void IntersectProcessor::getStateInformation (juce::MemoryBlock& destData)
 
     // Optional v24 extension block for fields added without changing the base version.
     stream.writeInt (kStateExtensionMagic);
-    stream.writeInt (6);
+    stream.writeInt (7);
     stream.writeInt (numSlices);
     for (int i = 0; i < numSlices; ++i)
         stream.writeInt (sliceManager.getSlice (i).repitchMode);
@@ -3392,6 +3329,21 @@ void IntersectProcessor::getStateInformation (juce::MemoryBlock& destData)
     }
     // Extension v6: stem compute device preference
     stream.writeInt (static_cast<int> (stemComputeDevice));
+    // Extension v7: per-session-sample sample-level parameters as (field id, value) pairs in
+    // SAMPLE-tab units, so new sample params can be added without another format change.
+    stream.writeInt (numSessionSamples);
+    for (int i = 0; i < numSessionSamples; ++i)
+    {
+        const int sampleId = sampleSnap->sessionSamples[(size_t) i].sampleId;
+        const auto& params = paramsForSample (sampleId);
+        stream.writeInt (sampleId);
+        stream.writeInt (SampleParams::kNumFields);
+        for (int field : SampleParams::fieldIds())
+        {
+            stream.writeInt (field);
+            stream.writeFloat (params.getField (field));
+        }
+    }
 }
 
 void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
@@ -3543,6 +3495,7 @@ bool IntersectProcessor::restoreState (const void* data, int sizeInBytes, const 
         std::vector<int> sliceStartsInSample;
         std::vector<int> sliceEndsInSample;
         std::optional<StemComputeDevice> stemComputeDevice;
+        std::optional<SampleParamTable> sampleParams;   // extension v7; absent in older states
     };
 
     const auto postSliceBasePosition = stream.getPosition();
@@ -3753,6 +3706,39 @@ bool IntersectProcessor::restoreState (const void* data, int sizeInBytes, const 
                         result.stemComputeDevice = static_cast<StemComputeDevice> (juce::jlimit (0, 1, deviceInt));
                     }
                 }
+
+                if (extensionVersion >= 7 && requireBytes (4))
+                {
+                    const int count = trialStream.readInt();
+                    if (count >= 0 && count <= SampleData::kMaxSessionSamples)
+                    {
+                        SampleParamTable table;
+                        bool ok = true;
+                        for (int i = 0; i < count && ok; ++i)
+                        {
+                            ok = requireBytes (8);
+                            if (! ok)
+                                break;
+                            const int sampleId = trialStream.readInt();
+                            const int numFields = trialStream.readInt();
+                            ok = numFields >= 0 && numFields <= 1024 && requireBytes ((juce::int64) numFields * 8);
+                            if (! ok)
+                                break;
+
+                            // Fields missing from the file keep factory defaults; unknown ones are skipped.
+                            auto params = SampleParams::factoryDefaults();
+                            for (int f = 0; f < numFields; ++f)
+                            {
+                                const int field = trialStream.readInt();
+                                const float value = trialStream.readFloat();
+                                params.setField (field, value);
+                            }
+                            table.set (sampleId, params);
+                        }
+                        if (ok)
+                            result.sampleParams = table;
+                    }
+                }
             }
             else
             {
@@ -3891,6 +3877,21 @@ bool IntersectProcessor::restoreState (const void* data, int sizeInBytes, const 
         {
             restoreFiles.push_back (file);
             restoreSampleIds.push_back (generateSessionSampleId());
+        }
+    }
+
+    // Sample-level parameters: saved per sample since extension v7. Older projects stored one
+    // shared set in the legacy APVTS params, so every sample starts from those values and the
+    // project sounds exactly as it did.
+    {
+        const bool hasPerSample = postSliceResult->sampleParams.has_value();
+        const auto legacy = SampleParams::fromLegacyApvts (apvts);
+        sampleParams.clear();
+        for (int sampleId : restoreSampleIds)
+        {
+            const auto* saved = hasPerSample ? postSliceResult->sampleParams->find (sampleId) : nullptr;
+            sampleParams.set (sampleId, saved != nullptr ? *saved
+                                                         : (hasPerSample ? SampleParams::factoryDefaults() : legacy));
         }
     }
 

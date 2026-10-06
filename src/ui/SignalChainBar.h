@@ -2,7 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "../Constants.h"
-#include "../params/GlobalParamSnapshot.h"
+#include "../params/SampleParams.h"
 #include <array>
 #include <functional>
 #include <vector>
@@ -36,9 +36,11 @@ public:
     int middleCOctave = 4;
 
 private:
+    /** Which level the signal chain edits: the selected session sample's own parameters, or the
+        selected slice's overrides. (Plugin-level values such as VOICES live in the context row.) */
     enum class Scope
     {
-        Global,
+        Sample,
         Slice,
     };
 
@@ -59,7 +61,7 @@ private:
     enum class TabTarget
     {
         None,
-        Global,
+        Sample,
         Slice,
     };
 
@@ -72,7 +74,7 @@ private:
         juce::Rectangle<int> overrideBounds;
         juce::String label;
         juce::String valueText;
-        juce::String globalParamId;
+        juce::String pluginParamId;   // plugin-level APVTS param (e.g. VOICES); empty for sample/slice cells
         int fieldId = -1;
         uint64_t lockBit = 0;
         DragMapping dragMapping = DragMapping::Linear;
@@ -112,7 +114,8 @@ private:
 
     struct LayoutInput
     {
-        GlobalParamSnapshot globals;
+        SampleParams globals;   // sample-level values this strip shows / slices inherit from
+        int paramSampleId = -1; // session sample those values belong to
         const Slice* selectedSlice = nullptr;
         int numSlices = 0;
         int selectedSliceIndex = -1;
@@ -168,11 +171,14 @@ private:
 
     void toggleBooleanCell (const Cell& cell);
     void cycleChoiceCell (const Cell& cell);
-    void applyCellValue (const Cell& cell, float storedValue, bool oneShotGlobal);
+    void applyCellValue (const Cell& cell, float storedValue, bool oneShot);
     void clearSliceOverride (uint64_t lockBit);
 
-    void beginGlobalGesture (const Cell& cell);
-    void endGlobalGesture();
+    enum class EditLevel { Slice, Sample, Plugin };
+    EditLevel levelFor (const Cell& cell) const;
+    void addVoicesContextCell (const juce::Rectangle<int>& bounds);
+    void beginPluginGesture (const Cell& cell);
+    void endPluginGesture();
 
     void dismissTextEditor();
     void showSetBpmPopup (bool sliceScope);
@@ -180,19 +186,19 @@ private:
     void showRootEditor();
 
     int countModuleOverrides (const ModuleLayout& module, uint64_t lockMask) const;
-    int countEffectiveModuleOverrides (Module module, const Slice& slice, const GlobalParamSnapshot& globals) const;
+    int countEffectiveModuleOverrides (Module module, const Slice& slice, const SampleParams& globals) const;
     int countAllOverrides (uint64_t lockMask) const;
-    int countAllEffectiveOverrides (const Slice& slice, const GlobalParamSnapshot& globals) const;
+    int countAllEffectiveOverrides (const Slice& slice, const SampleParams& globals) const;
 
     IntersectProcessor& processor;
-    Scope scope = Scope::Global;
+    Scope scope = Scope::Sample;
     bool lastHadValidSlice = false;
     int activeDragCell = -1;
     int dragStartY = 0;
     float dragStartInteractionValue = 0.0f;
-    juce::String activeGlobalParamId;
-    bool globalGestureActive = false;
-    bool globalGestureBaselineCaptured = false;
+    juce::String activePluginParamId;
+    bool pluginGestureActive = false;
+    bool pluginGestureBaselineCaptured = false;
 
     juce::Rectangle<int> contextBounds;
     juce::Rectangle<int> contextInfoBounds;

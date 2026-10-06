@@ -145,6 +145,7 @@ target_sources(Intersect PRIVATE
     src/audio/StemModelDownloadJob.cpp
     src/audio/OrtBundleDownloadJob.cpp
     src/params/ParamLayout.cpp
+    src/params/SampleParams.cpp
     src/ui/IntersectLookAndFeel.cpp
     src/ui/HeaderBar.cpp
     src/ui/browser/BrowserView.cpp

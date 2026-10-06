@@ -7,48 +7,49 @@
 #include <atomic>
 #include <juce_core/juce_core.h>
 
-// All global parameter values needed to start a voice, pre-loaded from APVTS on the UI thread.
+// The sample-level parameter values (of the slice's own session sample) needed to start a voice;
+// slices fall back to these unless they lock their own value.
 // Units match slice storage: seconds for ADSR, 0-1 for sustain, dB for volume.
 struct VoiceStartParams
 {
     int   sliceIdx         = 0;
     float velocity         = 0.0f;   // raw MIDI 0-127
     int   note             = 0;
-    float globalBpm        = 120.0f;
-    float globalPitch      = 0.0f;
-    int   globalAlgorithm  = 0;
-    int   globalRepitchMode = (int) RepitchMode::Linear;
-    float globalAttackSec  = 0.005f;
-    float globalDecaySec   = 0.1f;
-    float globalSustain    = 1.0f;   // 0-1
-    float globalReleaseSec = 0.02f;
-    int   globalMuteGroup  = 1;
-    bool  globalStretch    = false;
+    float sampleBpm        = 120.0f;
+    float samplePitch      = 0.0f;
+    int   sampleAlgorithm  = 0;
+    int   sampleRepitchMode = (int) RepitchMode::Linear;
+    float sampleAttackSec  = 0.005f;
+    float sampleDecaySec   = 0.1f;
+    float sampleSustain    = 1.0f;   // 0-1
+    float sampleReleaseSec = 0.02f;
+    int   sampleMuteGroup  = 1;
+    bool  sampleStretch    = false;
     float dawBpm           = 120.0f;
-    float globalTonality   = 0.0f;
-    float globalFormant    = 0.0f;
-    bool  globalFormantComp = false;
-    int   globalGrainMode  = 0;
-    float globalVolume     = 0.0f;   // dB
-    bool  globalReleaseTail = false;
-    bool  globalReverse    = false;
-    int   globalLoopMode   = 0;
-    bool  globalOneShot    = false;
-    float globalCentsDetune = 0.0f;
-    bool  globalFilterEnabled = false;
-    int   globalFilterType    = 0;
-    int   globalFilterSlope   = 0;
-    float globalFilterCutoff  = 8200.0f;
-    float globalFilterReso    = 0.0f;
-    float globalFilterDrive   = 0.0f;
-    float globalFilterAsym    = 0.0f;
-    float globalFilterKeyTrack = 0.0f;
-    float globalFilterEnvAttackSec  = 0.0f;
-    float globalFilterEnvDecaySec   = 0.0f;
-    float globalFilterEnvSustain    = 1.0f;
-    float globalFilterEnvReleaseSec = 0.0f;
-    float globalFilterEnvAmount     = 0.0f;
-    float globalCrossfadePct        = 0.0f;
+    float sampleTonality   = 0.0f;
+    float sampleFormant    = 0.0f;
+    bool  sampleFormantComp = false;
+    int   sampleGrainMode  = 0;
+    float sampleVolume     = 0.0f;   // dB
+    bool  sampleReleaseTail = false;
+    bool  sampleReverse    = false;
+    int   sampleLoopMode   = 0;
+    bool  sampleOneShot    = false;
+    float sampleCentsDetune = 0.0f;
+    bool  sampleFilterEnabled = false;
+    int   sampleFilterType    = 0;
+    int   sampleFilterSlope   = 0;
+    float sampleFilterCutoff  = 8200.0f;
+    float sampleFilterReso    = 0.0f;
+    float sampleFilterDrive   = 0.0f;
+    float sampleFilterAsym    = 0.0f;
+    float sampleFilterKeyTrack = 0.0f;
+    float sampleFilterEnvAttackSec  = 0.0f;
+    float sampleFilterEnvDecaySec   = 0.0f;
+    float sampleFilterEnvSustain    = 1.0f;
+    float sampleFilterEnvReleaseSec = 0.0f;
+    float sampleFilterEnvAmount     = 0.0f;
+    float sampleCrossfadePct        = 0.0f;
     int   rootNote = kDefaultRootNote;
     int   sliceRootNote = kDefaultRootNote;  // per-slice root for range transpose
 };

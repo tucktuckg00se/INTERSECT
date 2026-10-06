@@ -66,9 +66,9 @@ private:
     int fitCheckCounter = 0;
     float lastZoom = -1.0f;
     float lastScroll = -1.0f;
-    float lastGlobalFadeCrossfade = -1.0f;
-    int lastGlobalFadeLoopMode = -1;
-    int lastGlobalFadeReverse = -1;
+    float lastSampleFadeCrossfade = -1.0f;
+    int lastSampleFadeLoopMode = -1;
+    int lastSampleFadeReverse = -1;
     int timerHz = 30;
     bool lastWaveformAnimating = false;
     bool lastPreviewActive = false;

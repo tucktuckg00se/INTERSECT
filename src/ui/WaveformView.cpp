@@ -30,7 +30,7 @@ struct LoopDisplayState
 };
 
 LoopDisplayState resolveLoopDisplayState (const Slice& slice,
-                                          const GlobalParamSnapshot& globals,
+                                          const SampleParams& sampleLevel,   // the slice's own sample
                                           int sliceStartSample,
                                           int sliceEndSample,
                                           bool usePreview = false,
@@ -40,7 +40,7 @@ LoopDisplayState resolveLoopDisplayState (const Slice& slice,
     LoopDisplayState state;
     const int boundedSliceEnd = juce::jmax (sliceStartSample + 1, sliceEndSample);
 
-    state.mode = (slice.lockMask & kLockLoop) != 0 ? slice.loopMode : globals.loopMode;
+    state.mode = (slice.lockMask & kLockLoop) != 0 ? slice.loopMode : sampleLevel.loopMode;
     if (state.mode == 0)
         return state;
 
@@ -529,7 +529,6 @@ void WaveformView::drawWaveform (juce::Graphics& g)
 void WaveformView::drawSlices (juce::Graphics& g)
 {
     const auto& ui = processor.getUiSliceSnapshot();
-    const auto globals = GlobalParamSnapshot::loadFrom (processor.apvts, ui.rootNote);
     int sel = ui.selectedSlice;
     int num = ui.numSlices;
     int previewIdx = -1;
@@ -575,7 +574,7 @@ void WaveformView::drawSlices (juce::Graphics& g)
             {
                 const bool useLoopPreview = dragSliceIdx == i
                     && (dragMode == DragLoopLeft || dragMode == DragLoopRight);
-                const auto loopState = resolveLoopDisplayState (s, globals,
+                const auto loopState = resolveLoopDisplayState (s, ui.sampleParamsFor (s.sampleId),
                                                                 drawStartSample, drawEndSample,
                                                                 useLoopPreview,
                                                                 dragLoopPreviewStart, dragLoopPreviewEnd);
@@ -620,14 +619,14 @@ void WaveformView::drawFadeRegions (juce::Graphics& g)
     if (! s.active) return;
 
     // Also only show if loop mode is active
-    const auto globals = GlobalParamSnapshot::loadFrom (processor.apvts, ui.rootNote);
+    const auto& sampleLevel = ui.sampleParamsFor (s.sampleId);
 
-    const float resolvedCrossfade = (s.lockMask & kLockCrossfade) ? s.crossfadePct : globals.crossfadePct;
+    const float resolvedCrossfade = (s.lockMask & kLockCrossfade) ? s.crossfadePct : sampleLevel.crossfadePct;
     if (resolvedCrossfade <= 0.0f) return;
 
     const bool useLoopPreview = dragSliceIdx == sel
         && (dragMode == DragLoopLeft || dragMode == DragLoopRight);
-    const auto loopState = resolveLoopDisplayState (s, globals,
+    const auto loopState = resolveLoopDisplayState (s, ui.sampleParamsFor (s.sampleId),
                                                     s.startSample, s.endSample,
                                                     useLoopPreview,
                                                     dragLoopPreviewStart, dragLoopPreviewEnd);
@@ -636,7 +635,7 @@ void WaveformView::drawFadeRegions (juce::Graphics& g)
     const int loopLen = loopState.endSample - loopState.startSample;
     if (loopLen <= 0) return;
 
-    const bool reverse = (s.lockMask & kLockReverse) ? s.reverse : globals.reverse;
+    const bool reverse = (s.lockMask & kLockReverse) ? s.reverse : sampleLevel.reverse;
     const bool pingPong = (loopState.mode == 2);
     const int bufferEnd = processor.sampleData.getNumFrames();
 
@@ -766,7 +765,6 @@ void WaveformView::mouseMove (const juce::MouseEvent& e)
     auto sampleSnap = processor.sampleData.getSnapshot();
     if (sampleSnap == nullptr) return;
     const auto& ui = processor.getUiSliceSnapshot();
-    const auto globals = GlobalParamSnapshot::loadFrom (processor.apvts, ui.rootNote);
     int sel = ui.selectedSlice;
     int num = ui.numSlices;
     HoveredHandle newHandle = HoveredHandle::None;
@@ -778,7 +776,7 @@ void WaveformView::mouseMove (const juce::MouseEvent& e)
         {
             const bool useLoopPreview = dragSliceIdx == sel
                 && (dragMode == DragLoopLeft || dragMode == DragLoopRight);
-            const auto loopState = resolveLoopDisplayState (s, globals,
+            const auto loopState = resolveLoopDisplayState (s, ui.sampleParamsFor (s.sampleId),
                                                             s.startSample, s.endSample,
                                                             useLoopPreview,
                                                             dragLoopPreviewStart, dragLoopPreviewEnd);
@@ -887,7 +885,6 @@ void WaveformView::mouseDown (const juce::MouseEvent& e)
     }
 
     const auto& ui = processor.getUiSliceSnapshot();
-    const auto globals = GlobalParamSnapshot::loadFrom (processor.apvts, ui.rootNote);
     int sel = ui.selectedSlice;
     int num = ui.numSlices;
 
@@ -933,7 +930,7 @@ void WaveformView::mouseDown (const juce::MouseEvent& e)
                 dragLoopPreviewEnd = loopState.endSample;
             };
 
-            const auto loopState = resolveLoopDisplayState (s, globals, s.startSample, s.endSample);
+            const auto loopState = resolveLoopDisplayState (s, ui.sampleParamsFor (s.sampleId), s.startSample, s.endSample);
             const auto mousePos = e.position;
             if (loopState.active)
             {
@@ -1219,8 +1216,7 @@ void WaveformView::mouseUp (const juce::MouseEvent& e)
         if (dragSliceIdx >= 0 && dragSliceIdx < ui.numSlices)
         {
             const auto& s = ui.slices[(size_t) dragSliceIdx];
-            const auto globals = GlobalParamSnapshot::loadFrom (processor.apvts, ui.rootNote);
-            const auto currentLoopState = resolveLoopDisplayState (s, globals, s.startSample, s.endSample);
+            const auto currentLoopState = resolveLoopDisplayState (s, ui.sampleParamsFor (s.sampleId), s.startSample, s.endSample);
 
             if (currentLoopState.startSample != dragLoopPreviewStart
                 || currentLoopState.endSample != dragLoopPreviewEnd)

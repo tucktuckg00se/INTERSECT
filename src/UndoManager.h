@@ -5,6 +5,7 @@
 #include "audio/Slice.h"
 #include "audio/SliceManager.h"
 #include "params/ParamUndoState.h"
+#include "params/SampleParamTable.h"
 
 class UndoManager
 {
@@ -21,6 +22,7 @@ public:
         int selectedSlice = -1;
         int rootNote = kDefaultRootNote;
         ParamUndoState params;
+        SampleParamTable sampleParams;
         bool midiSelectsSlice = false;
         bool snapToZeroCrossing = false;
     };

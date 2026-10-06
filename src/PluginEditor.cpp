@@ -3,6 +3,17 @@
 #include <algorithm>
 #include <cmath>
 
+namespace
+{
+// Sample-level params of the sample that owns the selected slice (else the selected sample).
+const SampleParams& selectedSliceSampleParams (const IntersectProcessor::UiSliceSnapshot& ui)
+{
+    const bool hasSlice = ui.selectedSlice >= 0 && ui.selectedSlice < ui.numSlices;
+    return ui.sampleParamsFor (hasSlice ? ui.slices[(size_t) ui.selectedSlice].sampleId
+                                        : ui.selectedSessionSampleId);
+}
+}
+
 static constexpr int kBaseW        = 800;
 static constexpr int kBaseH        = 400;
 static constexpr float kHeaderH    = 28.0f;
@@ -60,8 +71,8 @@ struct FadeOverlayState
 
 FadeOverlayState resolveSelectedFadeOverlayState (const IntersectProcessor::UiSliceSnapshot& ui,
                                                   float globalCrossfadePct,
-                                                  int globalLoopMode,
-                                                  bool globalReverse)
+                                                  int sampleLoopMode,
+                                                  bool sampleReverse)
 {
     const int selectedSlice = ui.selectedSlice;
     if (selectedSlice < 0 || selectedSlice >= ui.numSlices)
@@ -76,10 +87,10 @@ FadeOverlayState resolveSelectedFadeOverlayState (const IntersectProcessor::UiSl
         : globalCrossfadePct;
     const int resolvedLoopMode = (slice.lockMask & kLockLoop) != 0
         ? slice.loopMode
-        : globalLoopMode;
+        : sampleLoopMode;
     const bool resolvedReverse = (slice.lockMask & kLockReverse) != 0
         ? slice.reverse
-        : globalReverse;
+        : sampleReverse;
 
     if (resolvedCrossfade <= 0.0f || resolvedLoopMode == 0)
         return {};
@@ -159,9 +170,12 @@ IntersectEditor::IntersectEditor (IntersectProcessor& p)
     updateUiTransform();   // host's first getSize sees the restored scale; refitted post-attach
     lastUiSnapshotVersion = processor.getUiSliceSnapshotVersion();
     lastPresetSaveVersion = processor.getPresetSaveVersion();
-    lastGlobalFadeCrossfade = processor.apvts.getRawParameterValue (ParamIds::defaultCrossfade)->load();
-    lastGlobalFadeLoopMode = juce::roundToInt (processor.apvts.getRawParameterValue (ParamIds::defaultLoop)->load());
-    lastGlobalFadeReverse = processor.apvts.getRawParameterValue (ParamIds::defaultReverse)->load() >= 0.5f ? 1 : 0;
+    {
+        const auto& fadeSample = selectedSliceSampleParams (processor.getUiSliceSnapshot());
+        lastSampleFadeCrossfade = fadeSample.crossfadePct;
+        lastSampleFadeLoopMode = fadeSample.loopMode;
+        lastSampleFadeReverse = fadeSample.reverse ? 1 : 0;
+    }
     timerHz = 30;
     startTimerHz (timerHz);
 }
@@ -696,27 +710,29 @@ void IntersectEditor::timerCallback()
     if (updateUiTransform())
         uiChanged = true;
 
-    const float globalCrossfade = processor.apvts.getRawParameterValue (ParamIds::defaultCrossfade)->load();
-    const int globalLoopMode = juce::roundToInt (processor.apvts.getRawParameterValue (ParamIds::defaultLoop)->load());
-    const int globalReverse = processor.apvts.getRawParameterValue (ParamIds::defaultReverse)->load() >= 0.5f ? 1 : 0;
-    const bool globalFadeParamsChanged = std::abs (globalCrossfade - lastGlobalFadeCrossfade) > 1.0e-4f
-        || globalLoopMode != lastGlobalFadeLoopMode
-        || globalReverse != lastGlobalFadeReverse;
+    // The selected slice inherits fade/loop/reverse from its own sample.
+    const auto& fadeSample = selectedSliceSampleParams (ui);
+    const float sampleCrossfade = fadeSample.crossfadePct;
+    const int sampleLoopMode = fadeSample.loopMode;
+    const int sampleReverse = fadeSample.reverse ? 1 : 0;
+    const bool sampleFadeParamsChanged = std::abs (sampleCrossfade - lastSampleFadeCrossfade) > 1.0e-4f
+        || sampleLoopMode != lastSampleFadeLoopMode
+        || sampleReverse != lastSampleFadeReverse;
 
-    if (globalFadeParamsChanged)
+    if (sampleFadeParamsChanged)
     {
         const auto previousFadeState = resolveSelectedFadeOverlayState (ui,
-                                                                        lastGlobalFadeCrossfade,
-                                                                        lastGlobalFadeLoopMode,
-                                                                        lastGlobalFadeReverse != 0);
+                                                                        lastSampleFadeCrossfade,
+                                                                        lastSampleFadeLoopMode,
+                                                                        lastSampleFadeReverse != 0);
         const auto currentFadeState = resolveSelectedFadeOverlayState (ui,
-                                                                       globalCrossfade,
-                                                                       globalLoopMode,
-                                                                       globalReverse != 0);
+                                                                       sampleCrossfade,
+                                                                       sampleLoopMode,
+                                                                       sampleReverse != 0);
         fadeOverlayChanged = ! (previousFadeState == currentFadeState);
-        lastGlobalFadeCrossfade = globalCrossfade;
-        lastGlobalFadeLoopMode = globalLoopMode;
-        lastGlobalFadeReverse = globalReverse;
+        lastSampleFadeCrossfade = sampleCrossfade;
+        lastSampleFadeLoopMode = sampleLoopMode;
+        lastSampleFadeReverse = sampleReverse;
     }
 
     const bool playbackActive = std::any_of (processor.voicePool.voicePositions.begin(),

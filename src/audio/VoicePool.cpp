@@ -891,38 +891,38 @@ void VoicePool::startVoice (int voiceIdx, const VoiceStartParams& p,
     v.endSample   = s.endSample;
 
     // Resolve parameters via inheritance
-    float attack   = sm.resolveParam (sliceIdx, kLockAttack,   s.attackSec,    p.globalAttackSec);
-    float decay    = sm.resolveParam (sliceIdx, kLockDecay,    s.decaySec,     p.globalDecaySec);
-    float sustain  = sm.resolveParam (sliceIdx, kLockSustain,  s.sustainLevel, p.globalSustain);
-    float release  = sm.resolveParam (sliceIdx, kLockRelease,  s.releaseSec,   p.globalReleaseSec);
+    float attack   = sm.resolveParam (sliceIdx, kLockAttack,   s.attackSec,    p.sampleAttackSec);
+    float decay    = sm.resolveParam (sliceIdx, kLockDecay,    s.decaySec,     p.sampleDecaySec);
+    float sustain  = sm.resolveParam (sliceIdx, kLockSustain,  s.sustainLevel, p.sampleSustain);
+    float release  = sm.resolveParam (sliceIdx, kLockRelease,  s.releaseSec,   p.sampleReleaseSec);
 
     v.envelope.noteOn (attack, decay, sustain, release, sampleRate);
 
-    int resolvedLoopMode = (int) sm.resolveParam (sliceIdx, kLockLoop, (float) s.loopMode, (float) p.globalLoopMode);
+    int resolvedLoopMode = (int) sm.resolveParam (sliceIdx, kLockLoop, (float) s.loopMode, (float) p.sampleLoopMode);
     v.looping    = (resolvedLoopMode == 1);
     v.pingPong   = (resolvedLoopMode == 2);
-    v.muteGroup  = (int) sm.resolveParam (sliceIdx, kLockMuteGroup, (float) s.muteGroup, (float) p.globalMuteGroup);
+    v.muteGroup  = (int) sm.resolveParam (sliceIdx, kLockMuteGroup, (float) s.muteGroup, (float) p.sampleMuteGroup);
 
     bool rev = sm.resolveParam (sliceIdx, kLockReverse,
                                  s.reverse ? 1.0f : 0.0f,
-                                 p.globalReverse ? 1.0f : 0.0f) > 0.5f;
+                                 p.sampleReverse ? 1.0f : 0.0f) > 0.5f;
     v.direction = rev ? -1 : 1;
     v.position  = rev ? (s.endSample - 1) : s.startSample;
 
     v.outputBus = (int) sm.resolveParam (sliceIdx, kLockOutputBus, (float) s.outputBus, 0.0f);
 
-    int algo = (int) sm.resolveParam (sliceIdx, kLockAlgorithm, (float) s.algorithm, (float) p.globalAlgorithm);
+    int algo = (int) sm.resolveParam (sliceIdx, kLockAlgorithm, (float) s.algorithm, (float) p.sampleAlgorithm);
     int repitchMode = (int) sm.resolveParam (sliceIdx, kLockRepitchMode,
-                                             (float) s.repitchMode, (float) p.globalRepitchMode);
+                                             (float) s.repitchMode, (float) p.sampleRepitchMode);
 
-    float sliceBpm = sm.resolveParam (sliceIdx, kLockBpm,   s.bpm,            p.globalBpm);
-    float pitchSt  = sm.resolveParam (sliceIdx, kLockPitch,       s.pitchSemitones, p.globalPitch);
-    float cents    = sm.resolveParam (sliceIdx, kLockCentsDetune, s.centsDetune,    p.globalCentsDetune);
+    float sliceBpm = sm.resolveParam (sliceIdx, kLockBpm,   s.bpm,            p.sampleBpm);
+    float pitchSt  = sm.resolveParam (sliceIdx, kLockPitch,       s.pitchSemitones, p.samplePitch);
+    float cents    = sm.resolveParam (sliceIdx, kLockCentsDetune, s.centsDetune,    p.sampleCentsDetune);
     float pitch    = pitchSt + cents / 100.0f;
 
     bool stretchOn = sm.resolveParam (sliceIdx, kLockStretch,
                                        s.stretchEnabled ? 1.0f : 0.0f,
-                                       p.globalStretch ? 1.0f : 0.0f) > 0.5f;
+                                       p.sampleStretch ? 1.0f : 0.0f) > 0.5f;
 
     // Range transpose: chromatic offset from slice root note.
     // Ignored for Repitch+stretch where pitch is tied to BPM-locked speed.
@@ -934,59 +934,59 @@ void VoicePool::startVoice (int voiceIdx, const VoiceStartParams& p,
 
     float pitchRatio = std::pow (2.0f, pitch / 12.0f);
 
-    float tonality = sm.resolveParam (sliceIdx, kLockTonality,    s.tonalityHz,       p.globalTonality);
-    float formant  = sm.resolveParam (sliceIdx, kLockFormant,     s.formantSemitones, p.globalFormant);
+    float tonality = sm.resolveParam (sliceIdx, kLockTonality,    s.tonalityHz,       p.sampleTonality);
+    float formant  = sm.resolveParam (sliceIdx, kLockFormant,     s.formantSemitones, p.sampleFormant);
     bool fComp     = sm.resolveParam (sliceIdx, kLockFormantComp,
                                        s.formantComp ? 1.0f : 0.0f,
-                                       p.globalFormantComp ? 1.0f : 0.0f) > 0.5f;
+                                       p.sampleFormantComp ? 1.0f : 0.0f) > 0.5f;
 
     int grainMode = (int) sm.resolveParam (sliceIdx, kLockGrainMode,
-                                           (float) s.grainMode, (float) p.globalGrainMode);
+                                           (float) s.grainMode, (float) p.sampleGrainMode);
     // Convert grainMode index (0=Fast, 1=Normal, 2=Smooth) to log2 hop adjust (-1, 0, +1)
     int hopAdj = grainMode - 1;
 
-    v.volume = dbToLinear (sm.resolveParam (sliceIdx, kLockVolume, s.volume, p.globalVolume));
+    v.volume = dbToLinear (sm.resolveParam (sliceIdx, kLockVolume, s.volume, p.sampleVolume));
     v.repitchMode = juce::jlimit (0, 2, repitchMode);
 
     v.releaseTail = sm.resolveParam (sliceIdx, kLockReleaseTail,
                                       s.releaseTail ? 1.0f : 0.0f,
-                                      p.globalReleaseTail ? 1.0f : 0.0f) > 0.5f;
+                                      p.sampleReleaseTail ? 1.0f : 0.0f) > 0.5f;
     v.oneShot = sm.resolveParam (sliceIdx, kLockOneShot,
                                   s.oneShot ? 1.0f : 0.0f,
-                                  p.globalOneShot ? 1.0f : 0.0f) > 0.5f;
+                                  p.sampleOneShot ? 1.0f : 0.0f) > 0.5f;
     v.filterEnabled = sm.resolveParam (sliceIdx, kLockFilterEnabled,
                                        s.filterEnabled ? 1.0f : 0.0f,
-                                       p.globalFilterEnabled ? 1.0f : 0.0f) > 0.5f;
+                                       p.sampleFilterEnabled ? 1.0f : 0.0f) > 0.5f;
     v.filterType = (int) sm.resolveParam (sliceIdx, kLockFilterType,
-                                          (float) s.filterType, (float) p.globalFilterType);
+                                          (float) s.filterType, (float) p.sampleFilterType);
     v.filterSlope = (int) sm.resolveParam (sliceIdx, kLockFilterSlope,
-                                           (float) s.filterSlope, (float) p.globalFilterSlope);
+                                           (float) s.filterSlope, (float) p.sampleFilterSlope);
     v.filterCutoff = sm.resolveParam (sliceIdx, kLockFilterCutoff,
-                                      s.filterCutoff, p.globalFilterCutoff);
+                                      s.filterCutoff, p.sampleFilterCutoff);
     v.filterReso = sm.resolveParam (sliceIdx, kLockFilterReso,
-                                    s.filterReso, p.globalFilterReso);
+                                    s.filterReso, p.sampleFilterReso);
     v.filterDrive = sm.resolveParam (sliceIdx, kLockFilterDrive,
-                                     s.filterDrive, p.globalFilterDrive);
+                                     s.filterDrive, p.sampleFilterDrive);
     v.filterAsym = sm.resolveParam (sliceIdx, kLockFilterAsym,
-                                    s.filterAsym, p.globalFilterAsym);
+                                    s.filterAsym, p.sampleFilterAsym);
     cacheSaturationConstants (v);
     v.dcCoeffR = 1.0f - (2.0f * juce::MathConstants<float>::pi * 20.0f / (float) sampleRate);
     v.dcPrevInL = v.dcPrevInR = v.dcPrevOutL = v.dcPrevOutR = 0.0f;
     const float keyTrackPercent = sm.resolveParam (sliceIdx, kLockFilterKeyTrack,
-                                                   s.filterKeyTrack, p.globalFilterKeyTrack);
+                                                   s.filterKeyTrack, p.sampleFilterKeyTrack);
     const float keyTrackNorm = juce::jlimit (0.0f, 1.0f, keyTrackPercent / 100.0f);
     const float noteRatio = std::pow (2.0f, ((float) p.note - (float) p.sliceRootNote) / 12.0f);
     v.filterKeyTrackRatio = std::pow (noteRatio, keyTrackNorm);
     const float filterEnvAttack = sm.resolveParam (sliceIdx, kLockFilterEnvAttack,
-                                                   s.filterEnvAttackSec, p.globalFilterEnvAttackSec);
+                                                   s.filterEnvAttackSec, p.sampleFilterEnvAttackSec);
     const float filterEnvDecay = sm.resolveParam (sliceIdx, kLockFilterEnvDecay,
-                                                  s.filterEnvDecaySec, p.globalFilterEnvDecaySec);
+                                                  s.filterEnvDecaySec, p.sampleFilterEnvDecaySec);
     const float filterEnvSustain = sm.resolveParam (sliceIdx, kLockFilterEnvSustain,
-                                                    s.filterEnvSustain, p.globalFilterEnvSustain);
+                                                    s.filterEnvSustain, p.sampleFilterEnvSustain);
     const float filterEnvRelease = sm.resolveParam (sliceIdx, kLockFilterEnvRelease,
-                                                    s.filterEnvReleaseSec, p.globalFilterEnvReleaseSec);
+                                                    s.filterEnvReleaseSec, p.sampleFilterEnvReleaseSec);
     v.filterEnvAmount = sm.resolveParam (sliceIdx, kLockFilterEnvAmount,
-                                         s.filterEnvAmount, p.globalFilterEnvAmount);
+                                         s.filterEnvAmount, p.sampleFilterEnvAmount);
     v.bufferEnd = sample.getNumFrames();
 
     // Resolve loop bounds (independent of slice bounds)
@@ -1008,7 +1008,7 @@ void VoicePool::startVoice (int voiceIdx, const VoiceStartParams& p,
     }
 
     // Resolve crossfade (relative to loop bounds, not slice bounds)
-    v.crossfadePct = sm.resolveParam (sliceIdx, kLockCrossfade, s.crossfadePct, p.globalCrossfadePct);
+    v.crossfadePct = sm.resolveParam (sliceIdx, kLockCrossfade, s.crossfadePct, p.sampleCrossfadePct);
     {
         const int loopLen = v.loopEndSample - v.loopStartSample;
         if (v.crossfadePct > 0.0f && loopLen > 0 && (v.looping || v.pingPong))
