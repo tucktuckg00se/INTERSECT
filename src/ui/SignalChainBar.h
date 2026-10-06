@@ -206,6 +206,7 @@ private:
 
     juce::Rectangle<int> contextSlicesBounds;
     juce::Rectangle<int> contextRootBounds;
+    juce::Rectangle<int> contextVoicesBounds;
     juce::Rectangle<int> moduleStripBounds;
     juce::Rectangle<int> globalStripBounds;
     juce::Rectangle<int> sliceStripBounds;

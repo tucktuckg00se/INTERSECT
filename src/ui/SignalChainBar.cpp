@@ -587,6 +587,7 @@ void SignalChainBar::rebuildLayout()
 
     contextSlicesBounds = {};
     contextRootBounds = {};
+    contextVoicesBounds = {};
     globalStripBounds = {};
     sliceStripBounds = {};
     separatorBounds = {};
@@ -1725,6 +1726,9 @@ void SignalChainBar::paint (juce::Graphics& g)
                            getTheme().text0);
         drawContextMetric (contextRootBounds, "ROOT", juce::String (ui.rootNote),
                            rootEditable ? getTheme().text0 : getTheme().text2.withAlpha (0.6f));
+        if (auto* voices = processor.apvts.getRawParameterValue (ParamIds::maxVoices))
+            drawContextMetric (contextVoicesBounds, "VOICES", juce::String (juce::roundToInt (voices->load())),
+                               getTheme().text0);
     }
 
     // Draw expand toggle chevron
@@ -2058,11 +2062,11 @@ void SignalChainBar::addVoicesContextCell (const juce::Rectangle<int>& bounds)
     auto* raw = processor.apvts.getRawParameterValue (ParamIds::maxVoices);
     const int voices = raw != nullptr ? juce::roundToInt (raw->load()) : 16;
 
+    // The cell only handles drag/edit; the text is drawn like SLICES / ROOT in paint().
+    contextVoicesBounds = bounds;
     Cell cell;
     cell.module = Module::Playback;
     cell.bounds = bounds;
-    cell.label = "VOICES";
-    cell.valueText = juce::String (voices);
     cell.pluginParamId = ParamIds::maxVoices;
     cell.isContextInline = true;
     cell.currentValue = (float) voices;
