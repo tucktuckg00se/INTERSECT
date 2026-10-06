@@ -21,12 +21,14 @@ public:
 
     SampleDecodeJob (std::vector<juce::File> sourceFiles,
                      std::vector<int> sourceSampleIds,
+                     std::vector<int> sliceImportSampleIds,
                      double targetRate, int loadToken,
                      IntersectProcessor::LoadKind kind,
                      SuccessFn onSuccessIn, FailureFn onFailureIn)
         : juce::ThreadPoolJob ("SampleDecodeJob"),
           files (std::move (sourceFiles)),
           sampleIds (std::move (sourceSampleIds)),
+          importSliceSampleIds (std::move (sliceImportSampleIds)),
           sampleRate (targetRate),
           token (loadToken),
           loadKind (kind),
@@ -40,7 +42,7 @@ public:
         if (files.empty())
             return jobHasFinished;
 
-        auto decoded = SampleData::decodeFromFiles (files, sampleRate, &sampleIds);
+        auto decoded = SampleData::decodeFromFiles (files, sampleRate, &sampleIds, &importSliceSampleIds);
         if (shouldExit())
             return jobHasFinished;
 
@@ -54,6 +56,7 @@ public:
 private:
     std::vector<juce::File> files;
     std::vector<int> sampleIds;
+    std::vector<int> importSliceSampleIds;   // REX2 files whose embedded slices should be created
     double sampleRate = 44100.0;
     int token = 0;
     IntersectProcessor::LoadKind loadKind = IntersectProcessor::LoadKindReplace;
@@ -468,6 +471,17 @@ void IntersectProcessor::handleAsyncUpdate()
     handleDownloadCompletionsOnMessageThread();
     handlePresetJobCompletionOnMessageThread();
     handleAuditionCompletionOnMessageThread();
+    handleImportedTempoOnMessageThread();
+}
+
+void IntersectProcessor::handleImportedTempoOnMessageThread()
+{
+    const float tempo = pendingImportedTempoBpm.exchange (0.0f, std::memory_order_acq_rel);
+    if (tempo <= 0.0f)
+        return;
+
+    if (auto* param = apvts.getParameter (ParamIds::defaultBpm))
+        param->setValueNotifyingHost (param->convertTo0to1 (tempo));
 }
 
 void IntersectProcessor::handleDownloadCompletionsOnMessageThread()
@@ -684,7 +698,8 @@ void IntersectProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 void IntersectProcessor::releaseResources() {}
 
 int IntersectProcessor::requestSampleLoad (const std::vector<juce::File>& files, LoadKind kind,
-                                           const std::vector<int>* sampleIds)
+                                           const std::vector<int>* sampleIds,
+                                           const std::vector<int>* importSliceSampleIds)
 {
     const int token = nextLoadToken.fetch_add (1, std::memory_order_relaxed) + 1;
     latestLoadToken.store (token, std::memory_order_release);
@@ -721,9 +736,16 @@ int IntersectProcessor::requestSampleLoad (const std::vector<juce::File>& files,
         if (finishedToken != latestLoadToken.load (std::memory_order_acquire))
             return;
 
+        const float importedTempo = decoded->importedTempoBpm;
         auto* old = completedLoadData.exchange (decoded.release(), std::memory_order_acq_rel);
         delete old;
         latestLoadKind.store ((int) finishedKind, std::memory_order_release);
+
+        if (importedTempo > 0.0f)
+        {
+            pendingImportedTempoBpm.store (importedTempo, std::memory_order_release);
+            triggerAsyncUpdate();
+        }
     };
 
     auto onFailure = [this] (int finishedToken, LoadKind finishedKind, const juce::File& failedFile)
@@ -740,7 +762,12 @@ int IntersectProcessor::requestSampleLoad (const std::vector<juce::File>& files,
         delete old;
     };
 
-    fileLoadPool.addJob (new SampleDecodeJob (files, copiedSampleIds, sr, token, kind, onSuccess, onFailure), true);
+    std::vector<int> copiedImportIds;
+    if (importSliceSampleIds != nullptr)
+        copiedImportIds = *importSliceSampleIds;
+
+    fileLoadPool.addJob (new SampleDecodeJob (files, copiedSampleIds, std::move (copiedImportIds),
+                                              sr, token, kind, onSuccess, onFailure), true);
     return token;
 }
 
@@ -772,21 +799,28 @@ void IntersectProcessor::loadFilesAsync (const std::vector<juce::File>& files, b
                 sampleIds.push_back (sample.sampleId);
             }
         }
+        // Only the newly appended files get their embedded REX2 slices imported.
+        std::vector<int> newSampleIds;
+        newSampleIds.reserve (files.size());
         for (const auto& file : files)
         {
             orderedFiles.push_back (file);
             sampleIds.push_back (generateSessionSampleId());
+            newSampleIds.push_back (sampleIds.back());
         }
         setPendingStateFile (orderedFiles.front());
         setPendingStateFiles (orderedFiles);
-        requestSampleLoad (orderedFiles, LoadKindPreserveSlices, &sampleIds);
+        requestSampleLoad (orderedFiles, LoadKindPreserveSlices, &sampleIds, &newSampleIds);
         return;
     }
 
     orderedFiles = files;
+    sampleIds.reserve (files.size());
+    for (size_t i = 0; i < files.size(); ++i)
+        sampleIds.push_back (generateSessionSampleId());
     setPendingStateFile (orderedFiles.front());
     setPendingStateFiles (orderedFiles);
-    requestSampleLoad (orderedFiles, LoadKindReplace);
+    requestSampleLoad (orderedFiles, LoadKindReplace, &sampleIds, &sampleIds);
 }
 
 void IntersectProcessor::relinkFileAsync (const juce::File& file)
@@ -2893,7 +2927,8 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     files.emplace_back (sample.filePath);
                     sampleIds.push_back (sample.sampleId);
                 }
-                const int retryToken = requestSampleLoad (files, currentLoadKind, &sampleIds);
+                const int retryToken = requestSampleLoad (files, currentLoadKind, &sampleIds,
+                                                          &decoded->importSliceSampleIds);
                 if (isStateRestoreLoad)
                     pendingStateRestoreToken.store (retryToken, std::memory_order_release);
             }
@@ -2966,29 +3001,28 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     sliceManager.rebuildMidiMap();
                 }
 
-                // REX2 import: recreate the slices embedded in the loop metadata.
-                // Fresh loads only — state restores and relinks keep their existing slices.
-                // Read via sampleData: `decoded` was moved into it above.
-                if (! isStateRestoreLoad
-                    && (currentLoadKind == LoadKindReplace || currentLoadKind == LoadKindPreserveSlices))
+                // REX2 import: create the slices embedded in freshly loaded loops. The decoder
+                // only fills this list for files the load request marked for import, so
+                // reloads (append, reorder, undo, state restore) never duplicate slices.
+                // The loop tempo is applied on the message thread (see handleImportedTempoOnMessageThread).
                 {
                     const auto& importedSlices = sampleData.getImportedSlices();
-                    if (! importedSlices.empty())
+                    int created = 0;
+                    for (const auto& imp : importedSlices)
                     {
-                        const float tempo = sampleData.getImportedTempoBpm();
-                        for (const auto& imp : importedSlices)
-                        {
-                            const int idx = sliceManager.createSlice (imp.startSample, imp.endSample);
-                            if (idx < 0)
-                                break;   // kMaxSlices reached
-                            Slice& s = sliceManager.getSlice (idx);
-                            s.bpm = tempo > 0.0f ? tempo : 120.0f;
-                        }
-
-                        if (tempo > 0.0f && bpmParam != nullptr)
-                            bpmParam->store (juce::jlimit (20.0f, 999.0f, tempo),
-                                             std::memory_order_relaxed);
+                        const int idx = sliceManager.createSlice (imp.startSample, imp.endSample);
+                        if (idx < 0)
+                            break;   // kMaxSlices reached
+                        syncSliceOwnershipFromAbsolute (sliceManager.getSlice (idx));
+                        ++created;
                     }
+
+                    if (created > 0)
+                        sliceManager.rebuildMidiMap();
+                    if (created < (int) importedSlices.size())
+                        setUiStatusMessage ("REX file has " + juce::String ((int) importedSlices.size())
+                                                + " slices - only " + juce::String (created) + " imported",
+                                            true);
                 }
 
                 if (isStateRestoreLoad)

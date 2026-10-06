@@ -2,26 +2,45 @@
 #include <velociloops.h>
 #include <algorithm>
 #include <cmath>
+#include <memory>
 #include <vector>
 
 namespace Rex2Import
 {
+namespace
+{
+constexpr double kRexPpqPerQuarter = 3840.0;   // kREXPPQ (15360) per 4/4 bar
+
+struct FileCloser
+{
+    void operator() (VLFile_s* f) const { vl_close (f); }
+};
+using FileHandle = std::unique_ptr<VLFile_s, FileCloser>;
+
+// Read through JUCE rather than vl_open(): vl_open() takes a narrow path, which
+// breaks on Windows for paths outside the system code page.
+FileHandle openFile (const juce::File& file)
+{
+    juce::MemoryBlock data;
+    if (! file.loadFileAsData (data) || data.getSize() == 0)
+        return {};
+
+    VLError err = VL_OK;
+    return FileHandle (vl_open_from_memory (data.getData(), data.getSize(), &err));
+}
+} // namespace
 
 bool decodeFile (const juce::File& file, double targetSampleRate, DecodedLoop& out)
 {
-    VLError err = VL_OK;
-    VLFile f = vl_open (file.getFullPathName().toRawUTF8(), &err);
+    auto f = openFile (file);
     if (f == nullptr)
         return false;
 
     VLFileInfo info {};
-    if (vl_get_info (f, &info) != VL_OK
+    if (vl_get_info (f.get(), &info) != VL_OK
         || info.slice_count <= 0
         || info.sample_rate <= 0)
-    {
-        vl_close (f);
         return false;
-    }
 
     // Render every slice (with its transient-stretch tail, if any) and concatenate
     // the results into one continuous stereo buffer. The REX2 metadata says where
@@ -33,28 +52,21 @@ bool decodeFile (const juce::File& file, double targetSampleRate, DecodedLoop& o
 
     for (int32_t i = 0; i < info.slice_count; ++i)
     {
-        const int32_t n = vl_get_slice_frame_count (f, i);
-        if (n <= 0)
-        {
-            vl_close (f);
+        VLSliceInfo sliceInfo {};
+        const int32_t n = vl_get_slice_frame_count (f.get(), i);
+        if (n <= 0 || vl_get_slice_info (f.get(), i, &sliceInfo) != VL_OK)
             return false;
-        }
 
         std::vector<float> L ((size_t) n), R ((size_t) n);
         int32_t written = 0;
-        if (vl_decode_slice (f, i, L.data(), R.data(), 0, n, &written) != VL_OK || written <= 0)
-        {
-            vl_close (f);
+        if (vl_decode_slice (f.get(), i, L.data(), R.data(), 0, n, &written) != VL_OK || written <= 0)
             return false;
-        }
 
         const int start = (int) left.size();
         left.insert  (left.end(),  L.begin(), L.begin() + written);
         right.insert (right.end(), R.begin(), R.begin() + written);
-        spans.push_back ({ start, start + (int) written });
+        spans.push_back ({ start, start + (int) written, (double) sliceInfo.ppq_pos / kRexPpqPerQuarter });
     }
-
-    vl_close (f);
 
     if (left.empty())
         return false;
@@ -63,6 +75,8 @@ bool decodeFile (const juce::File& file, double targetSampleRate, DecodedLoop& o
     const double target  = targetSampleRate > 0.0 ? targetSampleRate : srcRate;
 
     DecodedLoop loop;
+    loop.sourceSampleRate = srcRate;
+    loop.sourceNumFrames = (int) left.size();
     loop.tempoBpm = (float) ((double) info.tempo / 1000.0);
     if (! std::isfinite (loop.tempoBpm) || loop.tempoBpm <= 0.0f)
         loop.tempoBpm = 120.0f;
@@ -97,14 +111,28 @@ bool decodeFile (const juce::File& file, double targetSampleRate, DecodedLoop& o
 
     loop.sampleRate = target;
     loop.stereo.setSize (2, totalFrames);
-    if (totalFrames > 0)
-    {
-        std::copy (left.begin(),  left.end(),  loop.stereo.getWritePointer (0));
-        std::copy (right.begin(), right.end(), loop.stereo.getWritePointer (1));
-    }
+    std::copy (left.begin(),  left.end(),  loop.stereo.getWritePointer (0));
+    std::copy (right.begin(), right.end(), loop.stereo.getWritePointer (1));
     loop.slices = std::move (spans);
 
     out = std::move (loop);
+    return true;
+}
+
+bool readInfo (const juce::File& file, FileInfo& out)
+{
+    auto f = openFile (file);
+    if (f == nullptr)
+        return false;
+
+    VLFileInfo info {};
+    if (vl_get_info (f.get(), &info) != VL_OK || info.sample_rate <= 0)
+        return false;
+
+    out.sampleRate = (double) info.sample_rate;
+    out.numChannels = (int) info.channels;
+    out.bitsPerSample = (int) info.bit_depth;
+    out.lengthSeconds = (double) juce::jmax (0, (int) info.total_frames) / (double) info.sample_rate;
     return true;
 }
 
