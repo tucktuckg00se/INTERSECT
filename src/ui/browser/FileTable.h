@@ -42,6 +42,7 @@ public:
     bool isRenaming() const noexcept { return renaming; }
 
     void paint (juce::Graphics& g) override;
+    void paintOverChildren (juce::Graphics& g) override;
     void resized() override;
     bool keyPressed (const juce::KeyPress& key) override;
 

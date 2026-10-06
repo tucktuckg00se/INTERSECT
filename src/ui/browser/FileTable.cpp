@@ -223,10 +223,14 @@ void FileTable::refreshThemeColours()
     renameEditor.setColour (juce::TextEditor::textColourId, getTheme().text2);
     renameEditor.setColour (juce::TextEditor::highlightColourId, getTheme().accent.withAlpha (0.35f));
 
+    // The bottom strip (searching / truncated results) is accent-tinted so it reads as status,
+    // not as another file row; the full-area "no matches" text stays plain.
+    statusLabel.setFont (IntersectLookAndFeel::makeFont (10.0f, statusAsStrip));
     statusLabel.setColour (juce::Label::textColourId,
-                           statusAsStrip ? getTheme().text2.withAlpha (0.9f) : getTheme().text0.withAlpha (0.7f));
+                           statusAsStrip ? getTheme().accent : getTheme().text0.withAlpha (0.7f));
     statusLabel.setColour (juce::Label::backgroundColourId,
-                           statusAsStrip ? getTheme().surface1.withAlpha (0.95f) : juce::Colours::transparentBlack);
+                           statusAsStrip ? getTheme().surface2.overlaidWith (getTheme().accent.withAlpha (0.16f))
+                                         : juce::Colours::transparentBlack);
     header.repaint();
     list.repaint();
     repaint();
@@ -237,6 +241,15 @@ void FileTable::paint (juce::Graphics& g)
     g.fillAll (getTheme().surface0);
 }
 
+void FileTable::paintOverChildren (juce::Graphics& g)
+{
+    if (statusAsStrip && statusLabel.isVisible())
+    {
+        g.setColour (getTheme().accent);
+        g.fillRect (statusLabel.getBounds().withHeight (1));
+    }
+}
+
 void FileTable::resized()
 {
     auto area = getLocalBounds();
@@ -244,7 +257,7 @@ void FileTable::resized()
     list.setBounds (area);
 
     auto statusArea = list.getBounds();
-    statusLabel.setBounds (statusAsStrip ? statusArea.removeFromBottom (18) : statusArea);
+    statusLabel.setBounds (statusAsStrip ? statusArea.removeFromBottom (22) : statusArea);
 }
 
 bool FileTable::keyPressed (const juce::KeyPress& key)
