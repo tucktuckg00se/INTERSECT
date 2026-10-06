@@ -153,7 +153,9 @@ public:
     {
         setConstrainer (&decoratorConstrainer);
         setTitleBarButtonsRequired (juce::DocumentWindow::minimiseButton | juce::DocumentWindow::closeButton, false);
-        addAndMakeVisible (optionsButton);
+        // Qualify: in JUCE_DEBUG, ResizableWindow's pointer-only addAndMakeVisible()
+        // overload hides Component's reference overload.
+        Component::addAndMakeVisible (optionsButton);
         optionsButton.addListener (this);
         optionsButton.setTriggeredOnMouseDown (true);
 

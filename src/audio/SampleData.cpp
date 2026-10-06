@@ -1,4 +1,6 @@
 #include "SampleData.h"
+#include "Rex2Import.h"
+#include "../AppFiles.h"
 #include <algorithm>
 #include <cmath>
 #include <memory>
@@ -94,6 +96,55 @@ std::unique_ptr<SampleData::DecodedSample> SampleData::decodeFromFiles (const st
     for (size_t i = 0; i < files.size(); ++i)
     {
         const auto& file = files[i];
+
+        // REX2 loops are decoded with VelociLoops; their embedded slice metadata is
+        // remembered so the processor can recreate the slices after the load.
+        if (AppFiles::isRex2File (file))
+        {
+            // Match the rate every other file in this session is being resampled to.
+            const double regionTarget = targetSampleRate > 0.0 ? targetSampleRate : projectSampleRate;
+            Rex2Import::DecodedLoop loop;
+            if (! Rex2Import::decodeFile (file, regionTarget, loop)
+                || loop.stereo.getNumSamples() <= 0
+                || loop.slices.empty())
+                return nullptr;
+
+            const int numFrames = loop.stereo.getNumSamples();
+            const int sourceNumFrames = numFrames;
+            const double sourceSampleRate = loop.sampleRate > 0.0 ? loop.sampleRate : 44100.0;
+            if (targetSampleRate <= 0.0)
+                targetSampleRate = projectSampleRate > 0.0 ? projectSampleRate : sourceSampleRate;
+            if (firstSourceSampleRate <= 0.0)
+                firstSourceSampleRate = sourceSampleRate;
+
+            juce::AudioBuffer<float> stereoBuffer (2, numFrames);
+            stereoBuffer.copyFrom (0, 0, loop.stereo, 0, 0, numFrames);
+            stereoBuffer.copyFrom (1, 0, loop.stereo, 1, 0, numFrames);
+
+            DecodedRegion region;
+            region.buffer = std::move (stereoBuffer);
+            region.meta.sampleId = sampleIds != nullptr && i < sampleIds->size() ? (*sampleIds)[i] : (int) i;
+            region.meta.fileName = file.getFileName();
+            region.meta.filePath = file.getFullPathName();
+            region.meta.startFrame = totalFrames;
+            region.meta.numFrames = numFrames;
+            region.meta.sourceNumFrames = sourceNumFrames;
+            region.meta.sourceSampleRate = sourceSampleRate;
+            totalFrames += numFrames;
+            totalSourceFrames += sourceNumFrames;
+
+            for (const auto& span : loop.slices)
+            {
+                decoded->importedSlices.push_back ({ span.startSample + region.meta.startFrame,
+                                                     span.endSample + region.meta.startFrame });
+            }
+            if (decoded->importedTempoBpm <= 0.0f)
+                decoded->importedTempoBpm = loop.tempoBpm;
+
+            regions.push_back (std::move (region));
+            continue;
+        }
+
         std::unique_ptr<juce::AudioFormatReader> reader (fm.createReaderFor (file));
         if (reader == nullptr)
             return nullptr;
@@ -319,6 +370,19 @@ const std::vector<SampleData::SessionSample>& SampleData::getSessionSamples() co
     if (activeDecoded)
         return activeDecoded->sessionSamples;
     return empty;
+}
+
+const std::vector<SampleData::DecodedSample::ImportedSlice>& SampleData::getImportedSlices() const
+{
+    static const std::vector<DecodedSample::ImportedSlice> empty;
+    if (activeDecoded)
+        return activeDecoded->importedSlices;
+    return empty;
+}
+
+float SampleData::getImportedTempoBpm() const
+{
+    return activeDecoded != nullptr ? activeDecoded->importedTempoBpm : 0.0f;
 }
 
 float SampleData::interpolateCubic (float y0, float y1, float y2, float y3, float frac)

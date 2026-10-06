@@ -63,7 +63,7 @@ juce::String formatNrpnStatus (int channel)
 
 HeaderBar::HeaderBar (IntersectProcessor& p) : processor (p)
 {
-    for (auto* btn : { &browserBtn, &saveBtn, &undoBtn, &redoBtn, &panicBtn, &settingsBtn })
+    for (auto* btn : std::initializer_list<juce::TextButton*> { &browserBtn, &saveBtn, &midiBtn, &undoBtn, &redoBtn, &panicBtn, &settingsBtn })
     {
         addAndMakeVisible (*btn);
         btn->setAlwaysOnTop (true);
@@ -97,6 +97,18 @@ HeaderBar::HeaderBar (IntersectProcessor& p) : processor (p)
     {
         if (onSaveRequested != nullptr)
             onSaveRequested();
+    };
+
+    midiBtn.setTooltip ("Drag out to drop a MIDI file into your DAW; right-click to save");
+    midiBtn.onDragStart = [this] (const juce::MouseEvent& e)
+    {
+        if (onMidiDragStart != nullptr)
+            onMidiDragStart (e);
+    };
+    midiBtn.onRightClick = [this]
+    {
+        if (onMidiSaveRequested != nullptr)
+            onMidiSaveRequested();
     };
 
     undoBtn.onClick = [this]
@@ -147,11 +159,13 @@ void HeaderBar::resized()
     const int undoW = buttonWidth (undoBtn.getButtonText(), 44);
     const int browserW = buttonWidth (browserBtn.getButtonText(), 46);
     const int saveW = buttonWidth (saveBtn.getButtonText(), 44);
+    const int midiW = buttonWidth (midiBtn.getButtonText(), 44);
     const int rightStripW = undoW + redoW + panicW + setW + buttonGap * 3;
     const auto centredY = area.getY() + (area.getHeight() - buttonHeight) / 2;
 
     browserBtn.setBounds (area.getX(), centredY, browserW, buttonHeight);
     saveBtn.setBounds (browserBtn.getRight() + buttonGap, centredY, saveW, buttonHeight);
+    midiBtn.setBounds (saveBtn.getRight() + buttonGap, centredY, midiW, buttonHeight);
 
     auto buttonArea = area.removeFromRight (rightStripW);
     juce::FlexBox buttons;
@@ -167,7 +181,7 @@ void HeaderBar::resized()
     buttons.items.add (juce::FlexItem (settingsBtn).withWidth ((float) setW).withHeight ((float) buttonHeight));
     buttons.performLayout (buttonArea.toFloat());
 
-    const int leftGuard = browserW + buttonGap + saveW + 12;
+    const int leftGuard = browserW + buttonGap + saveW + buttonGap + midiW + 12;
     const int rightGuard = rightStripW + 12;
     sampleInfoBounds = getLocalBounds().reduced (juce::jmax (leftGuard, rightGuard), 0)
                                      .withHeight (contentHeight)
@@ -176,7 +190,7 @@ void HeaderBar::resized()
 
 void HeaderBar::paint (juce::Graphics& g)
 {
-    for (auto* btn : { &browserBtn, &saveBtn, &undoBtn, &redoBtn, &panicBtn, &settingsBtn })
+    for (auto* btn : std::initializer_list<juce::TextButton*> { &browserBtn, &saveBtn, &midiBtn, &undoBtn, &redoBtn, &panicBtn, &settingsBtn })
     {
         auto text = getTheme().text2.withAlpha (btn->isMouseOverOrDragging() ? 1.0f : 0.88f);
         btn->setColour (juce::TextButton::buttonColourId,
@@ -570,7 +584,7 @@ void HeaderBar::openRelinkBrowser()
     fileChooser = std::make_unique<juce::FileChooser> (
         "Relink Audio File",
         juce::File(),
-        "*.wav;*.ogg;*.aiff;*.aif;*.flac;*.mp3");
+        "*.wav;*.ogg;*.aiff;*.aif;*.flac;*.mp3;*.rx2");
 
     fileChooser->launchAsync (juce::FileBrowserComponent::openMode
                                 | juce::FileBrowserComponent::canSelectFiles,
