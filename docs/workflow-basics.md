@@ -10,7 +10,7 @@ This page explains the core ideas behind INTERSECT. For a hands-on first session
 
 ## Sessions and samples
 
-An INTERSECT instance loads **one or many samples** into a session. The first sample replaces an empty session and resets zoom/scroll; subsequent loads append. Files may be `.wav`, `.ogg`, `.aiff`, `.flac`, or `.mp3`.
+An INTERSECT instance loads **one or many samples** into a session. The first sample replaces an empty session and resets zoom/scroll; subsequent loads append. Files may be `.wav`, `.ogg`, `.aiff`, `.flac`, `.mp3`, or `.rx2`. REX2 (`.rx2`) loops arrive already sliced: every slice in the file is created for you (with its REX tail) and the loop tempo becomes the BPM.
 
 Loading happens off the audio thread — even a multi-minute file won't drop audio. Files saved at a different sample rate from the project are automatically resampled on load.
 
