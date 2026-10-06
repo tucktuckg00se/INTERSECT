@@ -15,14 +15,13 @@ description: "Tour of every visible area of the INTERSECT editor — header bar,
 | `PANIC` | Kills active voices immediately | Also stops lazy chop |
 | `FILES` | Open or close the file browser | Lit while the browser is open. See [File browser](#file-browser) |
 | `SAVE` | Save the kit to your preset library | Opens the browser on the new preset with its name ready to edit. See [Presets]({{ site.baseurl }}{% link presets.md %}) |
-| `MIDI` | Export the selected sample's slices as MIDI | Drag it into your DAW to drop a MIDI clip, or click to save a `.mid` file. One note per slice; REX2 loops keep their original groove |
 | `SET` | Popup for theme, UI scale, and NRPN settings | Also shows current plugin version |
 
 ## Sample lane, slice lane, and waveform
 
 | Area | Function | Notes |
 | --- | --- | --- |
-| Sample lane | Compact session-sample overview above the slice lane | Reflects selection and zoom; drag to reorder samples; includes per-sample `STEMS` / `CANCEL` and delete buttons |
+| Sample lane | Compact session-sample overview above the slice lane | Reflects selection and zoom; drag to reorder samples; includes per-sample `MIDI`, `STEMS` / `CANCEL` and delete buttons |
 | Slice lane | Compact slice-region overview above the waveform | Reflects selection and zoom |
 | Waveform | Main editing surface | Drag-and-drop loading/appending, slice selection, boundary editing, move/duplicate, preview |
 | Overlay hints | Contextual help and action prompts | Used by `ADD`, `AUTO`, and other actions |
@@ -93,6 +92,10 @@ Files longer than two minutes preview their first two minutes. The audition stop
 | `Esc` | Clear the search, then close the browser |
 
 On a folder or preset with nothing playing, `Space` isn't used by the browser, so it still reaches your DAW (usually its transport).
+
+## MIDI export
+
+Each sample in the sample lane has a `MIDI` button (`M` when the sample is narrow). Drag it into your DAW to drop a MIDI clip of that sample's slices, or click it to save a `.mid` file. Each slice becomes one note on its MIDI key, timed from its position in the sample at the sample's BPM, so playing the clip back through INTERSECT replays the original pattern. REX2 (`.rx2`) loops keep their original groove even though their slices carry extra tails.
 
 ## Stem separation
 

@@ -8,7 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - REX2 (`.rx2`) loop support (#52, contributed by [@cadecomposer](https://github.com/cadecomposer)): drop a `.rx2` file and INTERSECT loads the loop with every slice from the file already created and the loop's tempo set as the BPM. Slices keep their REX tails, so they ring out naturally at slower tempos. `.rx2` files also preview in the file browser and work in multi-sample sessions and presets. Decoding uses the [VelociLoops](https://github.com/kunitoki/VelociLoops) library.
-- MIDI export (#52, contributed by [@cadecomposer](https://github.com/cadecomposer)): drag the new **MIDI** header button into your DAW to drop a MIDI clip that plays the selected sample's slices in order, or click it to save a `.mid` file. REX2 loops export with their original groove.
+- MIDI export (#52, contributed by [@cadecomposer](https://github.com/cadecomposer)): each sample in the sample lane has a new **MIDI** button, next to **STEMS**. Drag it into your DAW to drop a MIDI clip that plays that sample's slices in order, or click it to save a `.mid` file. REX2 loops export with their original groove.
+
+### Changed
+- The file browser's search status bar ("Searching…", "Showing the first … matches") is now accent-coloured so it stands out from the file list.
 
 ### Changed
 - Every sample in a session now keeps its own settings. Changing BPM, pitch, algorithm, envelope, filter, gain or playback on the `SAMPLE` tab only affects the selected sample; before, those settings were shared by all samples in the session. Projects and presets saved with earlier versions load and sound exactly as before. New samples start at the default settings, and stems start with the settings of the sample they were split from.
