@@ -10,12 +10,18 @@ inline bool isSupportedAudioExtension (const juce::String& extension)
 {
     const auto ext = extension.toLowerCase();
     return ext == ".wav" || ext == ".ogg" || ext == ".aiff"
-        || ext == ".aif" || ext == ".flac" || ext == ".mp3";
+        || ext == ".aif" || ext == ".flac" || ext == ".mp3" || ext == ".rx2";
 }
 
 inline bool isSupportedAudioFile (const juce::File& file)
 {
     return isSupportedAudioExtension (file.getFileExtension());
+}
+
+/** REX2 loop files are decoded with VelociLoops, not the JUCE audio format readers. */
+inline bool isRex2File (const juce::File& file)
+{
+    return file.getFileExtension().toLowerCase() == ".rx2";
 }
 
 inline bool isPresetFile (const juce::File& file)

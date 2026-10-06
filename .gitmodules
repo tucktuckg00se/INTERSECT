@@ -10,3 +10,6 @@
 [submodule "signalsmith-linear"]
 	path = signalsmith-linear
 	url = https://github.com/Signalsmith-Audio/linear.git
+[submodule "third_party/velociloops"]
+	path = third_party/velociloops
+	url = https://github.com/kunitoki/VelociLoops.git

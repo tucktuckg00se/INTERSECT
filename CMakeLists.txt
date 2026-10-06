@@ -113,6 +113,19 @@ else()
 endif()
 target_link_libraries(bungee_lib PRIVATE pffft)
 
+# --- VelociLoops (REX2 loop import, built as static library) ---
+set(VELOCILOOPS_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/third_party/velociloops)
+add_library(velociloops STATIC EXCLUDE_FROM_ALL
+    ${VELOCILOOPS_ROOT}/src/velociloops.cpp
+)
+set_target_properties(velociloops PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_include_directories(velociloops PUBLIC ${VELOCILOOPS_ROOT}/include)
+if (MSVC)
+    target_compile_options(velociloops PRIVATE /W0)
+else()
+    target_compile_options(velociloops PRIVATE -w)
+endif()
+
 juce_add_plugin(Intersect
     COMPANY_NAME "tucktuckg00se"
     PLUGIN_MANUFACTURER_CODE Intx
@@ -137,6 +150,7 @@ target_sources(Intersect PRIVATE
     src/PresetFile.cpp
     src/StandaloneApp.cpp
     src/audio/SampleData.cpp
+    src/audio/Rex2Import.cpp
     src/audio/SliceManager.cpp
     src/audio/VoicePool.cpp
     src/audio/GrainEngine.cpp
@@ -146,6 +160,7 @@ target_sources(Intersect PRIVATE
     src/audio/OrtBundleDownloadJob.cpp
     src/params/ParamLayout.cpp
     src/params/SampleParams.cpp
+    src/midi/MidiExport.cpp
     src/ui/IntersectLookAndFeel.cpp
     src/ui/HeaderBar.cpp
     src/ui/browser/BrowserView.cpp
@@ -202,6 +217,7 @@ target_link_libraries(Intersect
         juce::juce_cryptography
         juce::juce_dsp
         bungee_lib
+        velociloops
         IntersectFonts
     PUBLIC
         juce::juce_recommended_config_flags

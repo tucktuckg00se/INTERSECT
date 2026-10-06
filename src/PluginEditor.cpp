@@ -1,5 +1,6 @@
 #include "PluginEditor.h"
 #include "AppFiles.h"
+#include "midi/MidiExport.h"
 #include <algorithm>
 #include <cmath>
 
@@ -148,6 +149,8 @@ IntersectEditor::IntersectEditor (IntersectProcessor& p)
     browser.onAuditionGainChanged = [this] (float db) { processor.setAuditionGainDb (db); };
     sampleLane.onFilesDropped = [this] (const std::vector<juce::File>& files) { handleDroppedFiles (files); };
     sampleLane.onStemPanelRequested = [this] { setBrowserVisible (false); };
+    headerBar.onMidiDragStart = [this] (const juce::MouseEvent& e) { startMidiDrag (headerBar.getMidiButton(), e); };
+    headerBar.onMidiSaveRequested = [this] { saveMidiAs(); };
 
     signalChainBar.onHeightChanged = [this] { applyLogicalSize(); };
 
@@ -386,6 +389,72 @@ bool IntersectEditor::keyPressed (const juce::KeyPress& key)
     return false;
 }
 
+// Drag the MIDI button out of the window: the kit's slices become a .mid file that DAWs turn
+// into a MIDI clip on drop. The file is written up front because the OS drag needs a real path.
+void IntersectEditor::startMidiDrag (juce::Component* dragSource, const juce::MouseEvent& e)
+{
+    const auto& ui = processor.getUiSliceSnapshot();
+    if (ui.numSlices <= 0)
+        return;
+
+    const float globalBpm = processor.apvts.getRawParameterValue (ParamIds::defaultBpm)->load();
+
+    auto folder = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("INTERSECT");
+    if (! folder.createDirectory())
+        return;
+
+    midiExportFile = folder.getChildFile ("slices.mid");
+    if (! intersectMidi::writeKitMidiFile (midiExportFile, ui, globalBpm))
+    {
+        midiExportFile = juce::File();
+        return;
+    }
+
+    startDragging (juce::var ("intersect-midi-export"), dragSource, juce::ScaledImage(), true, nullptr, &e.source);
+}
+
+void IntersectEditor::saveMidiAs()
+{
+    const auto& ui = processor.getUiSliceSnapshot();
+    if (ui.numSlices <= 0)
+        return;
+
+    auto fileChooser = std::make_shared<juce::FileChooser> (
+        "Save Kit as MIDI File",
+        juce::File(),
+        "*.mid");
+
+    fileChooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles,
+        [this, fileChooser] (const juce::FileChooser& chooser)
+        {
+            auto file = chooser.getResult();
+            if (file == juce::File())
+                return;
+
+            if (file.getFileExtension().isEmpty())
+                file = file.withFileExtension ("mid");
+
+            const float globalBpm = processor.apvts.getRawParameterValue (ParamIds::defaultBpm)->load();
+            if (intersectMidi::writeKitMidiFile (file, processor.getUiSliceSnapshot(), globalBpm))
+                processor.showTransientStatusMessage ("MIDI saved to " + file.getFullPathName(), false);
+            else
+                processor.showTransientStatusMessage ("Couldn't write " + file.getFullPathName(), true);
+        });
+}
+
+bool IntersectEditor::shouldDropFilesWhenDraggedExternally (const juce::DragAndDropTarget::SourceDetails& sourceDetails,
+                                                            juce::StringArray& files, bool& canMoveFiles)
+{
+    if (sourceDetails.description == juce::var ("intersect-midi-export") && midiExportFile.existsAsFile())
+    {
+        files.add (midiExportFile.getFullPathName());
+        canMoveFiles = false;
+        return true;
+    }
+
+    return false;
+}
+
 void IntersectEditor::performContextualDelete()
 {
     if (deleteTarget == DeleteTarget::sample)
@@ -559,7 +628,7 @@ void IntersectEditor::openFileDialog()
     openChooser = std::make_unique<juce::FileChooser> (
         "Open Audio or Preset",
         browser.getCurrentFolder(),
-        "*.wav;*.ogg;*.aiff;*.aif;*.flac;*.mp3;*" + juce::String (AppFiles::kPresetExtension));
+        "*.wav;*.ogg;*.aiff;*.aif;*.flac;*.mp3;*.rx2;*" + juce::String (AppFiles::kPresetExtension));
 
     openChooser->launchAsync (juce::FileBrowserComponent::openMode
                                   | juce::FileBrowserComponent::canSelectFiles

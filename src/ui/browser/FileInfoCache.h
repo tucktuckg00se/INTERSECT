@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_events/juce_events.h>
+#include <velociloops.h>
 #include "../../AppFiles.h"
 #include "../../PresetFile.h"
 #include <functional>
@@ -139,6 +140,27 @@ private:
                     info.presetEmbedsSamples = info.presetEmbedsSamples || sample.isEmbedded();
                     info.presetSampleNames.add (sample.fileName.isNotEmpty() ? sample.fileName : sample.savedPath);
                 }
+            }
+            return info;
+        }
+
+        if (AppFiles::isRex2File (file))
+        {
+            VLError err = VL_OK;
+            VLFile f = vl_open (file.getFullPathName().toRawUTF8(), &err);
+            if (f != nullptr)
+            {
+                VLFileInfo vinfo {};
+                if (vl_get_info (f, &vinfo) == VL_OK && vinfo.sample_rate > 0)
+                {
+                    info.readable = true;
+                    info.sampleRate = (double) vinfo.sample_rate;
+                    info.numChannels = (int) vinfo.channels;
+                    info.bitsPerSample = (int) vinfo.bit_depth;
+                    info.lengthSeconds = (double) juce::jmax ((juce::int64) 0, (juce::int64) vinfo.total_frames)
+                                         / (double) vinfo.sample_rate;
+                }
+                vl_close (f);
             }
             return info;
         }

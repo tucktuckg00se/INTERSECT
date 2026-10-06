@@ -1,4 +1,6 @@
 #include "AuditionPlayer.h"
+#include "Rex2Import.h"
+#include "../AppFiles.h"
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <cmath>
 
@@ -8,6 +10,46 @@ std::shared_ptr<const AuditionClip> AuditionClip::decode (const juce::File& file
                                                           const std::function<bool()>& shouldAbort)
 {
     auto aborted = [&shouldAbort] { return shouldAbort != nullptr && shouldAbort(); };
+
+    // REX2 loops bypass the JUCE format readers and decode through VelociLoops.
+    if (AppFiles::isRex2File (file))
+    {
+        Rex2Import::DecodedLoop loop;
+        if (! Rex2Import::decodeFile (file, targetSampleRate, loop)
+            || loop.stereo.getNumSamples() <= 0)
+            return nullptr;
+
+        const double rate = loop.sampleRate > 0.0 ? loop.sampleRate : targetSampleRate;
+        const int maxFrames = (int) std::min ((juce::int64) loop.stereo.getNumSamples(),
+                                              (juce::int64) (maxSeconds * rate));
+        if (maxFrames <= 0)
+            return nullptr;
+
+        auto clip = std::make_shared<AuditionClip>();
+        clip->file = file;
+        clip->sampleRate = rate;
+        clip->truncated = loop.stereo.getNumSamples() > maxFrames;
+        clip->previewSeconds = (double) loop.stereo.getNumSamples() / rate;
+        const int frames = maxFrames;
+        clip->audio.setSize (2, frames);
+        clip->audio.copyFrom (0, 0, loop.stereo, 0, 0, frames);
+        clip->audio.copyFrom (1, 0, loop.stereo, 1, 0, frames);
+
+        clip->peaks.assign ((size_t) kPeakBuckets, 0.0f);
+        const float* l = clip->audio.getReadPointer (0);
+        const float* r = clip->audio.getReadPointer (1);
+        for (int b = 0; b < kPeakBuckets; ++b)
+        {
+            const int start = (int) ((juce::int64) frames * b / kPeakBuckets);
+            const int end = juce::jmax (start + 1, (int) ((juce::int64) frames * (b + 1) / kPeakBuckets));
+            float peak = 0.0f;
+            for (int i = start; i < juce::jmin (end, frames); ++i)
+                peak = juce::jmax (peak, std::abs (l[i]), std::abs (r[i]));
+            clip->peaks[(size_t) b] = juce::jmin (1.0f, peak);
+        }
+
+        return clip;
+    }
 
     juce::AudioFormatManager formats;
     formats.registerBasicFormats();

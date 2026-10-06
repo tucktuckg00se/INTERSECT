@@ -50,6 +50,16 @@ public:
         int sourceNumFrames = 0;
         double sourceSampleRate = 0.0;
         std::vector<SessionSample> sessionSamples;
+
+        // Populated only when the load includes a REX2 file: the slice boundaries
+        // embedded in the REX2 metadata, as absolute frame offsets into `buffer`.
+        struct ImportedSlice
+        {
+            int startSample = 0;
+            int endSample   = 0;
+        };
+        std::vector<ImportedSlice> importedSlices;
+        float importedTempoBpm = 0.0f;   // loop tempo from the REX2 header
     };
 
     using SnapshotPtr = std::shared_ptr<const DecodedSample>;
@@ -84,6 +94,11 @@ public:
     double getSourceSampleRate() const { return sourceSampleRate.load (std::memory_order_acquire); }
     int getNumSessionSamples() const;
     const SessionSample* findSessionSampleById (int sampleId) const;
+
+    // REX2 import metadata of the active sample (empty when not a REX2 load).
+    // Audio-thread only, like getSessionSamples().
+    const std::vector<DecodedSample::ImportedSlice>& getImportedSlices() const;
+    float getImportedTempoBpm() const;
 
     // Audio-thread only — returns the buffer from the active decoded sample.
     const juce::AudioBuffer<float>& getBuffer() const;
