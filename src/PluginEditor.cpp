@@ -149,8 +149,8 @@ IntersectEditor::IntersectEditor (IntersectProcessor& p)
     browser.onAuditionGainChanged = [this] (float db) { processor.setAuditionGainDb (db); };
     sampleLane.onFilesDropped = [this] (const std::vector<juce::File>& files) { handleDroppedFiles (files); };
     sampleLane.onStemPanelRequested = [this] { setBrowserVisible (false); };
-    headerBar.onMidiDragStart = [this] (const juce::MouseEvent& e) { startMidiDrag (headerBar.getMidiButton(), e); };
-    headerBar.onMidiSaveRequested = [this] { saveMidiAs(); };
+    sampleLane.writeMidiForDrag = [this] (int sampleId) { return writeMidiForDrag (sampleId); };
+    sampleLane.onMidiSaveRequested = [this] (int sampleId) { saveMidiAs (sampleId); };
 
     signalChainBar.onHeightChanged = [this] { applyLogicalSize(); };
 
@@ -389,61 +389,63 @@ bool IntersectEditor::keyPressed (const juce::KeyPress& key)
     return false;
 }
 
-// Writes the selected session sample's slices as a .mid file (see intersectMidi::buildKitMidiFile).
-bool IntersectEditor::writeMidiExport (const juce::File& dest)
+// Writes one session sample's slices as a .mid file (see intersectMidi::buildKitMidiFile).
+bool IntersectEditor::writeMidiExport (const juce::File& dest, int sampleId)
 {
-    const auto& ui = processor.getUiSliceSnapshot();
     const auto sampleSnap = processor.sampleData.getSnapshot();
     const SampleData::SessionSample* sample = nullptr;
     if (sampleSnap != nullptr)
-    {
         for (const auto& s : sampleSnap->sessionSamples)
-            if (s.sampleId == ui.selectedSessionSampleId)
+            if (s.sampleId == sampleId)
                 sample = &s;
-        if (sample == nullptr && ! sampleSnap->sessionSamples.empty())
-            sample = &sampleSnap->sessionSamples.front();
-    }
+
+    if (sample == nullptr)
+        return false;
 
     const float globalBpm = processor.apvts.getRawParameterValue (ParamIds::defaultBpm)->load();
-    return intersectMidi::writeKitMidiFile (dest, ui, sample, globalBpm);
+    return intersectMidi::writeKitMidiFile (dest, processor.getUiSliceSnapshot(), sample, globalBpm);
 }
 
-juce::String IntersectEditor::getMidiExportFileName() const
+juce::String IntersectEditor::getMidiExportBaseName (int sampleId) const
 {
     const auto& ui = processor.getUiSliceSnapshot();
     juce::String name;
     for (int i = 0; i < ui.numSessionSamples; ++i)
-        if (ui.sessionSamples[(size_t) i].sampleId == ui.selectedSessionSampleId)
+        if (ui.sessionSamples[(size_t) i].sampleId == sampleId)
             name = ui.sessionSamples[(size_t) i].fileName.toString();
-    if (name.isEmpty())
-        name = ui.sampleFileName.toString();
 
-    name = juce::File::createLegalFileName (juce::File (name).getFileNameWithoutExtension());
-    return (name.isEmpty() ? juce::String ("INTERSECT slices") : name) + ".mid";
+    name = juce::File::createLegalFileName (juce::File (name).getFileNameWithoutExtension()).trim();
+    return name.isEmpty() ? juce::String ("INTERSECT slices") : name;
 }
 
-// Drag the MIDI button out of the window: the slices become a .mid file that DAWs turn
-// into a MIDI clip on drop. The file is written up front because the OS drag needs a real path.
-void IntersectEditor::startMidiDrag (juce::Component* dragSource, const juce::MouseEvent& e)
+// MIDI dragged out of the sample lane: the OS drag needs a real file, so write it up front.
+// The temp name avoids spaces and URI-reserved characters so every drop target can parse it.
+juce::File IntersectEditor::writeMidiForDrag (int sampleId)
 {
     auto folder = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("INTERSECT");
     if (! folder.createDirectory())
-        return;
+        return {};
 
-    midiExportFile = folder.getChildFile (getMidiExportFileName());
-    if (! writeMidiExport (midiExportFile))
+    juce::String safeName;
+    for (auto c : getMidiExportBaseName (sampleId))
+        safeName += (juce::CharacterFunctions::isLetterOrDigit (c) || c == '-' || c == '_' || c == '.') ? c : '_';
+
+    auto file = folder.getChildFile (safeName + ".mid");
+    if (! writeMidiExport (file, sampleId))
     {
-        midiExportFile = juce::File();
         processor.showTransientStatusMessage ("No slices to export as MIDI", true);
-        return;
+        return {};
     }
-
-    startDragging (juce::var ("intersect-midi-export"), dragSource, juce::ScaledImage(), true, nullptr, &e.source);
+    return file;
 }
 
-void IntersectEditor::saveMidiAs()
+void IntersectEditor::saveMidiAs (int sampleId)
 {
-    if (processor.getUiSliceSnapshot().numSlices <= 0)
+    const auto& ui = processor.getUiSliceSnapshot();
+    bool hasSlices = false;
+    for (int i = 0; i < ui.numSlices && ! hasSlices; ++i)
+        hasSlices = ui.slices[(size_t) i].active && ui.slices[(size_t) i].sampleId == sampleId;
+    if (! hasSlices)
     {
         processor.showTransientStatusMessage ("No slices to export as MIDI", true);
         return;
@@ -455,13 +457,13 @@ void IntersectEditor::saveMidiAs()
 
     auto fileChooser = std::make_shared<juce::FileChooser> (
         "Save Slices as MIDI File",
-        folder.getChildFile (getMidiExportFileName()),
+        folder.getChildFile (getMidiExportBaseName (sampleId) + ".mid"),
         "*.mid");
 
     fileChooser->launchAsync (juce::FileBrowserComponent::saveMode
                                   | juce::FileBrowserComponent::canSelectFiles
                                   | juce::FileBrowserComponent::warnAboutOverwriting,
-        [this, fileChooser] (const juce::FileChooser& chooser)
+        [this, fileChooser, sampleId] (const juce::FileChooser& chooser)
         {
             auto file = chooser.getResult();
             if (file == juce::File())
@@ -471,24 +473,11 @@ void IntersectEditor::saveMidiAs()
                 file = file.withFileExtension ("mid");
 
             lastExportFolder = file.getParentDirectory();
-            if (writeMidiExport (file))
+            if (writeMidiExport (file, sampleId))
                 processor.showTransientStatusMessage ("MIDI saved to " + file.getFullPathName(), false);
             else
                 processor.showTransientStatusMessage ("Couldn't write " + file.getFullPathName(), true);
         });
-}
-
-bool IntersectEditor::shouldDropFilesWhenDraggedExternally (const juce::DragAndDropTarget::SourceDetails& sourceDetails,
-                                                            juce::StringArray& files, bool& canMoveFiles)
-{
-    if (sourceDetails.description == juce::var ("intersect-midi-export") && midiExportFile.existsAsFile())
-    {
-        files.add (midiExportFile.getFullPathName());
-        canMoveFiles = false;
-        return true;
-    }
-
-    return false;
 }
 
 void IntersectEditor::performContextualDelete()

@@ -63,7 +63,7 @@ juce::String formatNrpnStatus (int channel)
 
 HeaderBar::HeaderBar (IntersectProcessor& p) : processor (p)
 {
-    for (auto* btn : std::initializer_list<juce::TextButton*> { &browserBtn, &saveBtn, &midiBtn, &undoBtn, &redoBtn, &panicBtn, &settingsBtn })
+    for (auto* btn : { &browserBtn, &saveBtn, &undoBtn, &redoBtn, &panicBtn, &settingsBtn })
     {
         addAndMakeVisible (*btn);
         btn->setAlwaysOnTop (true);
@@ -97,18 +97,6 @@ HeaderBar::HeaderBar (IntersectProcessor& p) : processor (p)
     {
         if (onSaveRequested != nullptr)
             onSaveRequested();
-    };
-
-    midiBtn.setTooltip ("Export slices as MIDI: drag out into your DAW, or click to save a .mid file");
-    midiBtn.onDragStart = [this] (const juce::MouseEvent& e)
-    {
-        if (onMidiDragStart != nullptr)
-            onMidiDragStart (e);
-    };
-    midiBtn.onClick = [this]
-    {
-        if (! midiBtn.lastPressWasDrag() && onMidiSaveRequested != nullptr)
-            onMidiSaveRequested();
     };
 
     undoBtn.onClick = [this]
@@ -159,13 +147,11 @@ void HeaderBar::resized()
     const int undoW = buttonWidth (undoBtn.getButtonText(), 44);
     const int browserW = buttonWidth (browserBtn.getButtonText(), 46);
     const int saveW = buttonWidth (saveBtn.getButtonText(), 44);
-    const int midiW = buttonWidth (midiBtn.getButtonText(), 44);
     const int rightStripW = undoW + redoW + panicW + setW + buttonGap * 3;
     const auto centredY = area.getY() + (area.getHeight() - buttonHeight) / 2;
 
     browserBtn.setBounds (area.getX(), centredY, browserW, buttonHeight);
     saveBtn.setBounds (browserBtn.getRight() + buttonGap, centredY, saveW, buttonHeight);
-    midiBtn.setBounds (saveBtn.getRight() + buttonGap, centredY, midiW, buttonHeight);
 
     auto buttonArea = area.removeFromRight (rightStripW);
     juce::FlexBox buttons;
@@ -181,7 +167,7 @@ void HeaderBar::resized()
     buttons.items.add (juce::FlexItem (settingsBtn).withWidth ((float) setW).withHeight ((float) buttonHeight));
     buttons.performLayout (buttonArea.toFloat());
 
-    const int leftGuard = browserW + buttonGap + saveW + buttonGap + midiW + 12;
+    const int leftGuard = browserW + buttonGap + saveW + 12;
     const int rightGuard = rightStripW + 12;
     sampleInfoBounds = getLocalBounds().reduced (juce::jmax (leftGuard, rightGuard), 0)
                                      .withHeight (contentHeight)
@@ -190,7 +176,7 @@ void HeaderBar::resized()
 
 void HeaderBar::paint (juce::Graphics& g)
 {
-    for (auto* btn : std::initializer_list<juce::TextButton*> { &browserBtn, &saveBtn, &midiBtn, &undoBtn, &redoBtn, &panicBtn, &settingsBtn })
+    for (auto* btn : { &browserBtn, &saveBtn, &undoBtn, &redoBtn, &panicBtn, &settingsBtn })
     {
         auto text = getTheme().text2.withAlpha (btn->isMouseOverOrDragging() ? 1.0f : 0.88f);
         btn->setColour (juce::TextButton::buttonColourId,

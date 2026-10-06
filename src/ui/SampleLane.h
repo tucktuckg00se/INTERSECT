@@ -8,7 +8,8 @@ class StemExportPanel;
 class WaveformView;
 
 class SampleLane : public juce::Component,
-                   public juce::DragAndDropTarget
+                   public juce::DragAndDropTarget,
+                   public juce::TooltipClient
 {
 public:
     SampleLane (IntersectProcessor& p, WaveformView& wv);
@@ -18,6 +19,10 @@ public:
     std::function<void (const std::vector<juce::File>&)> onFilesDropped;
     /** STEMS was clicked; the panel opens over the waveform, so the browser must close. */
     std::function<void()> onStemPanelRequested;
+    /** MIDI dragged out of a sample: write that sample's slices to a .mid and return it ({} if none). */
+    std::function<juce::File (int sampleId)> writeMidiForDrag;
+    /** MIDI clicked on a sample: save that sample's slices as a .mid via a file chooser. */
+    std::function<void (int sampleId)> onMidiSaveRequested;
 
     /** While browsing, an empty lane explains how to add files. */
     void setShowEmptyHint (bool shouldShow);
@@ -31,6 +36,7 @@ public:
     void mouseDown (const juce::MouseEvent& e) override;
     void mouseDrag (const juce::MouseEvent& e) override;
     void mouseUp (const juce::MouseEvent& e) override;
+    juce::String getTooltip() override;
 
     bool isStemExportOpen() const { return stemExportPanel != nullptr; }
 
@@ -44,6 +50,7 @@ private:
         bool selected = false;
         juce::Colour colour;
         juce::String label;
+        juce::Rectangle<int> midiBounds;
         juce::Rectangle<int> stemsBounds;
         juce::Rectangle<int> deleteBounds;
     };
@@ -56,6 +63,8 @@ private:
     IntersectProcessor& processor;
     WaveformView& waveformView;
     std::unique_ptr<StemExportPanel> stemExportPanel;
+    int midiPressSampleId = -1;    // MIDI button pressed: click saves, drag exports
+    bool midiDragStarted = false;
     int dragSampleId = -1;
     int dragStartX = 0;
     int dragTargetIndex = -1;
