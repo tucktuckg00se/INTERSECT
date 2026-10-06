@@ -39,9 +39,15 @@ Range mode is what turns INTERSECT from a kit-style slicer into a chromatic inst
 
 This is INTERSECT's central idea, and it's worth a concrete example.
 
-The signal chain bar at the bottom of the editor has two tabs: `SAMPLE` (sample-wide defaults) and `SLICE` (overrides for the selected slice).
+INTERSECT has three levels of settings:
 
-> **Example.** With no slice selected, set `SAMPLE → PITCH` to `+2`. Every slice in the sample now plays at +2 semitones. Now select one slice, click the `SLICE` tab, and drag its `PITCH` to `+7`. The parameter label highlights — that slice has a **lock** on `PITCH`. It plays at +7. All other slices still inherit `+2`.
+- **Plugin** — shared by everything: `VOICES`, the `ROOT` note for new slices, and your SET preferences.
+- **Sample** — each sample in the session has its own settings (BPM, pitch, algorithm, envelope, filter, gain, playback). Changing one sample never affects another.
+- **Slice** — a slice uses its sample's settings unless it locks its own value.
+
+The signal chain bar at the bottom of the editor has two tabs: `SAMPLE` (the selected sample's settings) and `SLICE` (overrides for the selected slice).
+
+> **Example.** With no slice selected, set `SAMPLE → PITCH` to `+2`. Every slice of that sample now plays at +2 semitones; other samples in the session are unchanged. Now select one slice, click the `SLICE` tab, and drag its `PITCH` to `+7`. The parameter label highlights — that slice has a **lock** on `PITCH`. It plays at +7. All other slices still inherit `+2`.
 >
 > Change `SAMPLE → PITCH` to `0`. The locked slice still plays at `+7`; everything else now plays at `0`.
 >

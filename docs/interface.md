@@ -124,16 +124,16 @@ For an end-to-end walkthrough — picking a model, device, and mode, then runnin
 
 The bottom bar is the main parameter editor. It has four modules: `TIME/PITCH`, `FILTER`, `AMP`, and `PLAYBACK`.
 
-**Collapsed mode** (default): `SAMPLE` and `SLICE` tabs switch between scopes, with one parameter strip visible at a time.
+**Collapsed mode** (default): `SAMPLE` and `SLICE` tabs switch between scopes, with one parameter strip visible at a time. `SAMPLE` edits the selected sample only: every sample in the session keeps its own settings.
 
 **Expanded mode**: shows both strips simultaneously — slice on top, sample below — with no tabs. Click the chevron toggle on the right edge of the context bar to switch between modes.
 
 **Context bar** (bottom edge):
-- `SLICES` count and the sample `ROOT` note are always visible on the right. The sample `ROOT` is editable only when no slices exist.
+- `SLICES` count, the sample `ROOT` note and `VOICES` (the plugin-wide voice limit) are always visible on the right. The sample `ROOT` is editable only when no slices exist.
 - When a slice is selected: slice sample range, length, a `NOTE`/`RANGE` toggle, numeric note controls, read-only note names, and override count.
 
 ```text
-┌─[ Tab: SAMPLE | SLICE ]─────────[ slice range · length · NOTE/RANGE ]──────[ SLICES: 8  ROOT: C2 ]──[ ⌃ ]─┐
+┌─[ Tab: SAMPLE | SLICE ]─────────[ slice range · length · NOTE/RANGE ]──────[ SLICES: 8  ROOT: C2  VOICES: 16 ]┐
 │  TIME/PITCH        │  FILTER             │  AMP               │  PLAYBACK                                  │
 │  BPM PITCH ALGO …  │  TYPE CUT RESO …    │  ATK DEC SUS REL … │  REV LOOP FADE MUTE OUT …                  │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘

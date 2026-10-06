@@ -25,6 +25,7 @@ description: "Every button, parameter, gesture, and keyboard shortcut in the INT
 | --- | --- | --- |
 | `SLICES` | Slice count | Always visible on the right side of the context bar |
 | Sample `ROOT` | Root note for new slices | Always visible on the right side of the context bar; editable only before any slices exist |
+| `VOICES` | Max playable voices for the whole plugin | Always visible on the right side of the context bar. `1` to `31` (voice 32 is reserved for the preview voice) |
 
 ### Time/Pitch module
 
@@ -86,7 +87,7 @@ Filter notes:
 | --- | --- | --- |
 | `ATK / DEC / SUS / REL` | Amp envelope | ATK `0–1000 ms`, DEC/REL `0–5000 ms`, SUS `0–100%` |
 | `TAIL` | Release-tail toggle | Allows playback to continue past slice boundary during release |
-| `GAIN` | Output gain | `−100` to `+24 dB` |
+| `GAIN` | Volume of the sample (or slice) | `−100` to `+24 dB` |
 
 ### Playback module
 
@@ -98,15 +99,13 @@ Filter notes:
 | `MUTE` | Mute group | `0–32`, `0` = off. Voices in the same group choke each other |
 | `1SHOT` | One-shot playback | Ignores note-off until the slice ends |
 | `OUT` | Output bus | `SLICE` mode only, `1` to `16` |
-| `VOICES` | Max playable voices | `SAMPLE` mode only, `1` to `31` (voice 32 is reserved for the preview voice) |
 
-## Master and global controls
+## Plugin-level controls
 
-These live outside the four signal-chain modules but are exposed as APVTS parameters for DAW automation. See the [Parameter reference]({{ site.baseurl }}{% link parameter-reference.md %}) for the full list.
+These apply to the whole plugin, not to one sample, and are exposed as APVTS parameters for DAW automation. See the [Parameter reference]({{ site.baseurl }}{% link parameter-reference.md %}) for the full list.
 
 | Parameter | Function | Range / values |
 | --- | --- | --- |
-| `masterVolume` | Master output gain | `−100` to `+24 dB` |
 | `maxVoices` | Active voice limit (same as `VOICES` above) | `1` to `31` |
 | `uiScale` | Editor scaling factor | `0.5` to `3.0`, step `0.25`. Edit via **SET → Scale Up / Scale Down**. |
 

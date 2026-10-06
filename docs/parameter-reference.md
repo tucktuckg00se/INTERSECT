@@ -6,11 +6,13 @@ description: "Complete reference of every APVTS parameter INTERSECT exposes: ID,
 
 # Parameter reference
 
-This page lists every parameter INTERSECT exposes via its `AudioProcessorValueTreeState` (APVTS). These are the parameters your DAW sees for automation, Bitwig modulators, Ableton M4L, Reaper JSFX, etc.
+This page lists every parameter INTERSECT exposes via its `AudioProcessorValueTreeState` (APVTS).
+
+**Only the plugin-level parameters (`maxVoices`, `uiScale`) are automatable.** Sample settings are stored separately for each sample in the session, so they are no longer DAW parameters. Per-sample automation is planned.
 
 For UI-only controls (NRPN settings, theme, scale, file-browser bookmarks and audition settings), see the [Settings file]({{ site.baseurl }}{% link settings-file.md %}) page — those persist in `settings.yaml`, not the plugin state.
 
-Every parameter shown here is a **sample-wide default**. The signal chain bar's `SLICE` tab lets you override these per slice; per-slice overrides are stored in the saved session, not as APVTS parameters.
+The sample-level tables below describe the settings on the `SAMPLE` tab (ranges, defaults, units). Their IDs belong to **legacy, non-automatable** parameters: before sample settings were per sample, these held one shared set for the whole session. They stay registered so older projects load, and their values are copied into every sample of such a project. The `SLICE` tab overrides any of these per slice; slice overrides are stored in the saved session.
 
 ## Time & pitch
 
@@ -35,7 +37,7 @@ Every parameter shown here is a **sample-wide default**. The signal chain bar's 
 | `defaultDecay` | Sample Decay | float | 0 to 5000 | 100 | ms |
 | `defaultSustain` | Sample Sustain | float | 0 to 100 | 100 | % |
 | `defaultRelease` | Sample Release | float | 0 to 5000 | 20 | ms |
-| `masterVolume` | Master Gain | float | −100 to +24 | 0 | dB |
+| `masterVolume` | Sample gain (`GAIN`) | float | −100 to +24 | 0 | dB |
 
 ## Filter
 
@@ -66,7 +68,7 @@ Every parameter shown here is a **sample-wide default**. The signal chain bar's 
 | `defaultReleaseTail` | Sample Release Tail | bool | off / on | off | — |
 | `defaultMuteGroup` | Sample Mute Group | int | 0 to 32 (0 = off) | 0 | group |
 
-## Global utility
+## Plugin level (automatable)
 
 | ID | Label | Type | Range | Default | Units |
 | --- | --- | --- | --- | --- | --- |
@@ -75,7 +77,7 @@ Every parameter shown here is a **sample-wide default**. The signal chain bar's 
 
 ## Notes
 
-- **Per-slice overrides aren't APVTS parameters.** They're stored in the session state. If you want to automate a slice's pitch from your DAW, you do it by overriding `defaultPitch` and ensuring only the target slice plays at that moment.
+- **Sample and slice settings aren't automatable.** They're stored in the session state, per sample and per slice.
 - **`maxVoices` tops out at 31.** The 32nd voice is reserved for the preview voice used by sample auditioning and lazy chop.
 - **`defaultFilterCutoff` is log-skewed at 1 kHz.** DAW automation curves should be log-shaped to feel musical.
 - **Filter parameters resolve at note-on.** Automating cutoff mid-note affects the next triggered note, not the currently sounding one.

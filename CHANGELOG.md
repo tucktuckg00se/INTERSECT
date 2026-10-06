@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- Every sample in a session now keeps its own settings. Changing BPM, pitch, algorithm, envelope, filter, gain or playback on the `SAMPLE` tab only affects the selected sample; before, those settings were shared by all samples in the session. Projects and presets saved with earlier versions load and sound exactly as before. New samples start at the default settings, and stems start with the settings of the sample they were split from.
+- `VOICES` moved to the bottom row of the signal chain, next to `SLICES` and `ROOT`, since it applies to the whole plugin.
+- Sample settings can no longer be automated from your DAW (`VOICES` and UI scale still can). Automation for each sample's settings is planned.
+
 ## [0.16.0] - 2026-09-21
 
 ### Added
