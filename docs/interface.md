@@ -15,6 +15,7 @@ description: "Tour of every visible area of the INTERSECT editor — header bar,
 | `PANIC` | Kills active voices immediately | Also stops lazy chop |
 | `FILES` | Open or close the file browser | Lit while the browser is open. See [File browser](#file-browser) |
 | `SAVE` | Save the kit to your preset library | Opens the browser on the new preset with its name ready to edit. See [Presets]({{ site.baseurl }}{% link presets.md %}) |
+| `MIDI` | Export the selected sample's slices as MIDI | Drag it into your DAW to drop a MIDI clip, or click to save a `.mid` file. One note per slice; REX2 loops keep their original groove |
 | `SET` | Popup for theme, UI scale, and NRPN settings | Also shows current plugin version |
 
 ## Sample lane, slice lane, and waveform

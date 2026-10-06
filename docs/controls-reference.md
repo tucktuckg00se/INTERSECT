@@ -15,6 +15,7 @@ description: "Every button, parameter, gesture, and keyboard shortcut in the INT
 | `PANIC` | Kill active voices immediately | Also stops lazy chop |
 | `FILES` | Open or close the file browser | See [File browser]({{ site.baseurl }}{% link interface.md %}#file-browser) |
 | `SAVE` | Save the kit to your preset library | See [Presets]({{ site.baseurl }}{% link presets.md %}) |
+| `MIDI` | Export the selected sample's slices as a MIDI file | Drag into your DAW, or click to save a `.mid` file |
 | `SET` | Theme, scale, NRPN, middle-C, and stem-separation popup | See [NRPN MIDI routing]({{ site.baseurl }}{% link nrpn-midi.md %}#set-button--nrpn-settings) and the [Settings file]({{ site.baseurl }}{% link settings-file.md %}) reference for what gets persisted |
 
 ## Signal chain bar

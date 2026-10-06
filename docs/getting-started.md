@@ -15,7 +15,7 @@ For the deeper concepts behind what you're doing — multi-sample sessions, the 
 You should already have:
 
 - INTERSECT installed and showing up in your DAW (see [Installation]({{ site.baseurl }}{% link installation.md %}) if not)
-- An audio file to play with — a drum loop is ideal, but any sample works (`.wav`, `.ogg`, `.aiff`, `.flac`, `.mp3`)
+- An audio file to play with — a drum loop is ideal, but any sample works (`.wav`, `.ogg`, `.aiff`, `.flac`, `.mp3`, or a REX2 `.rx2` loop)
 
 Add an INTERSECT instance to a MIDI track in your DAW, open the editor, and have your MIDI keyboard or a clip handy.
 

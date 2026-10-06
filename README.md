@@ -49,6 +49,8 @@ Requires CMake 3.22+, a C++20 compiler, and Git. For per-OS toolchain setup, bui
 
 INTERSECT is licensed under the [GNU General Public License v3.0](LICENSE).
 
+REX2 import uses [VelociLoops](https://github.com/kunitoki/VelociLoops) (public domain, Unlicense). REX2 import and MIDI export were originally contributed by [@cadecomposer](https://github.com/cadecomposer).
+
 ## Support / Known limitations
 
 - INTERSECT project recall stores sample file paths for every file in the session; if files move, relink is required.

@@ -158,6 +158,7 @@ ONNX Runtime bundles are published separately from the [intersect-ort-providers]
 - [Signalsmith Stretch](https://github.com/Signalsmith-Audio/signalsmith-stretch) (MIT)
 - [Signalsmith Linear](https://github.com/Signalsmith-Audio/linear) (dependency of Signalsmith Stretch)
 - [Bungee](https://github.com/bungee-audio-stretch/bungee) (MPL-2.0)
+- [VelociLoops](https://github.com/kunitoki/VelociLoops) (Unlicense, git submodule in `third_party/velociloops`) — REX2 decoding
 - [ONNX Runtime](https://onnxruntime.ai/) (MIT) — headers only at build time; shared library downloaded on demand
 
 ## Troubleshooting build errors
