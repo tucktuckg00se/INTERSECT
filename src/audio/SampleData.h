@@ -37,6 +37,17 @@ public:
         int sourceNumFrames = 0;
         double sourceSampleRate = 0.0;
         StemMetadata stemMeta;
+
+        // REX2 loops only: musical position of each rendered slice, so the original
+        // groove survives the transient-stretch tails. Re-derived from the file on
+        // every decode, never serialized.
+        struct BeatAnchor
+        {
+            int frame = 0;      // frame offset within this sample
+            double beat = 0.0;  // quarter notes from the loop start
+        };
+        std::vector<BeatAnchor> beatAnchors;
+        float anchorTempoBpm = 0.0f;
     };
 
     struct DecodedSample
@@ -51,15 +62,19 @@ public:
         double sourceSampleRate = 0.0;
         std::vector<SessionSample> sessionSamples;
 
-        // Populated only when the load includes a REX2 file: the slice boundaries
-        // embedded in the REX2 metadata, as absolute frame offsets into `buffer`.
+        // Populated only for REX2 files whose ids were passed as `importSliceSampleIds`
+        // (freshly loaded files): the slice boundaries embedded in the REX2 metadata, as
+        // absolute frame offsets into `buffer`. Reloads of existing session samples
+        // (append, reorder, undo, state restore) keep their slices and import none.
         struct ImportedSlice
         {
+            int sampleId = 0;
             int startSample = 0;
             int endSample   = 0;
         };
         std::vector<ImportedSlice> importedSlices;
-        float importedTempoBpm = 0.0f;   // loop tempo from the REX2 header
+        float importedTempoBpm = 0.0f;   // loop tempo of the first imported REX2 file
+        std::vector<int> importSliceSampleIds;   // carried so a sample-rate retry imports the same set
     };
 
     using SnapshotPtr = std::shared_ptr<const DecodedSample>;
@@ -70,7 +85,8 @@ public:
                                                            double projectSampleRate);
     static std::unique_ptr<DecodedSample> decodeFromFiles (const std::vector<juce::File>& files,
                                                            double projectSampleRate,
-                                                           const std::vector<int>* sampleIds = nullptr);
+                                                           const std::vector<int>* sampleIds = nullptr,
+                                                           const std::vector<int>* importSliceSampleIds = nullptr);
     static std::unique_ptr<DecodedSample> rebuildWithSessionSamples (const DecodedSample& source,
                                                                      const std::vector<SessionSample>& sessionSamples);
 
@@ -95,10 +111,9 @@ public:
     int getNumSessionSamples() const;
     const SessionSample* findSessionSampleById (int sampleId) const;
 
-    // REX2 import metadata of the active sample (empty when not a REX2 load).
+    // REX2 slices to create for the active sample (empty unless a fresh REX2 load).
     // Audio-thread only, like getSessionSamples().
     const std::vector<DecodedSample::ImportedSlice>& getImportedSlices() const;
-    float getImportedTempoBpm() const;
 
     // Audio-thread only — returns the buffer from the active decoded sample.
     const juce::AudioBuffer<float>& getBuffer() const;

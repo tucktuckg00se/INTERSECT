@@ -4,51 +4,80 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <cmath>
 
+namespace
+{
+// Resamples `source` to `rate`, stores it as stereo in a new clip and computes the preview peaks.
+std::shared_ptr<const AuditionClip> finishClip (const juce::File& file, juce::AudioBuffer<float>& source,
+                                                double sourceRate, double rate, bool truncated,
+                                                const std::function<bool()>& aborted)
+{
+    const int numChannels = source.getNumChannels();
+    const int numFrames = source.getNumSamples();
+
+    if (std::abs (sourceRate - rate) > 0.01)
+    {
+        const double ratio = sourceRate / rate;
+        const int resampledFrames = (int) std::ceil (numFrames / ratio);
+        juce::AudioBuffer<float> resampled (numChannels, resampledFrames);
+        for (int ch = 0; ch < numChannels; ++ch)
+        {
+            if (aborted())
+                return nullptr;
+            juce::LagrangeInterpolator interpolator;
+            interpolator.process (ratio, source.getReadPointer (ch), resampled.getWritePointer (ch), resampledFrames);
+        }
+        source = std::move (resampled);
+    }
+
+    auto clip = std::make_shared<AuditionClip>();
+    clip->file = file;
+    clip->sampleRate = rate;
+    clip->truncated = truncated;
+    clip->previewSeconds = (double) numFrames / sourceRate;
+    const int frames = source.getNumSamples();
+    clip->audio.setSize (2, frames);
+    clip->audio.copyFrom (0, 0, source, 0, 0, frames);
+    clip->audio.copyFrom (1, 0, source, numChannels > 1 ? 1 : 0, 0, frames);
+
+    clip->peaks.assign ((size_t) AuditionClip::kPeakBuckets, 0.0f);
+    const float* l = clip->audio.getReadPointer (0);
+    const float* r = clip->audio.getReadPointer (1);
+    for (int b = 0; b < AuditionClip::kPeakBuckets; ++b)
+    {
+        const int start = (int) ((juce::int64) frames * b / AuditionClip::kPeakBuckets);
+        const int end = juce::jmax (start + 1, (int) ((juce::int64) frames * (b + 1) / AuditionClip::kPeakBuckets));
+        float peak = 0.0f;
+        for (int i = start; i < juce::jmin (end, frames); ++i)
+            peak = juce::jmax (peak, std::abs (l[i]), std::abs (r[i]));
+        clip->peaks[(size_t) b] = juce::jmin (1.0f, peak);
+    }
+
+    return clip;
+}
+} // namespace
+
 std::shared_ptr<const AuditionClip> AuditionClip::decode (const juce::File& file,
                                                           double targetSampleRate,
                                                           double maxSeconds,
                                                           const std::function<bool()>& shouldAbort)
 {
-    auto aborted = [&shouldAbort] { return shouldAbort != nullptr && shouldAbort(); };
+    const std::function<bool()> aborted = [&shouldAbort] { return shouldAbort != nullptr && shouldAbort(); };
 
-    // REX2 loops bypass the JUCE format readers and decode through VelociLoops.
+    // REX2 loops bypass the JUCE format readers and decode through VelociLoops
+    // (at the file's native rate; finishClip resamples like any other file).
     if (AppFiles::isRex2File (file))
     {
         Rex2Import::DecodedLoop loop;
-        if (! Rex2Import::decodeFile (file, targetSampleRate, loop)
-            || loop.stereo.getNumSamples() <= 0)
+        if (! Rex2Import::decodeFile (file, 0.0, loop) || loop.stereo.getNumSamples() <= 0)
             return nullptr;
 
-        const double rate = loop.sampleRate > 0.0 ? loop.sampleRate : targetSampleRate;
-        const int maxFrames = (int) std::min ((juce::int64) loop.stereo.getNumSamples(),
-                                              (juce::int64) (maxSeconds * rate));
-        if (maxFrames <= 0)
-            return nullptr;
+        const auto maxFrames = (juce::int64) (maxSeconds * loop.sampleRate);
+        const bool truncated = loop.stereo.getNumSamples() > maxFrames;
+        if (truncated)
+            loop.stereo.setSize (2, (int) maxFrames, true);
 
-        auto clip = std::make_shared<AuditionClip>();
-        clip->file = file;
-        clip->sampleRate = rate;
-        clip->truncated = loop.stereo.getNumSamples() > maxFrames;
-        clip->previewSeconds = (double) loop.stereo.getNumSamples() / rate;
-        const int frames = maxFrames;
-        clip->audio.setSize (2, frames);
-        clip->audio.copyFrom (0, 0, loop.stereo, 0, 0, frames);
-        clip->audio.copyFrom (1, 0, loop.stereo, 1, 0, frames);
-
-        clip->peaks.assign ((size_t) kPeakBuckets, 0.0f);
-        const float* l = clip->audio.getReadPointer (0);
-        const float* r = clip->audio.getReadPointer (1);
-        for (int b = 0; b < kPeakBuckets; ++b)
-        {
-            const int start = (int) ((juce::int64) frames * b / kPeakBuckets);
-            const int end = juce::jmax (start + 1, (int) ((juce::int64) frames * (b + 1) / kPeakBuckets));
-            float peak = 0.0f;
-            for (int i = start; i < juce::jmin (end, frames); ++i)
-                peak = juce::jmax (peak, std::abs (l[i]), std::abs (r[i]));
-            clip->peaks[(size_t) b] = juce::jmin (1.0f, peak);
-        }
-
-        return clip;
+        const double rate = targetSampleRate > 0.0 ? targetSampleRate : loop.sampleRate;
+        return finishClip (file, loop.stereo, loop.sampleRate, rate, truncated, aborted);
     }
 
     juce::AudioFormatManager formats;
@@ -74,45 +103,7 @@ std::shared_ptr<const AuditionClip> AuditionClip::decode (const juce::File& file
     }
 
     const double rate = targetSampleRate > 0.0 ? targetSampleRate : reader->sampleRate;
-    if (std::abs (reader->sampleRate - rate) > 0.01)
-    {
-        const double ratio = reader->sampleRate / rate;
-        const int resampledFrames = (int) std::ceil (numFrames / ratio);
-        juce::AudioBuffer<float> resampled (numChannels, resampledFrames);
-        for (int ch = 0; ch < numChannels; ++ch)
-        {
-            if (aborted())
-                return nullptr;
-            juce::LagrangeInterpolator interpolator;
-            interpolator.process (ratio, source.getReadPointer (ch), resampled.getWritePointer (ch), resampledFrames);
-        }
-        source = std::move (resampled);
-    }
-
-    auto clip = std::make_shared<AuditionClip>();
-    clip->file = file;
-    clip->sampleRate = rate;
-    clip->truncated = truncated;
-    clip->previewSeconds = (double) numFrames / reader->sampleRate;
-    const int frames = source.getNumSamples();
-    clip->audio.setSize (2, frames);
-    clip->audio.copyFrom (0, 0, source, 0, 0, frames);
-    clip->audio.copyFrom (1, 0, source, numChannels > 1 ? 1 : 0, 0, frames);
-
-    clip->peaks.assign ((size_t) kPeakBuckets, 0.0f);
-    const float* l = clip->audio.getReadPointer (0);
-    const float* r = clip->audio.getReadPointer (1);
-    for (int b = 0; b < kPeakBuckets; ++b)
-    {
-        const int start = (int) ((juce::int64) frames * b / kPeakBuckets);
-        const int end = juce::jmax (start + 1, (int) ((juce::int64) frames * (b + 1) / kPeakBuckets));
-        float peak = 0.0f;
-        for (int i = start; i < juce::jmin (end, frames); ++i)
-            peak = juce::jmax (peak, std::abs (l[i]), std::abs (r[i]));
-        clip->peaks[(size_t) b] = juce::jmin (1.0f, peak);
-    }
-
-    return clip;
+    return finishClip (file, source, reader->sampleRate, rate, truncated, aborted);
 }
 
 void AuditionPlayer::play (std::shared_ptr<const AuditionClip> clip)

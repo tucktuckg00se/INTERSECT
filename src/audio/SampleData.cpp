@@ -70,7 +70,8 @@ std::unique_ptr<SampleData::DecodedSample> SampleData::decodeFromFile (const juc
 
 std::unique_ptr<SampleData::DecodedSample> SampleData::decodeFromFiles (const std::vector<juce::File>& files,
                                                                         double projectSampleRate,
-                                                                        const std::vector<int>* sampleIds)
+                                                                        const std::vector<int>* sampleIds,
+                                                                        const std::vector<int>* importSliceSampleIds)
 {
     if (files.empty())
         return nullptr;
@@ -97,50 +98,58 @@ std::unique_ptr<SampleData::DecodedSample> SampleData::decodeFromFiles (const st
     {
         const auto& file = files[i];
 
-        // REX2 loops are decoded with VelociLoops; their embedded slice metadata is
-        // remembered so the processor can recreate the slices after the load.
+        const int sampleId = sampleIds != nullptr && i < sampleIds->size() ? (*sampleIds)[i] : (int) i;
+
+        // REX2 loops are decoded with VelociLoops. Their slice positions are always kept
+        // as beat anchors; slices themselves are only imported for freshly loaded files.
         if (AppFiles::isRex2File (file))
         {
             // Match the rate every other file in this session is being resampled to.
-            const double regionTarget = targetSampleRate > 0.0 ? targetSampleRate : projectSampleRate;
+            if (targetSampleRate <= 0.0 && projectSampleRate > 0.0)
+                targetSampleRate = projectSampleRate;
+
             Rex2Import::DecodedLoop loop;
-            if (! Rex2Import::decodeFile (file, regionTarget, loop)
+            if (! Rex2Import::decodeFile (file, targetSampleRate, loop)
                 || loop.stereo.getNumSamples() <= 0
                 || loop.slices.empty())
                 return nullptr;
 
-            const int numFrames = loop.stereo.getNumSamples();
-            const int sourceNumFrames = numFrames;
-            const double sourceSampleRate = loop.sampleRate > 0.0 ? loop.sampleRate : 44100.0;
             if (targetSampleRate <= 0.0)
-                targetSampleRate = projectSampleRate > 0.0 ? projectSampleRate : sourceSampleRate;
+                targetSampleRate = loop.sampleRate;
             if (firstSourceSampleRate <= 0.0)
-                firstSourceSampleRate = sourceSampleRate;
+                firstSourceSampleRate = loop.sourceSampleRate;
 
-            juce::AudioBuffer<float> stereoBuffer (2, numFrames);
-            stereoBuffer.copyFrom (0, 0, loop.stereo, 0, 0, numFrames);
-            stereoBuffer.copyFrom (1, 0, loop.stereo, 1, 0, numFrames);
+            const int numFrames = loop.stereo.getNumSamples();
 
             DecodedRegion region;
-            region.buffer = std::move (stereoBuffer);
-            region.meta.sampleId = sampleIds != nullptr && i < sampleIds->size() ? (*sampleIds)[i] : (int) i;
+            region.buffer = std::move (loop.stereo);
+            region.meta.sampleId = sampleId;
             region.meta.fileName = file.getFileName();
             region.meta.filePath = file.getFullPathName();
             region.meta.startFrame = totalFrames;
             region.meta.numFrames = numFrames;
-            region.meta.sourceNumFrames = sourceNumFrames;
-            region.meta.sourceSampleRate = sourceSampleRate;
-            totalFrames += numFrames;
-            totalSourceFrames += sourceNumFrames;
-
+            region.meta.sourceNumFrames = loop.sourceNumFrames;
+            region.meta.sourceSampleRate = loop.sourceSampleRate;
+            region.meta.anchorTempoBpm = loop.tempoBpm;
+            region.meta.beatAnchors.reserve (loop.slices.size());
             for (const auto& span : loop.slices)
-            {
-                decoded->importedSlices.push_back ({ span.startSample + region.meta.startFrame,
-                                                     span.endSample + region.meta.startFrame });
-            }
-            if (decoded->importedTempoBpm <= 0.0f)
-                decoded->importedTempoBpm = loop.tempoBpm;
+                region.meta.beatAnchors.push_back ({ span.startSample, span.beat });
 
+            const bool importSlices = importSliceSampleIds != nullptr
+                && std::find (importSliceSampleIds->begin(), importSliceSampleIds->end(), sampleId)
+                       != importSliceSampleIds->end();
+            if (importSlices)
+            {
+                for (const auto& span : loop.slices)
+                    decoded->importedSlices.push_back ({ sampleId,
+                                                         span.startSample + region.meta.startFrame,
+                                                         span.endSample + region.meta.startFrame });
+                if (decoded->importedTempoBpm <= 0.0f)
+                    decoded->importedTempoBpm = loop.tempoBpm;
+            }
+
+            totalFrames += numFrames;
+            totalSourceFrames += loop.sourceNumFrames;
             regions.push_back (std::move (region));
             continue;
         }
@@ -194,7 +203,7 @@ std::unique_ptr<SampleData::DecodedSample> SampleData::decodeFromFiles (const st
 
         DecodedRegion region;
         region.buffer = std::move (stereoBuffer);
-        region.meta.sampleId = sampleIds != nullptr && i < sampleIds->size() ? (*sampleIds)[i] : (int) i;
+        region.meta.sampleId = sampleId;
         region.meta.fileName = file.getFileName();
         region.meta.filePath = file.getFullPathName();
         region.meta.startFrame = totalFrames;
@@ -226,6 +235,8 @@ std::unique_ptr<SampleData::DecodedSample> SampleData::decodeFromFiles (const st
     decoded->decodedSampleRate = targetSampleRate;
     decoded->sourceNumFrames = totalSourceFrames;
     decoded->sourceSampleRate = firstSourceSampleRate;
+    if (importSliceSampleIds != nullptr)
+        decoded->importSliceSampleIds = *importSliceSampleIds;
     buildMipmapsForBuffer (decoded->buffer, decoded->peakMipmaps);
     return decoded;
 }
@@ -378,11 +389,6 @@ const std::vector<SampleData::DecodedSample::ImportedSlice>& SampleData::getImpo
     if (activeDecoded)
         return activeDecoded->importedSlices;
     return empty;
-}
-
-float SampleData::getImportedTempoBpm() const
-{
-    return activeDecoded != nullptr ? activeDecoded->importedTempoBpm : 0.0f;
 }
 
 float SampleData::interpolateCubic (float y0, float y1, float y2, float y3, float frac)
