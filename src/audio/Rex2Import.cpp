@@ -9,7 +9,10 @@ namespace Rex2Import
 {
 namespace
 {
-constexpr double kRexPpqPerQuarter = 3840.0;   // kREXPPQ (15360) per 4/4 bar
+// REX positions use 15360 ticks per QUARTER note. velociloops.h describes kREXPPQ as "per bar",
+// but its own original_tempo computation treats ppq_length / 15360 as beats, and the test loops
+// only fit their audio length that way (e.g. 120Stereo.rx2: last slice at beat 3.5 of ~4.2).
+constexpr double kRexPpqPerQuarter = 15360.0;
 
 struct FileCloser
 {
@@ -77,7 +80,11 @@ bool decodeFile (const juce::File& file, double targetSampleRate, DecodedLoop& o
     DecodedLoop loop;
     loop.sourceSampleRate = srcRate;
     loop.sourceNumFrames = (int) left.size();
-    loop.tempoBpm = (float) ((double) info.tempo / 1000.0);
+    // original_tempo is derived by VelociLoops from the audio's actual length and beat count, so it
+    // is the tempo the rendered audio really plays at; `tempo` is only the playback tempo set in
+    // ReCycle and can differ when the loop was re-tempoed there.
+    const int32_t milliBpm = info.original_tempo > 0 ? info.original_tempo : info.tempo;
+    loop.tempoBpm = (float) ((double) milliBpm / 1000.0);
     if (! std::isfinite (loop.tempoBpm) || loop.tempoBpm <= 0.0f)
         loop.tempoBpm = 120.0f;
 
