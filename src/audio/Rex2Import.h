@@ -30,7 +30,7 @@ namespace Rex2Import
         double sampleRate = 0.0;              // rate of `stereo`
         double sourceSampleRate = 0.0;        // native rate of the .rx2 file
         int sourceNumFrames = 0;              // rendered length at the native rate
-        float tempoBpm = 120.0f;              // loop tempo from the file header
+        float tempoBpm = 120.0f;              // tempo of the audio (REX original_tempo, else tempo)
         std::vector<SliceSpan> slices;        // one entry per REX2 slice, in order
     };
 
