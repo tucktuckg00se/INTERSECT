@@ -426,7 +426,6 @@ private:
     void handlePresetJobCompletionOnMessageThread();
     void applyLoadedPreset (const PresetJobResult& job);
     void handleAuditionCompletionOnMessageThread();
-    void handleImportedTempoOnMessageThread();
 
     void drainCommands();
     void handleCommand (const Command& cmd);
@@ -598,7 +597,6 @@ private:
     std::atomic<int> nextSessionSampleId { 0 };
     std::atomic<int> latestLoadToken { 0 };
     std::atomic<int> latestLoadKind { (int) LoadKindReplace };
-    std::atomic<float> pendingImportedTempoBpm { 0.0f };   // REX2 loop tempo awaiting the message thread
     std::atomic<SampleData::DecodedSample*> completedLoadData { nullptr };
     std::atomic<FailedLoadResult*> completedLoadFailure { nullptr };
     std::array<UiSliceSnapshot, 2> uiSliceSnapshots {};

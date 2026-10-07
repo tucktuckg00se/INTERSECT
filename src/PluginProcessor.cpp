@@ -471,17 +471,6 @@ void IntersectProcessor::handleAsyncUpdate()
     handleDownloadCompletionsOnMessageThread();
     handlePresetJobCompletionOnMessageThread();
     handleAuditionCompletionOnMessageThread();
-    handleImportedTempoOnMessageThread();
-}
-
-void IntersectProcessor::handleImportedTempoOnMessageThread()
-{
-    const float tempo = pendingImportedTempoBpm.exchange (0.0f, std::memory_order_acq_rel);
-    if (tempo <= 0.0f)
-        return;
-
-    if (auto* param = apvts.getParameter (ParamIds::defaultBpm))
-        param->setValueNotifyingHost (param->convertTo0to1 (tempo));
 }
 
 void IntersectProcessor::handleDownloadCompletionsOnMessageThread()
@@ -736,16 +725,9 @@ int IntersectProcessor::requestSampleLoad (const std::vector<juce::File>& files,
         if (finishedToken != latestLoadToken.load (std::memory_order_acquire))
             return;
 
-        const float importedTempo = decoded->importedTempoBpm;
         auto* old = completedLoadData.exchange (decoded.release(), std::memory_order_acq_rel);
         delete old;
         latestLoadKind.store ((int) finishedKind, std::memory_order_release);
-
-        if (importedTempo > 0.0f)
-        {
-            pendingImportedTempoBpm.store (importedTempo, std::memory_order_release);
-            triggerAsyncUpdate();
-        }
     };
 
     auto onFailure = [this] (int finishedToken, LoadKind finishedKind, const juce::File& failedFile)
@@ -3004,9 +2986,19 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 // REX2 import: create the slices embedded in freshly loaded loops. The decoder
                 // only fills this list for files the load request marked for import, so
                 // reloads (append, reorder, undo, state restore) never duplicate slices.
-                // The loop tempo is applied on the message thread (see handleImportedTempoOnMessageThread).
+                // Each freshly imported loop's tempo becomes that sample's own BPM (stretch untouched).
                 {
                     const auto& importedSlices = sampleData.getImportedSlices();
+                    for (const auto& sample : sampleData.getSessionSamples())
+                    {
+                        if (sample.anchorTempoBpm <= 0.0f)
+                            continue;
+                        const bool imported = std::any_of (importedSlices.begin(), importedSlices.end(),
+                                                           [id = sample.sampleId] (const auto& imp) { return imp.sampleId == id; });
+                        if (auto* params = imported ? sampleParams.find (sample.sampleId) : nullptr)
+                            params->setField (FieldBpm, sample.anchorTempoBpm);
+                    }
+
                     int created = 0;
                     for (const auto& imp : importedSlices)
                     {

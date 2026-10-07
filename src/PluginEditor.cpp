@@ -402,8 +402,8 @@ bool IntersectEditor::writeMidiExport (const juce::File& dest, int sampleId)
     if (sample == nullptr)
         return false;
 
-    const float globalBpm = processor.apvts.getRawParameterValue (ParamIds::defaultBpm)->load();
-    return intersectMidi::writeKitMidiFile (dest, processor.getUiSliceSnapshot(), sample, globalBpm);
+    const auto& ui = processor.getUiSliceSnapshot();
+    return intersectMidi::writeKitMidiFile (dest, ui, sample, ui.sampleParamsFor (sampleId).bpm);
 }
 
 juce::String IntersectEditor::getMidiExportBaseName (int sampleId) const

@@ -68,8 +68,8 @@ int velocityFor (const Slice& s)
     return juce::jlimit (1, 127, juce::roundToInt (127.0f * juce::jlimit (0.0f, 1.0f, gain)));
 }
 
-// Kit BPM for non-REX samples: the first active slice's locked tempo, else the global BPM.
-float kitTempo (const IntersectProcessor::UiSliceSnapshot& ui, int sampleId, float globalBpm)
+// Tempo for non-REX samples: the first active slice's locked BPM, else the sample's own BPM.
+float sampleTempo (const IntersectProcessor::UiSliceSnapshot& ui, int sampleId, float sampleBpm)
 {
     for (int i = 0; i < ui.numSlices; ++i)
     {
@@ -80,19 +80,19 @@ float kitTempo (const IntersectProcessor::UiSliceSnapshot& ui, int sampleId, flo
             return s.bpm;
         break;
     }
-    return globalBpm;
+    return sampleBpm;
 }
 } // namespace
 
 juce::MemoryBlock buildKitMidiFile (const IntersectProcessor::UiSliceSnapshot& ui,
                                     const SampleData::SessionSample* sample,
-                                    float kitBpm)
+                                    float sampleBpm)
 {
     if (ui.numSlices <= 0 || ui.sampleSampleRate <= 0.0)
         return {};
 
     const int sampleId = sample != nullptr ? sample->sampleId : -1;
-    const float fallbackBpm = juce::jlimit (20.0f, 999.0f, kitTempo (ui, sampleId, kitBpm > 0.0f ? kitBpm : 120.0f));
+    const float fallbackBpm = juce::jlimit (20.0f, 999.0f, sampleTempo (ui, sampleId, sampleBpm > 0.0f ? sampleBpm : 120.0f));
     const BeatMap beats (sample, ui.sampleSampleRate, fallbackBpm);
 
     struct Note { int on, off, note, velocity; };
@@ -140,9 +140,9 @@ juce::MemoryBlock buildKitMidiFile (const IntersectProcessor::UiSliceSnapshot& u
 bool writeKitMidiFile (const juce::File& dest,
                        const IntersectProcessor::UiSliceSnapshot& ui,
                        const SampleData::SessionSample* sample,
-                       float kitBpm)
+                       float sampleBpm)
 {
-    const auto data = buildKitMidiFile (ui, sample, kitBpm);
+    const auto data = buildKitMidiFile (ui, sample, sampleBpm);
     if (data.getSize() == 0)
         return false;
 

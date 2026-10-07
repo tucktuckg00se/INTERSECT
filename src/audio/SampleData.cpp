@@ -144,8 +144,6 @@ std::unique_ptr<SampleData::DecodedSample> SampleData::decodeFromFiles (const st
                     decoded->importedSlices.push_back ({ sampleId,
                                                          span.startSample + region.meta.startFrame,
                                                          span.endSample + region.meta.startFrame });
-                if (decoded->importedTempoBpm <= 0.0f)
-                    decoded->importedTempoBpm = loop.tempoBpm;
             }
 
             totalFrames += numFrames;
