@@ -73,7 +73,6 @@ public:
             int endSample   = 0;
         };
         std::vector<ImportedSlice> importedSlices;
-        float importedTempoBpm = 0.0f;   // loop tempo of the first imported REX2 file
         std::vector<int> importSliceSampleIds;   // carried so a sample-rate retry imports the same set
     };
 
