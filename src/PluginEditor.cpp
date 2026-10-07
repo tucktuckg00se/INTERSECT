@@ -428,7 +428,10 @@ juce::File IntersectEditor::writeMidiForDrag (int sampleId)
 
     juce::String safeName;
     for (auto c : getMidiExportBaseName (sampleId))
-        safeName += (juce::CharacterFunctions::isLetterOrDigit (c) || c == '-' || c == '_' || c == '.') ? c : '_';
+    {
+        const bool keep = juce::CharacterFunctions::isLetterOrDigit (c) || c == '-' || c == '_' || c == '.';
+        safeName += juce::String::charToString (keep ? c : (juce::juce_wchar) '_');
+    }
 
     auto file = folder.getChildFile (safeName + ".mid");
     if (! writeMidiExport (file, sampleId))
