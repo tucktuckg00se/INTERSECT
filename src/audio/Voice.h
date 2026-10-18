@@ -19,7 +19,7 @@ struct Voice
 {
     bool         active       = false;
     int          sliceIdx     = -1;
-    double       position     = 0.0;
+    double       position     = 0.0;     // loop-mapped playhead for every playback algorithm
     double       speed        = 1.0;
     int          direction    = 1;       // 1=forward, -1=reverse
     int          midiNote     = -1;

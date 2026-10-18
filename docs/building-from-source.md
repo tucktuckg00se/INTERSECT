@@ -89,6 +89,16 @@ If you don't need the Standalone or AU outputs, target just the VST3 to cut buil
 cmake --build build --config Release --target Intersect_VST3 -j
 ```
 
+### Run audio regression tests
+
+The optional test target renders generated audio through the real playback engines; it does not require an audio device or display.
+
+```bash
+cmake -B build -DINTERSECT_BUILD_TESTS=ON
+cmake --build build --config Release --target IntersectAudioTests
+ctest --test-dir build -C Release --output-on-failure
+```
+
 ### Run cppcheck before building (recommended for contributors)
 
 ```bash

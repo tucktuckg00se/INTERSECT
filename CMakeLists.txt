@@ -233,3 +233,9 @@ if(INTERSECT_HAS_ONNX_RUNTIME AND UNIX AND NOT APPLE)
     # dlopen() with RTLD_LAZY is called at runtime; link libdl for the symbol.
     target_link_libraries(Intersect PRIVATE ${CMAKE_DL_LIBS})
 endif()
+
+option(INTERSECT_BUILD_TESTS "Build native audio regression tests" OFF)
+if(INTERSECT_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()

@@ -1491,7 +1491,9 @@ void VoicePool::processVoiceSample (int i, const SampleData& sample, double /*sr
             v.stretchOutReadPos++;
         }
 
-        voicePositions[i].store ((float) v.stretchSrcPos, std::memory_order_relaxed);
+        // Keep the shared playhead current for lazy chopping as well as the UI.
+        v.position = v.stretchSrcPos;
+        voicePositions[i].store ((float) v.position, std::memory_order_relaxed);
         xfadeSourcePositions[i].store (
             computeXfadeSourceForUI (v, v.stretchSrcPos, getPlaybackDirection ((double) v.direction)),
             std::memory_order_relaxed);
@@ -1552,13 +1554,15 @@ void VoicePool::processVoiceSample (int i, const SampleData& sample, double /*sr
             v.bungeeOutReadPos++;
         }
 
-        // Wrap unbounded Bungee phase for UI cursor display only
+        // Map the shared playhead into the loop without changing Bungee's
+        // unbounded source phase, which its overlap-add state depends on.
         if (v.looping && v.inLoopRegion)
-            voicePositions[i].store ((float) wrapLoopPosition (v.bungeeSrcPos, v.loopStartSample, v.loopEndSample), std::memory_order_relaxed);
+            v.position = wrapLoopPosition (v.bungeeSrcPos, v.loopStartSample, v.loopEndSample);
         else if (v.pingPong && v.inLoopRegion)
-            voicePositions[i].store ((float) reflectPingPongPosition (v.bungeeSrcPos, v.loopStartSample, v.loopEndSample), std::memory_order_relaxed);
+            v.position = reflectPingPongPosition (v.bungeeSrcPos, v.loopStartSample, v.loopEndSample);
         else
-            voicePositions[i].store ((float) v.bungeeSrcPos, std::memory_order_relaxed);
+            v.position = v.bungeeSrcPos;
+        voicePositions[i].store ((float) v.position, std::memory_order_relaxed);
 
         xfadeSourcePositions[i].store (
             computeXfadeSourceForUI (v, v.bungeeSrcPos, getPlaybackDirection (v.bungeeSpeed)),
