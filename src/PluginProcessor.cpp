@@ -2748,7 +2748,13 @@ void IntersectProcessor::processMidiEvent (const juce::MidiMessage& msg,
         if (lazyChop.isActive())
         {
             // Any MIDI note places a chop boundary at the playhead
+            const int slicesBefore = sliceManager.getNumSlices();
             int newSliceIdx = lazyChop.onNote (note, voicePool, sliceManager);
+
+            // One note can close a wrapped tail and a new head; bind every new
+            // slice to the session sample it was cut from.
+            for (int i = slicesBefore; i < sliceManager.getNumSlices(); ++i)
+                syncSliceOwnershipFromAbsolute (sliceManager.getSlice (i));
             if (newSliceIdx >= 0)
             {
                 sliceManager.selectedSlice.store (newSliceIdx, std::memory_order_relaxed);

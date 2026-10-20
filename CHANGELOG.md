@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- Lazy chop works again with stretch turned on, or with the Signalsmith or Bungee algorithm (#50, #55, contributed by [@Thijs226](https://github.com/Thijs226)). Before, pressing keys after the first one created no slices.
+- With Signalsmith or Bungee, lazy chop now cuts where you hear the sample, and the playback cursor matches the sound. Before, chops landed up to about 20 ms late, which could cut off the start of a hit.
+- Signalsmith loops and ping-pong no longer stutter at the loop point. Before, each pass skipped the end of the loop and repeated a short piece of its start.
+- Slices made with lazy chop now follow the settings of the sample they were cut from. Before, in a session with several samples, they could take another sample's settings, so changes like turning 1SHOT back on had no effect.
+
 ## [0.17.0] - 2026-10-06
 
 ### Added
