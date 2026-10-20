@@ -329,7 +329,14 @@ private:
 
         juce::ComponentBoundsConstrainer* getEditorConstrainer() const
         {
-            return editor != nullptr ? editor->getConstrainer() : nullptr;
+            // The editor is scaled with a transform, so its limits are in logical
+            // pixels while this window's content is in scaled pixels. A fixed-size
+            // editor's limits would clamp the window back to 1x on every title-bar
+            // drag (#54); its size already follows the editor via handleMovedOrResized().
+            if (editor == nullptr || ! editor->isResizable())
+                return nullptr;
+
+            return editor->getConstrainer();
         }
 
         juce::BorderSize<int> computeBorder() const

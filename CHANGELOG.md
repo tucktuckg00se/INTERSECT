@@ -11,6 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - With Signalsmith or Bungee, lazy chop now cuts where you hear the sample, and the playback cursor matches the sound. Before, chops landed up to about 20 ms late, which could cut off the start of a hit.
 - Signalsmith loops and ping-pong no longer stutter at the loop point. Before, each pass skipped the end of the loop and repeated a short piece of its start.
 - Slices made with lazy chop now follow the settings of the sample they were cut from. Before, in a session with several samples, they could take another sample's settings, so changes like turning 1SHOT back on had no effect.
+- The standalone app no longer shrinks back to 100% size, cutting off the UI, when you move its window at a larger UI scale (#54).
 
 ## [0.17.0] - 2026-10-06
 
