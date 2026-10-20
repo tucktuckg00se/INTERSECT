@@ -2,6 +2,7 @@
 #include "../Constants.h"
 #include "AdsrEnvelope.h"
 #include "SvfFilter.h"
+#include <cstdint>
 #include <memory>
 #include <vector>
 
@@ -77,7 +78,14 @@ struct Voice
     double       stretchSrcPos      = 0.0;
     float        stretchTimeRatio   = 1.0f;
     float        stretchPitchSemis  = 0.0f;
-    bool         stretchResetNeeded = false;
+    // Source position of every sample fed to the stretcher, so the playhead
+    // can follow the output instead of the read head. Positions are integral.
+    std::vector<int> stretchFedPos;      // ring buffer, power-of-two size
+    int64_t      stretchFedCount      = 0;
+    int64_t      stretchSeekFedStart  = 0;
+    int64_t      stretchBlockFedStart = 0;
+    int          stretchBlockInputs   = 0;
+    int          stretchLatency       = 0;
 
     // Bungee stretch fields
     bool         bungeeActive       = false;
@@ -89,5 +97,7 @@ struct Voice
     double       bungeeSrcPos       = 0.0;
     double       bungeePitch        = 1.0;
     double       bungeeSpeed        = 1.0;
+    double       bungeeOutPosBegin  = 0.0;   // unbounded source position of the first output frame
+    double       bungeeOutPosEnd    = 0.0;   // ...and of the frame after the last
     bool         bungeeResetNeeded  = false;
 };

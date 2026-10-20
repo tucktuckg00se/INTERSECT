@@ -14,6 +14,10 @@ static constexpr int kStretchBlockSize = 128;        // required block size for 
 static constexpr int kMaxStretchInputSamples = 8192; // max pre-roll/input feed size (empirically tuned)
 static constexpr int kMaxBungeeInputFrames = 8192;
 static constexpr int kMaxBungeeOutputFrames = 8192;
+// Fed-position history: must cover the stretcher latency plus one block of input
+// (~11k samples at 192 kHz and 4x). Larger latencies clamp to the oldest entry.
+static constexpr int kStretchFedRingSize = 2 * kMaxStretchInputSamples;
+static_assert ((kStretchFedRingSize & (kStretchFedRingSize - 1)) == 0, "fed ring must be a power of two");
 
 enum class PlaybackDirection
 {
@@ -31,7 +35,7 @@ enum class VoiceBoundaryAction
 };
 
 // Forward declaration — defined below, used by initStretcher
-static void reseekStretcher (Voice& v, const SampleData& sample, bool consumeSource);
+static void reseekStretcher (Voice& v, const SampleData& sample);
 
 static PlaybackDirection getPlaybackDirection (double step)
 {
@@ -660,6 +664,7 @@ VoicePool::VoicePool()
         v.stretchInBufR.resize (kMaxStretchInputSamples);
         v.stretchOutBufL.resize (kStretchBlockSize);
         v.stretchOutBufR.resize (kStretchBlockSize);
+        v.stretchFedPos.resize (kStretchFedRingSize);
         v.bungeeInputBuf.resize ((size_t) kMaxBungeeInputFrames * 2);
         v.bungeeOutBufL.resize (kMaxBungeeOutputFrames);
         v.bungeeOutBufR.resize (kMaxBungeeOutputFrames);
@@ -773,7 +778,6 @@ void VoicePool::initPreviewVoiceCommon (Voice& v,
     v.stretchActive = false;
     v.stretchOutReadPos = 0;
     v.stretchOutAvail   = 0;
-    v.stretchResetNeeded = false;
     v.bungeeActive  = false;
     v.bungeeOutReadPos = 0;
     v.bungeeOutAvail   = 0;
@@ -858,7 +862,7 @@ void VoicePool::initStretcher (Voice& v, float pitchSemis, double sr,
     v.stretchOutAvail = 0;
 
     // Pre-roll from current stretchSrcPos via shared reseek helper
-    reseekStretcher (v, sample, true);
+    reseekStretcher (v, sample);
 }
 
 void VoicePool::initBungee (Voice& v, float pitchSemis, double sr, int grainMode)
@@ -873,6 +877,8 @@ void VoicePool::initBungee (Voice& v, float pitchSemis, double sr, int grainMode
     v.bungeePitch = std::pow (2.0, (double) pitchSemis / 12.0);
     v.bungeeOutReadPos = 0;
     v.bungeeOutAvail = 0;
+    v.bungeeOutPosBegin = v.bungeeSrcPos;
+    v.bungeeOutPosEnd = v.bungeeSrcPos;
 }
 
 void VoicePool::startVoice (int voiceIdx, const VoiceStartParams& p,
@@ -1037,7 +1043,6 @@ void VoicePool::startVoice (int voiceIdx, const VoiceStartParams& p,
 
     // Reset stretch state (guard against stale data from stolen voices)
     v.stretchActive  = false;
-    v.stretchResetNeeded = false;
     v.bungeeActive   = false;
     v.bungeeResetNeeded = false;
 
@@ -1162,15 +1167,54 @@ void VoicePool::muteGroup (int group, int exceptVoice)
     }
 }
 
-// Reseek the Signalsmith stretcher from the current stretchSrcPos/direction.
-// Extracted from initStretcher() so it can also be called at loop/ping-pong seams.
-static void reseekStretcher (Voice& v, const SampleData& sample, bool consumeSource)
+// Source position a fed stretcher input sample actually reads, as heard.
+static int mapStretchFedPosition (const Voice& v, double pos)
+{
+    if (v.pingPong && v.inLoopRegion)
+        pos = reflectPingPongPosition (pos, v.loopStartSample, v.loopEndSample);
+    else if (v.looping && v.inLoopRegion)
+        pos = wrapLoopPosition (pos, v.loopStartSample, v.loopEndSample);
+    return (int) std::floor (pos);
+}
+
+static void recordStretchFedPosition (Voice& v, double pos)
+{
+    v.stretchFedPos[(size_t) (v.stretchFedCount & (kStretchFedRingSize - 1))] = mapStretchFedPosition (v, pos);
+    ++v.stretchFedCount;
+}
+
+// Source position of the stretcher output sample about to be read. Output
+// sample k of a block fed from index a plays fed index a - latency + k * in/out.
+static double audibleStretchPosition (const Voice& v)
+{
+    if (v.stretchFedCount <= 0)
+        return v.stretchSrcPos;
+
+    const double perOutput = v.stretchOutAvail > 0
+        ? (double) v.stretchBlockInputs / (double) v.stretchOutAvail
+        : 0.0;
+    auto fedIndex = (int64_t) std::floor ((double) (v.stretchBlockFedStart - v.stretchLatency)
+                                          + v.stretchOutReadPos * perOutput);
+    const int64_t oldest = std::max (v.stretchSeekFedStart,
+                                     v.stretchFedCount - (int64_t) kStretchFedRingSize);
+    fedIndex = juce::jlimit (oldest, v.stretchFedCount - 1, fedIndex);
+    return (double) v.stretchFedPos[(size_t) (fedIndex & (kStretchFedRingSize - 1))];
+}
+
+// Seek the Signalsmith stretcher so its next output starts at stretchSrcPos,
+// consuming the pre-roll input. Only used when a voice starts: loop seams are
+// fed continuously so the stretcher keeps its buffered output.
+static void reseekStretcher (Voice& v, const SampleData& sample)
 {
     if (! v.stretcher || ! sample.isLoaded())
         return;
 
     float playbackRate = v.stretchTimeRatio;
-    int seekLen = v.stretcher->outputSeekLength (playbackRate);
+    v.stretchLatency = v.stretcher->outputSeekLength (playbackRate);
+    v.stretchSeekFedStart = v.stretchFedCount;
+    v.stretchBlockFedStart = v.stretchFedCount;
+    v.stretchBlockInputs = 0;
+    int seekLen = v.stretchLatency;
     const int activeLen = v.inLoopRegion ? (v.loopEndSample - v.loopStartSample)
                                          : (v.endSample - v.startSample);
     seekLen = std::min (seekLen, activeLen);
@@ -1185,11 +1229,11 @@ static void reseekStretcher (Voice& v, const SampleData& sample, bool consumeSou
                 : v.stretchSrcPos - i;
             v.stretchInBufL[(size_t) i] = readExactLoopSample (v, sample, srcPos, 0);
             v.stretchInBufR[(size_t) i] = readExactLoopSample (v, sample, srcPos, 1);
+            recordStretchFedPosition (v, srcPos);
         }
         float* ptrs[2] = { v.stretchInBufL.data(), v.stretchInBufR.data() };
         v.stretcher->outputSeek (ptrs, seekLen);
-        if (consumeSource)
-            v.stretchSrcPos += (v.direction > 0) ? seekLen : -seekLen;
+        v.stretchSrcPos += (v.direction > 0) ? seekLen : -seekLen;
     }
 
     v.stretchOutReadPos = 0;
@@ -1198,12 +1242,6 @@ static void reseekStretcher (Voice& v, const SampleData& sample, bool consumeSou
 
 static void fillStretchBlock (Voice& v, const SampleData& sample)
 {
-    if (v.stretchResetNeeded)
-    {
-        reseekStretcher (v, sample, false);
-        v.stretchResetNeeded = false;
-    }
-
     int inputSamples = (int) (kStretchBlockSize * v.stretchTimeRatio);
     if (inputSamples < 1) inputSamples = 1;
     const int maxInput = std::min ((int) v.stretchInBufL.size(), (int) v.stretchInBufR.size());
@@ -1211,26 +1249,23 @@ static void fillStretchBlock (Voice& v, const SampleData& sample)
         return;
     inputSamples = juce::jlimit (1, maxInput, inputSamples);
 
+    v.stretchBlockFedStart = v.stretchFedCount;
+
     for (int i = 0; i < inputSamples; ++i)
     {
-        // Read from virtual looped source (with optional crossfade at loop boundaries)
+        // Read from virtual looped source (with optional crossfade at loop boundaries).
+        // Seams are fed straight through: the stretcher must not be reset here, or it
+        // drops its buffered tail and replays the loop start.
         v.stretchInBufL[(size_t) i] = readCrossfadedSample (v, sample, v.stretchSrcPos, 0, v.direction);
         v.stretchInBufR[(size_t) i] = readCrossfadedSample (v, sample, v.stretchSrcPos, 1, v.direction);
+        recordStretchFedPosition (v, v.stretchSrcPos);
 
         // Advance source position (loop/ping-pong wrap handled by advanceStretchSrcPos)
         auto action = advanceStretchSrcPos (v);
-        bool stopAfterThisInput = false;
 
         // For non-loop modes, handle release/releaseTail boundaries
         switch (action)
         {
-            case VoiceBoundaryAction::loopWrap:
-            case VoiceBoundaryAction::pingPongTurnaround:
-                v.stretchResetNeeded = true;
-                inputSamples = i + 1;
-                stopAfterThisInput = true;
-                break;
-
             case VoiceBoundaryAction::releaseTail:
                 v.stretchSrcPos = (v.direction > 0)
                     ? std::min (v.stretchSrcPos, (double) v.bufferEnd - 1)
@@ -1241,10 +1276,12 @@ static void fillStretchBlock (Voice& v, const SampleData& sample)
             {
                 const float lastL = v.stretchInBufL[(size_t) i];
                 const float lastR = v.stretchInBufR[(size_t) i];
+                const int lastPos = v.stretchFedPos[(size_t) ((v.stretchFedCount - 1) & (kStretchFedRingSize - 1))];
                 for (int j = i + 1; j < inputSamples; ++j)
                 {
                     v.stretchInBufL[(size_t) j] = lastL;
                     v.stretchInBufR[(size_t) j] = lastR;
+                    recordStretchFedPosition (v, lastPos);
                 }
                 v.stretchSrcPos = (v.direction > 0)
                     ? (double) v.endSample
@@ -1256,10 +1293,9 @@ static void fillStretchBlock (Voice& v, const SampleData& sample)
             default:
                 break;
         }
-
-        if (stopAfterThisInput)
-            break;
     }
+
+    v.stretchBlockInputs = (int) (v.stretchFedCount - v.stretchBlockFedStart);
 
     const int outCapacity = std::min ((int) v.stretchOutBufL.size(), (int) v.stretchOutBufR.size());
     if (outCapacity <= 0)
@@ -1379,6 +1415,19 @@ static void fillBungeeBlock (Voice& v, const SampleData& sample)
 
         v.bungeeOutReadPos = 0;
         v.bungeeOutAvail = framesToCopy;
+
+        // Source positions of this chunk's first frame and the frame after its last.
+        if (outputChunk.request[Bungee::OutputChunk::begin] != nullptr
+            && outputChunk.request[Bungee::OutputChunk::end] != nullptr)
+        {
+            const double begin = outputChunk.request[Bungee::OutputChunk::begin]->position;
+            const double end = outputChunk.request[Bungee::OutputChunk::end]->position;
+            if (std::isfinite (begin) && std::isfinite (end))
+            {
+                v.bungeeOutPosBegin = begin;
+                v.bungeeOutPosEnd = begin + (end - begin) * (double) framesToCopy / (double) outFrames;
+            }
+        }
     }
     else
     {
@@ -1481,6 +1530,10 @@ void VoicePool::processVoiceSample (int i, const SampleData& sample, double /*sr
             }
         }
 
+        // The read head runs ahead of the output by the stretcher latency, so
+        // lazy chopping and the UI follow the sample actually being played.
+        v.position = audibleStretchPosition (v);
+
         if (v.stretchOutReadPos < v.stretchOutAvail)
         {
             voiceL = v.stretchOutBufL[(size_t) v.stretchOutReadPos];
@@ -1491,8 +1544,6 @@ void VoicePool::processVoiceSample (int i, const SampleData& sample, double /*sr
             v.stretchOutReadPos++;
         }
 
-        // Keep the shared playhead current for lazy chopping as well as the UI.
-        v.position = v.stretchSrcPos;
         voicePositions[i].store ((float) v.position, std::memory_order_relaxed);
         xfadeSourcePositions[i].store (
             computeXfadeSourceForUI (v, v.stretchSrcPos, getPlaybackDirection ((double) v.direction)),
@@ -1543,6 +1594,13 @@ void VoicePool::processVoiceSample (int i, const SampleData& sample, double /*sr
             }
         }
 
+        // bungeeSrcPos is the next grain's request; the playhead follows the
+        // output frame being played, interpolated across its chunk.
+        double audiblePos = v.bungeeOutPosEnd;
+        if (v.bungeeOutReadPos < v.bungeeOutAvail)
+            audiblePos = v.bungeeOutPosBegin + (v.bungeeOutPosEnd - v.bungeeOutPosBegin)
+                                               * (double) v.bungeeOutReadPos / (double) v.bungeeOutAvail;
+
         if (v.bungeeOutReadPos < v.bungeeOutAvail)
         {
             voiceL = v.bungeeOutBufL[(size_t) v.bungeeOutReadPos];
@@ -1557,11 +1615,11 @@ void VoicePool::processVoiceSample (int i, const SampleData& sample, double /*sr
         // Map the shared playhead into the loop without changing Bungee's
         // unbounded source phase, which its overlap-add state depends on.
         if (v.looping && v.inLoopRegion)
-            v.position = wrapLoopPosition (v.bungeeSrcPos, v.loopStartSample, v.loopEndSample);
+            v.position = wrapLoopPosition (audiblePos, v.loopStartSample, v.loopEndSample);
         else if (v.pingPong && v.inLoopRegion)
-            v.position = reflectPingPongPosition (v.bungeeSrcPos, v.loopStartSample, v.loopEndSample);
+            v.position = reflectPingPongPosition (audiblePos, v.loopStartSample, v.loopEndSample);
         else
-            v.position = v.bungeeSrcPos;
+            v.position = audiblePos;
         voicePositions[i].store ((float) v.position, std::memory_order_relaxed);
 
         xfadeSourcePositions[i].store (

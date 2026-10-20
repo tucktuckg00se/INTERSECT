@@ -3,6 +3,8 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <vector>
+#include <algorithm>
 
 namespace
 {
@@ -15,6 +17,11 @@ void require (bool condition, const char* message)
         throw std::runtime_error (message);
 }
 
+float sineContent (int i)
+{
+    return (float) std::sin (juce::MathConstants<double>::twoPi * i / 100.0);
+}
+
 struct Fixture
 {
     SampleData sample;
@@ -22,14 +29,14 @@ struct Fixture
     VoicePool voices;
     LazyChopEngine chop;
 
-    explicit Fixture (int algorithm, bool snap = false)
+    explicit Fixture (int algorithm, bool snap = false, float (*content) (int) = sineContent)
     {
         auto decoded = std::make_unique<SampleData::DecodedSample>();
         decoded->buffer.setSize (2, sampleLength);
         decoded->decodedSampleRate = sampleRate;
         for (int i = 0; i < sampleLength; ++i)
         {
-            const auto value = (float) std::sin (juce::MathConstants<double>::twoPi * i / 100.0);
+            const auto value = content (i);
             decoded->buffer.setSample (0, i, value);
             decoded->buffer.setSample (1, i, value);
         }
@@ -48,6 +55,14 @@ struct Fixture
     int playhead() const
     {
         return (int) std::floor (voices.voicePositions[VoicePool::kPreviewVoiceIndex].load());
+    }
+
+    float renderOne()
+    {
+        float left = 0.0f, right = 0.0f;
+        voices.processSample (sample, sampleRate, left, right);
+        require (std::isfinite (left) && std::isfinite (right), "audio must stay finite");
+        return left;
     }
 
     double render (int frames)
@@ -173,6 +188,8 @@ void keepsSamplePrecisionForLongRecordings (int algorithm)
     {
         voice.bungeeActive = true;
         voice.bungeeSrcPos = length + expected + 0.75;
+        voice.bungeeOutPosBegin = voice.bungeeSrcPos;
+        voice.bungeeOutPosEnd = voice.bungeeSrcPos + 1.0;
         voice.bungeeOutAvail = 1;
     }
     if (algorithm != 0)
@@ -190,6 +207,90 @@ void keepsSamplePrecisionForLongRecordings (int algorithm)
     if (algorithm == 2)
         require (voice.bungeeSrcPos == length + expected + 0.75,
                  "chopping must preserve Bungee's unbounded source phase");
+}
+
+constexpr int kOnsetSample = 8000;
+constexpr int kBurstStart = 300;
+constexpr int kBurstLength = 200;
+
+float onsetContent (int i)
+{
+    return i >= kOnsetSample ? 0.9f * sineContent (i) : 0.0f;
+}
+
+float burstContent (int i)
+{
+    return (i >= kBurstStart && i < kBurstStart + kBurstLength) ? 0.9f * sineContent (i) : 0.0f;
+}
+
+// Stretch engines smear an onset over a few hundred samples, and the 50%
+// threshold detects even Repitch a few samples late; allow for both.
+constexpr int kAudibleTolerance = 96;
+
+// Bungee's first grain reads the loop tail through the loop mapping, so skip
+// the preview start when searching for an onset.
+constexpr int kStartSettleFrames = 4096;
+
+void playheadFollowsTheAudibleOnset (int algorithm)
+{
+    Fixture f (algorithm, false, onsetContent);
+    f.chop.onNote (60, f.voices, f.slices);
+    std::vector<float> out;
+    std::vector<int> heads;
+    for (int i = 0; i < 40000; ++i)
+    {
+        out.push_back (std::abs (f.renderOne()));
+        heads.push_back (f.playhead());
+    }
+
+    float peak = 0.0f;
+    for (size_t i = kStartSettleFrames; i < out.size(); ++i)
+        peak = std::max (peak, out[i]);
+    require (peak > 0.1f, "onset must be audible");
+
+    int frame = -1;
+    for (int i = kStartSettleFrames; i < (int) out.size(); ++i)
+    {
+        if (out[(size_t) i] > 0.5f * peak)
+        {
+            frame = i;
+            break;
+        }
+    }
+    require (frame >= 0, "onset must be found");
+    require (std::abs (heads[(size_t) frame] - kOnsetSample) <= kAudibleTolerance,
+             "playhead must match the sample being heard, not the stretcher read head");
+}
+
+void loopSeamPlaysEachPassOnce (int algorithm)
+{
+    Fixture f (algorithm, false, burstContent);
+    f.chop.onNote (60, f.voices, f.slices);
+    int lastLoud = -100000;
+    int previousHead = 0;
+    int wraps = 0;
+    int bursts = 0;
+    for (int i = 0; i < 200000; ++i)
+    {
+        const float level = std::abs (f.renderOne());
+        const int head = f.playhead();
+        if (head < previousHead)
+            ++wraps;
+        previousHead = head;
+
+        if (level > 0.2f)
+        {
+            if (i - lastLoud > 300)
+            {
+                ++bursts;
+                require (std::abs (head - kBurstStart) <= kAudibleTolerance,
+                         "burst must play when the playhead reaches it");
+            }
+            lastLoud = i;
+        }
+    }
+    require (wraps >= 2, "preview must loop several times");
+    require (bursts == wraps + 1, "each loop pass must play the loop start exactly once");
 }
 } // namespace
 
@@ -219,6 +320,8 @@ int main()
         run ("audition before audio render", auditionResetsTheStartWithoutRendering);
         run ("zero-crossing snap", snapsStretchedBoundariesToZeroCrossings);
         run ("long-recording precision", keepsSamplePrecisionForLongRecordings);
+        run ("playhead follows audible onset", playheadFollowsTheAudibleOnset);
+        run ("loop seam plays each pass once", loopSeamPlaysEachPassOnce);
     }
     std::cout << passed << " passed, " << failed << " failed\n";
     return failed == 0 ? 0 : 1;
