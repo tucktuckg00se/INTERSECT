@@ -29,6 +29,17 @@ body:
       label: Expected Behavior
       description: What did you expect to happen instead?
 
+  - type: textarea
+    id: error-message
+    attributes:
+      label: Error Message
+      description: >-
+        If INTERSECT showed a red message in the top bar, paste it here.
+        **Click the red text to copy it** (hover shows "Copy message").
+        It disappears after about 5 seconds, so click right away.
+        A screenshot works if you can't copy it.
+      render: text
+
   - type: dropdown
     id: format
     attributes:
@@ -61,6 +72,12 @@ body:
         - Not applicable / unsure
     validations:
       required: false
+
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU (stem separation issues only)
+      placeholder: e.g., NVIDIA GTX 970 4 GB, driver 582.66
 
   - type: input
     id: daw
