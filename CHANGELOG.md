@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- Clicking an error message in the top bar now copies the whole message. Before, long errors (such as GPU stem separation errors) were cut off after 255 characters, which hid the part that explains what went wrong (#56).
+
 ## [0.17.1] - 2026-10-20
 
 ### Fixed

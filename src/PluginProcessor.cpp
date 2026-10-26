@@ -409,12 +409,12 @@ const IntersectProcessor::MissingFileInfo& IntersectProcessor::getMissingFileInf
 void IntersectProcessor::setUiStatusMessage (const juce::String& text, bool isWarning,
                                              UiStatusMessage::Source source)
 {
-    RtText<256> rtText;
+    StatusText rtText;
     rtText.assign (text);
     setUiStatusMessage (rtText, isWarning, source);
 }
 
-void IntersectProcessor::setUiStatusMessage (const RtText<256>& text,
+void IntersectProcessor::setUiStatusMessage (const StatusText& text,
                                              bool isWarning,
                                              UiStatusMessage::Source source)
 {
@@ -446,7 +446,7 @@ bool IntersectProcessor::clearDroppedCommandWarning()
 
 void IntersectProcessor::setDroppedCommandWarning (uint32_t droppedCount, uint32_t droppedCriticalCount)
 {
-    RtText<256> text;
+    StatusText text;
     text.appendAscii ("Warning: dropped ");
     text.appendUnsigned (droppedCount);
     text.appendAscii (" commands");

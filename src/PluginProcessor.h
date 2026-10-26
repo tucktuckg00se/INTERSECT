@@ -214,6 +214,10 @@ public:
     /** Current audition state for the browser. Also frees clips the audio thread has let go of. */
     AuditionStatus pollAuditionStatus();
 
+    // Header status text. Sized well past 255 bytes so ONNX Runtime / GPU errors
+    // (which embed long build paths) are not cut off when copied.
+    using StatusText = RtText<2048>;
+
     struct UiSliceSnapshot
     {
         struct UiSessionSample
@@ -237,7 +241,7 @@ public:
         RtText<512> sampleFileName;
         bool hasStatusMessage = false;
         bool statusIsWarning = false;
-        RtText<256> statusMessage;
+        StatusText statusMessage;
         StemJobState stemJobState = StemJobState::idle;
         float stemJobProgress = 0.0f;
         int stemJobSourceSampleId = -1;
@@ -381,7 +385,7 @@ private:
             transientInfo,   // non-warning message that clears itself like a warning
         };
 
-        RtText<256> text;
+        StatusText text;
         bool isWarning = false;
         Source source = Source::none;
         int64_t shownAtMs = 0;
@@ -469,7 +473,7 @@ private:
     const MissingFileInfo& getMissingFileInfo() const;
     void setUiStatusMessage (const juce::String& text, bool isWarning,
                              UiStatusMessage::Source source = UiStatusMessage::Source::generic);
-    void setUiStatusMessage (const RtText<256>& text,
+    void setUiStatusMessage (const StatusText& text,
                              bool isWarning,
                              UiStatusMessage::Source source = UiStatusMessage::Source::generic);
     void clearUiStatusMessage();
