@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 - Clicking an error message in the top bar now copies the whole message. Before, long errors (such as GPU stem separation errors) were cut off after 255 characters, which hid the part that explains what went wrong (#56).
+- Projects made with versions before 0.13 open with their slices again (#57). Before, the sample loaded but every slice was squashed into the first instant, so nothing could be seen or heard.
+- Missing samples can be relinked again (#57). A sample whose file was moved or deleted now shows as an empty slot in the waveform with a **RELINK** button. Click it, the sample's red tab, or the MISSING message in the top bar to pick the file in the browser. The sample keeps its slices and settings, and other missing files with the same name in the chosen folder are relinked too.
+- Saving while some samples are missing no longer loses them or their settings, and adding a file while samples are missing no longer deletes all slices.
+- Presets whose sample files can't be found now load them as missing samples you can relink, instead of leaving them out.
 
 ## [0.17.1] - 2026-10-20
 

@@ -560,7 +560,11 @@ void SignalChainBar::rebuildLayout()
     input.rootNote = ui.rootNote;
     input.sampleNumFrames = ui.sampleNumFrames;
     input.sampleLoaded = ui.sampleLoaded;
-    input.sampleMissing = ui.sampleMissing;
+    // Only the selected sample's own state matters here; other missing samples show in the lanes.
+    input.sampleMissing = false;
+    for (int i = 0; i < ui.numSessionSamples; ++i)
+        if (ui.sessionSamples[(size_t) i].sampleId == ui.selectedSessionSampleId)
+            input.sampleMissing = ui.sessionSamples[(size_t) i].isPlaceholder();
     input.hasValidSlice = ui.selectedSlice >= 0 && ui.selectedSlice < ui.numSlices;
     input.sliceScope = isSliceScopeActive();
     const auto sampleSnap = processor.sampleData.getSnapshot();

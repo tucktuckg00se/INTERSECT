@@ -92,6 +92,9 @@ struct Slice
     int      endInSample   = 0;
     int      startSample   = 0;
     int      endSample     = 0;
+    // Runtime only (never serialized): the owning session sample is a missing-file
+    // placeholder, so the slice is kept but neither drawn nor played until relinked.
+    bool     parked        = false;
     int      midiNote      = kDefaultRootNote;
     int      highNote      = kDefaultRootNote;    // high end of note range
     int      sliceRootNote = kDefaultRootNote;    // root note for pitch transpose

@@ -40,7 +40,7 @@ BrowserView::BrowserView()
     addAndMakeVisible (breadcrumb);
 
     for (auto* button : std::initializer_list<juce::Button*> { &backButton, &forwardButton, &upButton, &refreshButton,
-                                                               &openButton, &clearSearchButton })
+                                                               &openButton, &clearSearchButton, &relinkCancelButton })
     {
         button->getProperties().set (IntersectLookAndFeel::outlineOnlyButtonProperty, true);
         button->setWantsKeyboardFocus (false);
@@ -61,6 +61,9 @@ BrowserView::BrowserView()
     refreshButton.onClick = [this] { refresh(); };
     openButton.onClick = [this] { showOpenMenu(); };
     clearSearchButton.onClick = [this] { clearSearch(); };
+    relinkCancelButton.onClick = [this] { endRelink(); };
+    relinkCancelButton.setTooltip ("Stop relinking (Esc)");
+    addChildComponent (relinkCancelButton);
 
     searchEditor.setJustification (juce::Justification::centredLeft);
     searchEditor.setIndents (6, 0);
@@ -275,6 +278,57 @@ void BrowserView::revealFile (const juce::File& file)
     table.selectFile (file);
 }
 
+void BrowserView::beginRelink (int sampleId, const juce::String& fileName, const juce::File& originalFile)
+{
+    relinkSampleId = sampleId;
+    relinkFileName = fileName;
+    preview.setRelinkMode (true);
+    relinkCancelButton.setVisible (true);
+    resized();
+    repaint();
+
+    // Start where the file used to be, or as close to it as still exists.
+    auto dir = originalFile.getParentDirectory();
+    while (dir != juce::File() && ! dir.isDirectory() && dir.getParentDirectory() != dir)
+        dir = dir.getParentDirectory();
+
+    if (dir.isDirectory())
+    {
+        const auto sameName = dir.getChildFile (fileName);
+        if (sameName.existsAsFile())
+            revealFile (sameName);
+        else if (! Browser::samePath (dir, currentDirectory))
+            navigateTo (dir);
+    }
+    focusFileList();
+}
+
+void BrowserView::endRelink()
+{
+    if (relinkSampleId < 0)
+        return;
+
+    relinkSampleId = -1;
+    relinkFileName.clear();
+    preview.setRelinkMode (false);
+    relinkCancelButton.setVisible (false);
+    resized();
+    repaint();
+}
+
+void BrowserView::relinkWith (const std::vector<juce::File>& files)
+{
+    // Prefer the focused row when it is one of several selected files.
+    auto file = files.front();
+    if (const auto* row = table.getFocusedRow(); row != nullptr && row->kind == Browser::FileKind::audio)
+        file = row->file;
+
+    ++auditionRequestId;
+    places.noteRecentFolder (file.getParentDirectory());
+    if (onRelinkFile != nullptr)
+        onRelinkFile (relinkSampleId, file);
+}
+
 void BrowserView::focusFileList()
 {
     table.grabListFocus();
@@ -411,7 +465,9 @@ void BrowserView::activateRow (const Browser::FileRow& row, bool shiftDown)
             break;
 
         case Browser::FileKind::preset:
-            if (row.file.existsAsFile() && onPresetChosen != nullptr)
+            if (isRelinking())
+                showTemporaryStatus ("Pick an audio file to relink " + relinkFileName);
+            else if (row.file.existsAsFile() && onPresetChosen != nullptr)
             {
                 places.noteRecentFolder (row.file.getParentDirectory());
                 onPresetChosen (row.file);
@@ -438,6 +494,12 @@ void BrowserView::addFiles (const std::vector<juce::File>& files)
     if (files.empty())
         return;
 
+    if (isRelinking())
+    {
+        relinkWith (files);
+        return;
+    }
+
     ++auditionRequestId;
     places.noteRecentFolder (files.front().getParentDirectory());
     if (onAddFiles != nullptr)
@@ -448,6 +510,12 @@ void BrowserView::loadFiles (const std::vector<juce::File>& files)
 {
     if (files.empty())
         return;
+
+    if (isRelinking())
+    {
+        relinkWith (files);
+        return;
+    }
 
     ++auditionRequestId;
     places.noteRecentFolder (files.front().getParentDirectory());
@@ -463,11 +531,16 @@ void BrowserView::showRowMenu (const Browser::FileRow& row, juce::Point<int> scr
     switch (row.kind)
     {
         case Browser::FileKind::audio:
+            if (isRelinking())
+            {
+                menu.addItem (kMenuAdd, "Relink " + relinkFileName + " to This File");
+                break;
+            }
             menu.addItem (kMenuAdd, "Add to Kit");
             menu.addItem (kMenuLoad, "Load (Replace Kit)");
             break;
         case Browser::FileKind::preset:
-            menu.addItem (kMenuLoadPreset, "Load Preset");
+            menu.addItem (kMenuLoadPreset, "Load Preset", ! isRelinking());
             menu.addItem (kMenuRename, "Rename");
             menu.addSeparator();
             menu.addItem (kMenuExport, "Export...");
@@ -707,6 +780,8 @@ bool BrowserView::keyPressed (const juce::KeyPress& key)
     {
         if (searchEditor.getText().isNotEmpty())
             clearSearch();
+        else if (isRelinking())
+            endRelink();
         else if (onCloseRequested != nullptr)
             onCloseRequested();
         return true;
@@ -742,7 +817,7 @@ bool BrowserView::keyPressed (const juce::KeyPress& key)
 void BrowserView::refreshThemeColours()
 {
     for (auto* button : std::initializer_list<juce::Button*> { &backButton, &forwardButton, &upButton, &refreshButton,
-                                                               &openButton, &clearSearchButton })
+                                                               &openButton, &clearSearchButton, &relinkCancelButton })
     {
         button->setColour (juce::TextButton::buttonColourId, getTheme().surface4.withAlpha (0.95f));
         button->setColour (juce::TextButton::textColourOnId, getTheme().text2.withAlpha (0.88f));
@@ -771,6 +846,17 @@ void BrowserView::paint (juce::Graphics& g)
     g.setColour (getTheme().surface4.withAlpha (0.85f));
     g.fillRect (places.getRight(), 0, 1, getHeight());
     g.fillRect (preview.getX() - 1, 0, 1, getHeight());
+
+    if (isRelinking() && ! relinkBannerBounds.isEmpty())
+    {
+        g.setColour (getTheme().color5.withAlpha (0.22f));
+        g.fillRoundedRectangle (relinkBannerBounds.toFloat(), 3.0f);
+        g.setColour (getTheme().text2);
+        g.setFont (IntersectLookAndFeel::makeFont (10.0f, true));
+        const auto textArea = relinkBannerBounds.withTrimmedRight (relinkCancelButton.getWidth() + 8).reduced (8, 0);
+        g.drawFittedText ("RELINK " + relinkFileName + "  -  pick the file to use in its place",
+                          textArea, juce::Justification::centredLeft, 1, 0.8f);
+    }
 }
 
 void BrowserView::resized()
@@ -783,6 +869,15 @@ void BrowserView::resized()
 
     auto middle = area.reduced (8, 7);
     const int gap = 3;
+
+    relinkBannerBounds = {};
+    if (isRelinking())
+    {
+        relinkBannerBounds = middle.removeFromTop (kToolbarRowH + 2);
+        relinkCancelButton.setBounds (relinkBannerBounds.withTrimmedLeft (relinkBannerBounds.getWidth() - 60)
+                                                        .reduced (2, 2));
+        middle.removeFromTop (5);
+    }
 
     auto nav = middle.removeFromTop (kToolbarRowH);
     for (auto* button : { &backButton, &forwardButton, &upButton, &refreshButton })

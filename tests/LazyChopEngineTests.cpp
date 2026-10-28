@@ -294,6 +294,8 @@ void loopSeamPlaysEachPassOnce (int algorithm)
 }
 } // namespace
 
+int runSampleDataTests (int& passed, int& failed);
+
 int main()
 {
     int failed = 0;
@@ -323,6 +325,7 @@ int main()
         run ("playhead follows audible onset", playheadFollowsTheAudibleOnset);
         run ("loop seam plays each pass once", loopSeamPlaysEachPassOnce);
     }
+    runSampleDataTests (passed, failed);
     std::cout << passed << " passed, " << failed << " failed\n";
     return failed == 0 ? 0 : 1;
 }

@@ -21,6 +21,12 @@ const SampleData::SessionSample* findSessionSampleById (const SampleData::Snapsh
     return sampleSnap->sessionSamples.empty() ? nullptr : &sampleSnap->sessionSamples.front();
 }
 
+// Slices of a missing-sample placeholder are parked: kept, but not drawn or editable.
+bool isEditableSlice (const Slice& s)
+{
+    return s.active && ! s.parked;
+}
+
 struct LoopDisplayState
 {
     bool active = false;
@@ -304,6 +310,7 @@ void WaveformView::paint (juce::Graphics& g)
         }
         rebuildCacheIfNeeded();
         drawWaveform (g);
+        paintPlaceholders (g, sampleSnap);
         drawSlices (g);
         drawFadeRegions (g);
         paintDrawSlicePreview (g);
@@ -327,6 +334,123 @@ void WaveformView::paint (juce::Graphics& g)
     }
 
     paintOverlayHint (g);
+}
+
+std::vector<WaveformView::PlaceholderSlot> WaveformView::getPlaceholderSlots (const SampleData::SnapshotPtr& sampleSnap) const
+{
+    std::vector<PlaceholderSlot> slots;
+    if (sampleSnap == nullptr)
+        return slots;
+
+    const auto view = buildViewState (sampleSnap);
+    if (! view.valid)
+        return slots;
+
+    const int w = getWidth();
+    auto toPixel = [&] (int frame)
+    {
+        return (int) ((float) (frame - view.visibleStart) / (float) view.visibleLen * (float) w);
+    };
+
+    for (const auto& sample : sampleSnap->sessionSamples)
+    {
+        if (! sample.isPlaceholder())
+            continue;
+
+        const int x1 = juce::jlimit (0, w, toPixel (sample.startFrame));
+        const int x2 = juce::jlimit (0, w, toPixel (sample.startFrame + sample.numFrames));
+        if (x2 <= x1)
+            continue;
+
+        PlaceholderSlot slot;
+        slot.sampleId = sample.sampleId;
+        slot.bounds = { x1, 0, x2 - x1, getHeight() };
+
+        const int buttonW = juce::jmin (72, slot.bounds.getWidth() - 8);
+        if (buttonW >= 28)
+            slot.relinkButton = juce::Rectangle<int> (buttonW, 20).withCentre (slot.bounds.getCentre().translated (0, 8));
+        slots.push_back (slot);
+    }
+    return slots;
+}
+
+const WaveformView::PlaceholderSlot* WaveformView::findPlaceholderAt (const std::vector<PlaceholderSlot>& slots, int x) const
+{
+    for (const auto& slot : slots)
+        if (x >= slot.bounds.getX() && x < slot.bounds.getRight())
+            return &slot;
+    return nullptr;
+}
+
+void WaveformView::paintPlaceholders (juce::Graphics& g, const SampleData::SnapshotPtr& sampleSnap)
+{
+    const auto slots = getPlaceholderSlots (sampleSnap);
+    if (slots.empty())
+        return;
+
+    const auto& ui = processor.getUiSliceSnapshot();
+    const auto missingColour = getTheme().color5;
+
+    for (const auto& slot : slots)
+    {
+        const IntersectProcessor::UiSliceSnapshot::UiSessionSample* info = nullptr;
+        for (int i = 0; i < ui.numSessionSamples; ++i)
+            if (ui.sessionSamples[(size_t) i].sampleId == slot.sampleId)
+                info = &ui.sessionSamples[(size_t) i];
+
+        const auto area = slot.bounds;
+        g.setColour (getTheme().surface0);
+        g.fillRect (area);
+
+        // Diagonal hatching marks the slot as empty rather than silent audio.
+        {
+            juce::Graphics::ScopedSaveState clip (g);
+            g.reduceClipRegion (area);
+            g.setColour (missingColour.withAlpha (0.10f));
+            for (int x = area.getX() - area.getHeight(); x < area.getRight(); x += 12)
+                g.drawLine ((float) x, (float) area.getBottom(), (float) (x + area.getHeight()), (float) area.getY(), 1.0f);
+        }
+        g.setColour (missingColour.withAlpha (0.55f));
+        g.drawRect (area.reduced (1, 1), 1);
+
+        if (area.getWidth() < 28)
+            continue;
+
+        const bool unreadable = info != nullptr
+            && info->availability == SampleData::SessionSample::Availability::unreadable;
+        const auto textArea = area.reduced (6, 0);
+        const int centreY = area.getCentreY();
+
+        g.setColour (missingColour.brighter (0.15f));
+        g.setFont (IntersectLookAndFeel::makeFont (10.0f, true));
+        g.drawFittedText (unreadable ? "CAN'T READ" : "MISSING",
+                          textArea.withY (centreY - 44).withHeight (14), juce::Justification::centred, 1, 0.8f);
+
+        if (info != nullptr)
+        {
+            g.setColour (getTheme().text1);
+            g.setFont (IntersectLookAndFeel::makeFont (11.0f));
+            g.drawFittedText (info->fileName.toString(),
+                              textArea.withY (centreY - 28).withHeight (16), juce::Justification::centred, 1, 0.7f);
+        }
+
+        if (! slot.relinkButton.isEmpty())
+        {
+            g.setColour (missingColour);
+            g.fillRoundedRectangle (slot.relinkButton.toFloat(), 3.0f);
+            g.setColour (juce::Colours::white);
+            g.setFont (IntersectLookAndFeel::makeFont (10.0f, true));
+            g.drawFittedText ("RELINK", slot.relinkButton, juce::Justification::centred, 1, 0.8f);
+        }
+
+        if (info != nullptr && info->parkedSlices > 0)
+        {
+            g.setColour (getTheme().text2);
+            g.setFont (IntersectLookAndFeel::makeFont (10.0f));
+            g.drawFittedText (juce::String (info->parkedSlices) + (info->parkedSlices == 1 ? " slice waiting" : " slices waiting"),
+                              textArea.withY (centreY + 24).withHeight (14), juce::Justification::centred, 1, 0.7f);
+        }
+    }
 }
 
 void WaveformView::paintDrawSlicePreview (juce::Graphics& g)
@@ -539,7 +663,7 @@ void WaveformView::drawSlices (juce::Graphics& g)
     for (int i = 0; i < num; ++i)
     {
         const auto& s = ui.slices[(size_t) i];
-        if (! s.active) continue;
+        if (! isEditableSlice (s)) continue;
 
         int drawStartSample = s.startSample;
         int drawEndSample = s.endSample;
@@ -616,7 +740,7 @@ void WaveformView::drawFadeRegions (juce::Graphics& g)
     if (sel < 0 || sel >= ui.numSlices) return;
 
     const auto& s = ui.slices[(size_t) sel];
-    if (! s.active) return;
+    if (! isEditableSlice (s)) return;
 
     // Also only show if loop mode is active
     const auto& sampleLevel = ui.sampleParamsFor (s.sampleId);
@@ -715,7 +839,7 @@ void WaveformView::drawPlaybackCursors (juce::Graphics& g)
     if (sel >= 0 && sel < ui.numSlices)
     {
         const auto& s = ui.slices[(size_t) sel];
-        if (s.active)
+        if (isEditableSlice (s))
         {
             for (int i = 0; i < VoicePool::kMaxVoices; ++i)
             {
@@ -764,6 +888,21 @@ void WaveformView::mouseMove (const juce::MouseEvent& e)
 
     auto sampleSnap = processor.sampleData.getSnapshot();
     if (sampleSnap == nullptr) return;
+
+    {
+        const auto slots = getPlaceholderSlots (sampleSnap);
+        if (const auto* slot = findPlaceholderAt (slots, e.x))
+        {
+            if (hoveredHandle != HoveredHandle::None)
+            {
+                hoveredHandle = HoveredHandle::None;
+                repaint();
+            }
+            setMouseCursor (slot->relinkButton.contains (e.getPosition()) ? juce::MouseCursor::PointingHandCursor
+                                                                         : juce::MouseCursor::NormalCursor);
+            return;
+        }
+    }
     const auto& ui = processor.getUiSliceSnapshot();
     int sel = ui.selectedSlice;
     int num = ui.numSlices;
@@ -772,7 +911,7 @@ void WaveformView::mouseMove (const juce::MouseEvent& e)
     if (sel >= 0 && sel < num && ! sliceDrawMode && ! altModeActive)
     {
         const auto& s = ui.slices[(size_t) sel];
-        if (s.active)
+        if (isEditableSlice (s))
         {
             const bool useLoopPreview = dragSliceIdx == sel
                 && (dragMode == DragLoopLeft || dragMode == DragLoopRight);
@@ -861,6 +1000,17 @@ void WaveformView::mouseDown (const juce::MouseEvent& e)
         return;
     }
 
+    // A placeholder slot holds no audio: its only action is RELINK.
+    {
+        const auto slots = getPlaceholderSlots (sampleSnap);
+        if (const auto* slot = findPlaceholderAt (slots, e.x))
+        {
+            if (slot->relinkButton.contains (e.getPosition()) && onRelinkRequested != nullptr)
+                onRelinkRequested (slot->sampleId);
+            return;
+        }
+    }
+
     int samplePos = std::max (0, std::min (pixelToSample (e.x), sampleSnap->buffer.getNumSamples()));
 
     // Shift+click: preview audio from pointer position
@@ -891,7 +1041,7 @@ void WaveformView::mouseDown (const juce::MouseEvent& e)
     if (sel >= 0 && sel < num)
     {
         const auto& s = ui.slices[(size_t) sel];
-        if (s.active)
+        if (isEditableSlice (s))
         {
             auto tryBeginMouseBoundsDrag = [&] (DragMode newMode) -> bool
             {
@@ -1347,9 +1497,9 @@ bool WaveformView::isInterestedInFileDrag (const juce::StringArray& files)
     return false;
 }
 
-void WaveformView::filesDropped (const juce::StringArray& files, int, int)
+void WaveformView::filesDropped (const juce::StringArray& files, int x, int)
 {
-    loadDroppedFiles (files);
+    loadDroppedFiles (files, x);
 }
 
 bool WaveformView::isInterestedInDragSource (const juce::DragAndDropTarget::SourceDetails& dragSourceDetails)
@@ -1363,12 +1513,13 @@ void WaveformView::itemDropped (const juce::DragAndDropTarget::SourceDetails& dr
     if (! text.startsWith ("INTERSECT_BROWSER_FILES\n"))
         return;
 
-    loadDroppedFiles (juce::StringArray::fromLines (text.fromFirstOccurrenceOf ("\n", false, false)));
+    loadDroppedFiles (juce::StringArray::fromLines (text.fromFirstOccurrenceOf ("\n", false, false)),
+                      dragSourceDetails.localPosition.x);
 }
 
 // Shared by OS and browser drops. A preset replaces the whole kit, so the first one in a drop
 // wins and everything else is ignored; otherwise audio files follow the usual replace/append rule.
-void WaveformView::loadDroppedFiles (const juce::StringArray& paths)
+void WaveformView::loadDroppedFiles (const juce::StringArray& paths, int dropX)
 {
     std::vector<juce::File> audioFiles;
     audioFiles.reserve ((size_t) paths.size());
@@ -1396,6 +1547,15 @@ void WaveformView::loadDroppedFiles (const juce::StringArray& paths)
 
     if (audioFiles.empty())
         return;
+
+    // Dropping a file onto a placeholder slot relinks that sample.
+    const auto slots = getPlaceholderSlots (processor.sampleData.getSnapshot());
+    if (const auto* slot = findPlaceholderAt (slots, dropX); slot != nullptr && onRelinkFileDropped != nullptr)
+    {
+        onRelinkFileDropped (slot->sampleId, audioFiles.front());
+        prevCacheKey = {};
+        return;
+    }
 
     const bool append = processor.sampleData.isLoaded();
     processor.loadFilesAsync (audioFiles, append);

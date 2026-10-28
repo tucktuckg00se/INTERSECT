@@ -89,16 +89,35 @@ std::unique_ptr<SampleData::DecodedSample> SampleData::decodeFromFiles (const st
     {
         juce::AudioBuffer<float> buffer;
         SessionSample meta;
+        std::vector<DecodedSample::ImportedSlice> importedSlices;   // offsets within this region
     };
 
     std::vector<DecodedRegion> regions;
     regions.reserve (files.size());
+
+    // Placeholders are sized once every real file is decoded, so frame positions are
+    // assigned in a second pass below.
+    auto addPlaceholder = [&regions] (const juce::File& file, int sampleId, SessionSample::Availability availability)
+    {
+        DecodedRegion region;
+        region.meta.sampleId = sampleId;
+        region.meta.fileName = file.getFileName();
+        region.meta.filePath = file.getFullPathName();
+        region.meta.availability = availability;
+        regions.push_back (std::move (region));
+    };
 
     for (size_t i = 0; i < files.size(); ++i)
     {
         const auto& file = files[i];
 
         const int sampleId = sampleIds != nullptr && i < sampleIds->size() ? (*sampleIds)[i] : (int) i;
+
+        if (! file.existsAsFile())
+        {
+            addPlaceholder (file, sampleId, SessionSample::Availability::missing);
+            continue;
+        }
 
         // REX2 loops are decoded with VelociLoops. Their slice positions are always kept
         // as beat anchors; slices themselves are only imported for freshly loaded files.
@@ -112,7 +131,10 @@ std::unique_ptr<SampleData::DecodedSample> SampleData::decodeFromFiles (const st
             if (! Rex2Import::decodeFile (file, targetSampleRate, loop)
                 || loop.stereo.getNumSamples() <= 0
                 || loop.slices.empty())
-                return nullptr;
+            {
+                addPlaceholder (file, sampleId, SessionSample::Availability::unreadable);
+                continue;
+            }
 
             if (targetSampleRate <= 0.0)
                 targetSampleRate = loop.sampleRate;
@@ -126,7 +148,6 @@ std::unique_ptr<SampleData::DecodedSample> SampleData::decodeFromFiles (const st
             region.meta.sampleId = sampleId;
             region.meta.fileName = file.getFileName();
             region.meta.filePath = file.getFullPathName();
-            region.meta.startFrame = totalFrames;
             region.meta.numFrames = numFrames;
             region.meta.sourceNumFrames = loop.sourceNumFrames;
             region.meta.sourceSampleRate = loop.sourceSampleRate;
@@ -141,20 +162,20 @@ std::unique_ptr<SampleData::DecodedSample> SampleData::decodeFromFiles (const st
             if (importSlices)
             {
                 for (const auto& span : loop.slices)
-                    decoded->importedSlices.push_back ({ sampleId,
-                                                         span.startSample + region.meta.startFrame,
-                                                         span.endSample + region.meta.startFrame });
+                    region.importedSlices.push_back ({ sampleId, span.startSample, span.endSample });
             }
 
-            totalFrames += numFrames;
             totalSourceFrames += loop.sourceNumFrames;
             regions.push_back (std::move (region));
             continue;
         }
 
         std::unique_ptr<juce::AudioFormatReader> reader (fm.createReaderFor (file));
-        if (reader == nullptr)
-            return nullptr;
+        if (reader == nullptr || reader->lengthInSamples <= 0)
+        {
+            addPlaceholder (file, sampleId, SessionSample::Availability::unreadable);
+            continue;
+        }
 
         auto numFrames = (int) reader->lengthInSamples;
         auto numChannels = (int) reader->numChannels;
@@ -204,24 +225,66 @@ std::unique_ptr<SampleData::DecodedSample> SampleData::decodeFromFiles (const st
         region.meta.sampleId = sampleId;
         region.meta.fileName = file.getFileName();
         region.meta.filePath = file.getFullPathName();
-        region.meta.startFrame = totalFrames;
         region.meta.numFrames = numFrames;
         region.meta.sourceNumFrames = sourceNumFrames;
         region.meta.sourceSampleRate = sourceSampleRate;
-        totalFrames += numFrames;
         totalSourceFrames += sourceNumFrames;
         regions.push_back (std::move (region));
     }
 
+    if (targetSampleRate <= 0.0)
+        targetSampleRate = projectSampleRate > 0.0 ? projectSampleRate : 44100.0;
+
+    // Every placeholder gets the same silent length: about an average loaded sample
+    // (1-10 s) next to real audio, or 2 s each when nothing loaded so the slots share
+    // the view evenly.
+    {
+        int loadedCount = 0;
+        juce::int64 loadedFrames = 0;
+        for (const auto& region : regions)
+        {
+            if (! region.meta.isPlaceholder())
+            {
+                ++loadedCount;
+                loadedFrames += region.meta.numFrames;
+            }
+        }
+
+        const int placeholderFrames = loadedCount > 0
+            ? juce::jlimit ((int) targetSampleRate, (int) (targetSampleRate * 10.0),
+                            (int) (loadedFrames / loadedCount))
+            : (int) (targetSampleRate * 2.0);
+
+        for (auto& region : regions)
+        {
+            if (region.meta.isPlaceholder())
+            {
+                region.meta.numFrames = placeholderFrames;
+                region.buffer.setSize (2, placeholderFrames);
+                region.buffer.clear();
+            }
+        }
+    }
+
+    for (auto& region : regions)
+    {
+        region.meta.startFrame = totalFrames;
+        totalFrames += region.meta.numFrames;
+    }
+
     decoded->buffer.setSize (2, totalFrames);
-    int writePos = 0;
     for (auto& region : regions)
     {
         const int regionFrames = region.buffer.getNumSamples();
-        decoded->buffer.copyFrom (0, writePos, region.buffer, 0, 0, regionFrames);
-        decoded->buffer.copyFrom (1, writePos, region.buffer, 1, 0, regionFrames);
+        decoded->buffer.copyFrom (0, region.meta.startFrame, region.buffer, 0, 0, regionFrames);
+        decoded->buffer.copyFrom (1, region.meta.startFrame, region.buffer, 1, 0, regionFrames);
+        for (auto imported : region.importedSlices)
+        {
+            imported.startSample += region.meta.startFrame;
+            imported.endSample += region.meta.startFrame;
+            decoded->importedSlices.push_back (imported);
+        }
         decoded->sessionSamples.push_back (region.meta);
-        writePos += regionFrames;
     }
 
     if (! decoded->sessionSamples.empty())
@@ -237,6 +300,12 @@ std::unique_ptr<SampleData::DecodedSample> SampleData::decodeFromFiles (const st
         decoded->importSliceSampleIds = *importSliceSampleIds;
     buildMipmapsForBuffer (decoded->buffer, decoded->peakMipmaps);
     return decoded;
+}
+
+bool SampleData::DecodedSample::hasPlaceholders() const
+{
+    return std::any_of (sessionSamples.begin(), sessionSamples.end(),
+                        [] (const SessionSample& sample) { return sample.isPlaceholder(); });
 }
 
 std::unique_ptr<SampleData::DecodedSample> SampleData::rebuildWithSessionSamples (const DecodedSample& source,

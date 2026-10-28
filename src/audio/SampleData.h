@@ -29,9 +29,14 @@ public:
 
     struct SessionSample
     {
+        // A session sample whose file couldn't be loaded stays in the kit as a silent
+        // placeholder (same id, path, params and slices) until the user relinks it.
+        enum class Availability { loaded, missing, unreadable };
+
         int sampleId = 0;
         juce::String fileName;
         juce::String filePath;
+        Availability availability = Availability::loaded;
         int startFrame = 0;
         int numFrames = 0;
         int sourceNumFrames = 0;
@@ -48,6 +53,8 @@ public:
         };
         std::vector<BeatAnchor> beatAnchors;
         float anchorTempoBpm = 0.0f;
+
+        bool isPlaceholder() const { return availability != Availability::loaded; }
     };
 
     struct DecodedSample
@@ -74,6 +81,8 @@ public:
         };
         std::vector<ImportedSlice> importedSlices;
         std::vector<int> importSliceSampleIds;   // carried so a sample-rate retry imports the same set
+
+        bool hasPlaceholders() const;
     };
 
     using SnapshotPtr = std::shared_ptr<const DecodedSample>;
@@ -82,6 +91,8 @@ public:
 
     static std::unique_ptr<DecodedSample> decodeFromFile (const juce::File& file,
                                                            double projectSampleRate);
+    // Files that don't exist or can't be decoded become silent placeholders of equal length
+    // (see SessionSample::Availability); returns nullptr only when `files` is empty.
     static std::unique_ptr<DecodedSample> decodeFromFiles (const std::vector<juce::File>& files,
                                                            double projectSampleRate,
                                                            const std::vector<int>* sampleIds = nullptr,

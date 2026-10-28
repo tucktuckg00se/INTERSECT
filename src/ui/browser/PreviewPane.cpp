@@ -103,6 +103,17 @@ void PreviewPane::setSelection (std::vector<Browser::FileRow> selected, const Br
     repaint();
 }
 
+void PreviewPane::setRelinkMode (bool shouldRelink)
+{
+    if (relinkMode == shouldRelink)
+        return;
+
+    relinkMode = shouldRelink;
+    updateButtons();
+    resized();
+    repaint();
+}
+
 void PreviewPane::setAuditionStatus (const AuditionStatus& status)
 {
     const bool changed = status.state != audition.state
@@ -173,6 +184,14 @@ void PreviewPane::updateButtons()
         case Mode::multi:
         {
             const bool anyAudio = countSelectedAudio() > 0 || focusIsAudio;
+            if (relinkMode)
+            {
+                primaryButton.setButtonText ("RELINK");
+                primaryButton.setTooltip ("Use this file for the missing sample (double-click / Return)");
+                primaryButton.setVisible (focusIsAudio);
+                secondaryButton.setVisible (false);
+                break;
+            }
             primaryButton.setButtonText ("ADD");
             secondaryButton.setButtonText ("LOAD");
             primaryButton.setTooltip ("Add to the kit (double-click / Return)");
@@ -184,7 +203,7 @@ void PreviewPane::updateButtons()
         case Mode::preset:
             primaryButton.setButtonText ("LOAD PRESET");
             primaryButton.setTooltip ("Load this preset, replacing the kit");
-            primaryButton.setVisible (true);
+            primaryButton.setVisible (! relinkMode);
             secondaryButton.setVisible (false);
             break;
         case Mode::folder:
@@ -259,9 +278,13 @@ void PreviewPane::paint (juce::Graphics& g)
     {
         g.setColour (getTheme().text0.withAlpha (0.9f));
         g.setFont (IntersectLookAndFeel::makeFont (9.5f));
-        g.drawFittedText ("Select a file to see and hear it.\n\n"
-                          "Double-click or Return adds audio to the kit. Hold Shift to load it instead, replacing the kit.\n\n"
-                          "Drag files onto the sample lane to add them.",
+        g.drawFittedText (relinkMode
+                              ? juce::String ("Select a file to see and hear it.\n\n"
+                                              "Double-click or Return uses it in place of the missing sample. "
+                                              "Its slices and settings are kept.")
+                              : juce::String ("Select a file to see and hear it.\n\n"
+                                              "Double-click or Return adds audio to the kit. Hold Shift to load it instead, replacing the kit.\n\n"
+                                              "Drag files onto the sample lane to add them."),
                           getLocalBounds().reduced (16, 24), juce::Justification::centredTop, 12, 1.0f);
         return;
     }

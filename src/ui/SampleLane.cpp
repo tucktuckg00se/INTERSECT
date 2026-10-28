@@ -73,16 +73,18 @@ std::vector<SampleLane::VisibleSample> SampleLane::buildVisibleSamples() const
         visible.x1 = x1;
         visible.x2 = x2;
         visible.selected = sample.sampleId == selectedId;
-        visible.colour = getTheme().slicePalette[(15 - (i % 16) + 16) % 16];
-        visible.label = sample.fileName.toString();
+        visible.missing = sample.isPlaceholder();
+        visible.colour = visible.missing ? getTheme().color5
+                                         : getTheme().slicePalette[(15 - (i % 16) + 16) % 16];
+        visible.label = visible.missing ? "! " + sample.fileName.toString() : sample.fileName.toString();
         const bool jobRunning = isStemJobRunningForSample (ui, sample.sampleId);
         const int blockW = x2 - x1;
         const int buttonH = juce::jmax (12, getHeight() - 6);
         const int buttonY = (getHeight() - buttonH) / 2;
         const int deleteW = juce::jmin (16, juce::jmax (12, blockW / 6));
         const int cancelW = juce::jmin (54, juce::jmax (34, blockW / 2));
-        const int stemsW = jobRunning ? cancelW : juce::jmin (44, juce::jmax (18, blockW / 3));
-        const int midiW = jobRunning ? 0 : juce::jmin (40, juce::jmax (18, blockW / 4));
+        const int stemsW = visible.missing ? 0 : jobRunning ? cancelW : juce::jmin (44, juce::jmax (18, blockW / 3));
+        const int midiW = (jobRunning || visible.missing) ? 0 : juce::jmin (40, juce::jmax (18, blockW / 4));
         int right = x2 - 3;
         visible.deleteBounds = { right - deleteW, buttonY, deleteW, buttonH };
         right = visible.deleteBounds.getX() - 2;
@@ -169,7 +171,9 @@ void SampleLane::paint (juce::Graphics& g)
                 labelX = end + 1;
         }
 
-        const int buttonsLeft = sample.midiBounds.isEmpty() ? sample.stemsBounds.getX() : sample.midiBounds.getX();
+        const int buttonsLeft = ! sample.midiBounds.isEmpty()  ? sample.midiBounds.getX()
+                              : ! sample.stemsBounds.isEmpty() ? sample.stemsBounds.getX()
+                                                               : sample.deleteBounds.getX();
         const int maxLabelRight = juce::jmin (buttonsLeft - 2, getWidth());
         const int availableLabelW = juce::jmax (1, maxLabelRight - labelX - 2);
         if (availableLabelW >= 8)
@@ -197,7 +201,11 @@ void SampleLane::paint (juce::Graphics& g)
     for (const auto& sample : visible)
     {
         const bool jobRunning = isStemJobRunningForSample (ui, sample.sampleId);
-        if (jobRunning)
+        if (sample.missing)
+        {
+            // No audio: only removal applies; clicking the chip itself relinks.
+        }
+        else if (jobRunning)
         {
             drawButton (sample.stemsBounds,
                         "CANCEL",
@@ -411,6 +419,15 @@ void SampleLane::mouseUp (const juce::MouseEvent& e)
 
     if (dragging && dragSampleId >= 0 && dragTargetIndex >= 0)
         processor.reorderSessionSampleAsync (dragSampleId, dragTargetIndex);
+    else if (! dragging && dragSampleId >= 0 && onRelinkRequested != nullptr)
+    {
+        const auto visible = buildVisibleSamples();
+        const int sampleId = dragSampleId;
+        const auto it = std::find_if (visible.begin(), visible.end(),
+                                      [sampleId] (const VisibleSample& s) { return s.sampleId == sampleId; });
+        if (it != visible.end() && it->missing)
+            onRelinkRequested (sampleId);
+    }
 
     dragSampleId = -1;
     dragTargetIndex = -1;
@@ -431,6 +448,8 @@ juce::String SampleLane::getTooltip()
                        : "Separate this sample into stems";
         if (sample.deleteBounds.contains (pos))
             return "Remove this sample from the kit";
+        if (sample.missing && sample.x1 <= pos.x && pos.x < sample.x2)
+            return "File not found - click to relink it";
     }
     return {};
 }

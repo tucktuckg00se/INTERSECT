@@ -42,6 +42,14 @@ public:
 
     /** Navigates to the file's folder and selects it without starting a preview. */
     void revealFile (const juce::File& file);
+
+    /** Relink mode: the next audio file chosen (double-click, Return, RELINK, drag-free) is reported
+        through onRelinkFile for this missing session sample instead of being added to the kit.
+        Opens at the missing file's folder (or its nearest existing parent). */
+    void beginRelink (int sampleId, const juce::String& fileName, const juce::File& originalFile);
+    void endRelink();
+    bool isRelinking() const noexcept { return relinkSampleId >= 0; }
+    int getRelinkSampleId() const noexcept { return relinkSampleId; }
     /** Starts inline renaming of a preset in the current listing (see FileTable::beginRename). */
     void beginRename (const juce::File& presetFile);
     /** Where SAVE puts a new preset: the folder being browsed when it is inside the default or
@@ -64,6 +72,7 @@ public:
     /** Right-click Export... / Export with Samples... on a preset. */
     std::function<void (const juce::File& preset, bool embedSamples)> onExportRequested;
     std::function<void()> onCloseRequested;
+    std::function<void (int sampleId, const juce::File& file)> onRelinkFile;
     /** Bookmarks, recent folders, AUTO or volume changed and should be saved. */
     std::function<void()> onPersistentStateChanged;
     std::function<void (const juce::File&)> onAuditionRequested;
@@ -99,6 +108,7 @@ private:
     bool canRenamePreset (const juce::File& preset, const juce::String& newName);
     void renamePreset (const juce::File& preset, const juce::String& newName);
     void showTemporaryStatus (const juce::String& text);
+    void relinkWith (const std::vector<juce::File>& files);
 
     void onSearchTextChanged();
     void launchSearch();
@@ -127,6 +137,11 @@ private:
     int historyIndex = -1;
 
     juce::File lastFocusedFile;
+
+    int relinkSampleId = -1;
+    juce::String relinkFileName;
+    juce::Rectangle<int> relinkBannerBounds;
+    juce::TextButton relinkCancelButton { "CANCEL" };
     int auditionRequestId = 0;
     AuditionStatus audition;
 

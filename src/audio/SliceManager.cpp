@@ -111,7 +111,7 @@ void SliceManager::rebuildMidiMap()
     for (int i = 0; i < numSlices; ++i)
     {
         const auto sliceIndex = (size_t) i;
-        if (slices[sliceIndex].active)
+        if (slices[sliceIndex].active && ! slices[sliceIndex].parked)
         {
             int lo = juce::jlimit (0, kMaxMidiNote, slices[sliceIndex].midiNote);
             int hi = juce::jlimit (lo, kMaxMidiNote, slices[sliceIndex].highNote);

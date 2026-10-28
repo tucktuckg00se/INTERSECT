@@ -75,7 +75,6 @@ public:
         CmdSplitSlice,
         CmdTransientChop,
         CmdRepackMidi,
-        CmdRelinkFile,
         CmdFileLoadCompleted,
         CmdFileLoadFailed,
         CmdUndo,
@@ -91,7 +90,6 @@ public:
     enum LoadKind
     {
         LoadKindReplace = 0,
-        LoadKindRelink = 1,
         LoadKindPreserveSlices = 2,
     };
 
@@ -161,7 +159,9 @@ public:
 
     void loadFileAsync (const juce::File& file);
     void loadFilesAsync (const std::vector<juce::File>& files, bool append);
-    void relinkFileAsync (const juce::File& file);
+    // Points session samples at new files (sampleId -> file) and reloads the kit with the same
+    // ids, so params, stem metadata and slices are kept. Message thread; takes one undo step.
+    void relinkSessionSamplesAsync (const std::vector<std::pair<int, juce::File>>& relinks);
     void reorderSessionSampleAsync (int sourceSampleId, int targetIndex);
     void deleteSessionSampleAsync (int sampleId);
     void startStemSeparation (int sampleId,
@@ -227,9 +227,14 @@ public:
             int numFrames = 0;
             RtText<256> fileName;
             SampleParams params;   // this sample's own sample-level parameters
+            SampleData::SessionSample::Availability availability = SampleData::SessionSample::Availability::loaded;
+            int parkedSlices = 0;  // slices kept for a placeholder until it is relinked
+
+            bool isPlaceholder() const { return availability != SampleData::SessionSample::Availability::loaded; }
         };
 
         int numSessionSamples = 0;
+        int numMissingSessionSamples = 0;
         int selectedSessionSampleId = -1;
         int numSlices = 0;
         int selectedSlice = -1;
@@ -349,7 +354,7 @@ public:
 
     MidiEditState midiEditState;
 
-    // Missing sample state (for relink UI)
+    // True while any session sample is a placeholder awaiting relink
     std::atomic<bool> sampleMissing { false };
     std::atomic<int> sampleAvailability { (int) SampleStateEmpty };
     std::atomic<int> selectedSessionSampleId { -1 };
@@ -365,13 +370,6 @@ private:
         int token = 0;
         LoadKind kind = LoadKindReplace;
         RtText<512> fileName;
-        RtText<4096> filePath;
-    };
-
-    struct MissingFileInfo
-    {
-        RtText<512> fileName;
-        RtText<4096> filePath;
     };
 
     struct UiStatusMessage
@@ -468,9 +466,9 @@ private:
     void handleAsyncUpdate() override;
     void handleStemJobCompletionOnMessageThread();
     void handleDownloadCompletionsOnMessageThread();
-    void setMissingFileInfo (const RtText<512>& fileName, const RtText<4096>& filePath);
-    void clearMissingFileInfo();
-    const MissingFileInfo& getMissingFileInfo() const;
+    void updateSampleMissingState();
+    void deselectParkedSlice();
+    bool isPlaceholderSample (int sampleId) const;
     void setUiStatusMessage (const juce::String& text, bool isWarning,
                              UiStatusMessage::Source source = UiStatusMessage::Source::generic);
     void setUiStatusMessage (const StatusText& text,
@@ -613,8 +611,6 @@ private:
 
     std::array<ParamUndoState, 2> pendingParamRestoreStates {};
     std::atomic<int> pendingParamRestoreIndex { -1 };
-    std::array<MissingFileInfo, 2> missingFileInfos {};
-    std::atomic<int> missingFileInfoIndex { 0 };
     std::array<UiStatusMessage, 2> uiStatusMessages {};
     std::atomic<int> uiStatusMessageIndex { 0 };
     std::atomic<int> pendingStateRestoreToken { 0 };

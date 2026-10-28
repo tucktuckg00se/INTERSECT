@@ -10,6 +10,8 @@ class HeaderBar : public juce::Component,
 public:
     explicit HeaderBar (IntersectProcessor& p);
     std::function<void()> onBrowserToggle;
+    /** The MISSING label was clicked: relink this missing session sample. */
+    std::function<void (int sampleId)> onRelinkRequested;
     /** SAVE: save the kit straight into the preset library. */
     std::function<void()> onSaveRequested;
     juce::String getTooltip() override;
@@ -22,7 +24,6 @@ public:
 
 private:
     void showSettingsPopup();
-    void openRelinkBrowser();
 
     IntersectProcessor& processor;
     juce::TextButton browserBtn { "FILES" };

@@ -12,6 +12,9 @@ class WaveformView : public juce::Component,
 public:
     explicit WaveformView (IntersectProcessor& p);
     std::function<void()> onInteraction;
+    // RELINK on a missing-sample placeholder slot (sampleId), or a file dropped onto one.
+    std::function<void (int sampleId)> onRelinkRequested;
+    std::function<void (int sampleId, const juce::File& file)> onRelinkFileDropped;
 
     void paint (juce::Graphics& g) override;
     void resized() override;
@@ -44,7 +47,19 @@ public:
     std::vector<int> transientPreviewPositions;
 
 private:
-    void loadDroppedFiles (const juce::StringArray& paths);
+    void loadDroppedFiles (const juce::StringArray& paths, int dropX);
+
+    // A missing-sample placeholder's slot on screen and its RELINK button (may be empty when
+    // the slot is too narrow to fit one).
+    struct PlaceholderSlot
+    {
+        int sampleId = 0;
+        juce::Rectangle<int> bounds;
+        juce::Rectangle<int> relinkButton;
+    };
+    std::vector<PlaceholderSlot> getPlaceholderSlots (const SampleData::SnapshotPtr& sampleSnap) const;
+    const PlaceholderSlot* findPlaceholderAt (const std::vector<PlaceholderSlot>& slots, int x) const;
+    void paintPlaceholders (juce::Graphics& g, const SampleData::SnapshotPtr& sampleSnap);
     struct ViewState
     {
         int numFrames = 0;

@@ -48,6 +48,10 @@ private:
     void replaceKitWithFiles (const std::vector<juce::File>& files);
     void loadPreset (const juce::File& preset);
     void handleDroppedFiles (const std::vector<juce::File>& files);
+    /** Opens the browser in relink mode for a missing session sample. */
+    void startRelink (int sampleId);
+    /** Points a missing sample at file; other missing samples found by name next to it follow. */
+    void relinkSample (int sampleId, const juce::File& file);
     void openFileDialog();
     void saveKitToLibrary();
     void exportPreset (const juce::File& preset, bool embedSamples);

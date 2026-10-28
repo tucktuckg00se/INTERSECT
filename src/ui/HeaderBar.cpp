@@ -6,6 +6,14 @@
 
 namespace
 {
+juce::String firstMissingSampleName (const IntersectProcessor::UiSliceSnapshot& ui)
+{
+    for (int i = 0; i < ui.numSessionSamples; ++i)
+        if (ui.sessionSamples[(size_t) i].isPlaceholder())
+            return ui.sessionSamples[(size_t) i].fileName.toString();
+    return {};
+}
+
 enum SettingsMenuItemId
 {
     kMenuScaleStatus = 1000,
@@ -124,6 +132,8 @@ juce::String HeaderBar::getTooltip()
     const auto& ui = processor.getUiSliceSnapshot();
     if (ui.hasStatusMessage && ui.statusIsWarning)
         return "Copy message";
+    if (ui.numMissingSessionSamples > 0)
+        return "Relink missing sample";
 
     return {};
 }
@@ -198,9 +208,11 @@ void HeaderBar::paint (juce::Graphics& g)
         g.setColour (ui.statusIsWarning ? getTheme().color5.brighter (0.1f)
                                         : getTheme().text1);
     }
-    else if (ui.sampleMissing)
+    else if (ui.numMissingSessionSamples > 0)
     {
-        fileText = "MISSING: " + ui.sampleFileName.toString();
+        fileText = ui.numMissingSessionSamples > 1
+            ? juce::String (ui.numMissingSessionSamples) + " SAMPLES MISSING - CLICK TO RELINK"
+            : "MISSING: " + firstMissingSampleName (ui) + " - CLICK TO RELINK";
         g.setColour (getTheme().color5.brighter (0.1f));
     }
     else
@@ -220,6 +232,17 @@ void HeaderBar::mouseDown (const juce::MouseEvent& e)
         const auto& ui = processor.getUiSliceSnapshot();
         if (ui.hasStatusMessage && ui.statusIsWarning)
             juce::SystemClipboard::copyTextToClipboard (ui.statusMessage.toString());
+        else if (onRelinkRequested != nullptr)
+        {
+            for (int i = 0; i < ui.numSessionSamples; ++i)
+            {
+                if (ui.sessionSamples[(size_t) i].isPlaceholder())
+                {
+                    onRelinkRequested (ui.sessionSamples[(size_t) i].sampleId);
+                    break;
+                }
+            }
+        }
     }
 }
 
@@ -565,19 +588,3 @@ void HeaderBar::setBrowserActive (bool isActive)
     repaint();
 }
 
-void HeaderBar::openRelinkBrowser()
-{
-    fileChooser = std::make_unique<juce::FileChooser> (
-        "Relink Audio File",
-        juce::File(),
-        "*.wav;*.ogg;*.aiff;*.aif;*.flac;*.mp3;*.rx2");
-
-    fileChooser->launchAsync (juce::FileBrowserComponent::openMode
-                                | juce::FileBrowserComponent::canSelectFiles,
-        [this] (const juce::FileChooser& fc)
-        {
-            auto result = fc.getResult();
-            if (result.existsAsFile())
-                processor.relinkFileAsync (result);
-        });
-}

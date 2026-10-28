@@ -5,6 +5,7 @@ juce_add_console_app(IntersectAudioTests
 
 target_sources(IntersectAudioTests PRIVATE
     LazyChopEngineTests.cpp
+    SampleDataTests.cpp
     ../src/audio/LazyChopEngine.cpp
     ../src/audio/VoicePool.cpp
     ../src/audio/SliceManager.cpp

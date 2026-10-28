@@ -23,6 +23,8 @@ public:
     std::function<juce::File (int sampleId)> writeMidiForDrag;
     /** MIDI clicked on a sample: save that sample's slices as a .mid via a file chooser. */
     std::function<void (int sampleId)> onMidiSaveRequested;
+    /** A missing sample's chip was clicked: relink it. */
+    std::function<void (int sampleId)> onRelinkRequested;
 
     /** While browsing, an empty lane explains how to add files. */
     void setShowEmptyHint (bool shouldShow);
@@ -48,6 +50,7 @@ private:
         int x1 = 0;
         int x2 = 0;
         bool selected = false;
+        bool missing = false;   // placeholder awaiting relink: no MIDI or STEMS
         juce::Colour colour;
         juce::String label;
         juce::Rectangle<int> midiBounds;

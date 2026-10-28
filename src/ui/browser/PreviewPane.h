@@ -21,6 +21,8 @@ public:
     void infoUpdated();
 
     void setAutoPlay (bool shouldAutoPlay);
+    /** Relinking a missing sample: the audio action becomes RELINK and presets can't be loaded. */
+    void setRelinkMode (bool shouldRelink);
     bool getAutoPlay() const noexcept { return autoPlay; }
     void setGainDb (float db);
     float getGainDb() const noexcept { return gainDb; }
@@ -83,6 +85,7 @@ private:
 
     AuditionStatus audition;
     bool autoPlay = true;
+    bool relinkMode = false;
     float gainDb = kDefaultGainDb;
 
     juce::TextButton playButton { "PLAY" };

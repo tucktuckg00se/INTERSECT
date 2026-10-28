@@ -213,7 +213,6 @@ static bool isCriticalCommand (IntersectProcessor::CommandType type)
         case IntersectProcessor::CmdDuplicateSlice:
         case IntersectProcessor::CmdSplitSlice:
         case IntersectProcessor::CmdTransientChop:
-        case IntersectProcessor::CmdRelinkFile:
         case IntersectProcessor::CmdUndo:
         case IntersectProcessor::CmdRedo:
         case IntersectProcessor::CmdPanic:
@@ -384,26 +383,6 @@ void IntersectProcessor::setStandaloneTransportBpm (float newBpm) noexcept
 float IntersectProcessor::getStandaloneTransportBpm() const noexcept
 {
     return standaloneTransportBpm.load (std::memory_order_relaxed);
-}
-
-void IntersectProcessor::setMissingFileInfo (const RtText<512>& fileName, const RtText<4096>& filePath)
-{
-    const int writeIndex = 1 - missingFileInfoIndex.load (std::memory_order_relaxed);
-    missingFileInfos[(size_t) writeIndex].fileName = fileName;
-    missingFileInfos[(size_t) writeIndex].filePath = filePath;
-    missingFileInfoIndex.store (writeIndex, std::memory_order_release);
-}
-
-void IntersectProcessor::clearMissingFileInfo()
-{
-    const int writeIndex = 1 - missingFileInfoIndex.load (std::memory_order_relaxed);
-    missingFileInfos[(size_t) writeIndex] = {};
-    missingFileInfoIndex.store (writeIndex, std::memory_order_release);
-}
-
-const IntersectProcessor::MissingFileInfo& IntersectProcessor::getMissingFileInfo() const
-{
-    return missingFileInfos[(size_t) missingFileInfoIndex.load (std::memory_order_acquire)];
 }
 
 void IntersectProcessor::setUiStatusMessage (const juce::String& text, bool isWarning,
@@ -680,7 +659,7 @@ void IntersectProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
             files.emplace_back (sample.filePath);
             sampleIds.push_back (sample.sampleId);
         }
-        requestSampleLoad (files, LoadKindRelink, &sampleIds);
+        requestSampleLoad (files, LoadKindPreserveSlices, &sampleIds);
     }
 }
 
@@ -739,7 +718,6 @@ int IntersectProcessor::requestSampleLoad (const std::vector<juce::File>& files,
         payload->token = finishedToken;
         payload->kind = finishedKind;
         payload->fileName.assign (failedFile.getFileName());
-        payload->filePath.assign (failedFile.getFullPathName());
         auto* old = completedLoadFailure.exchange (payload, std::memory_order_acq_rel);
         delete old;
     };
@@ -805,10 +783,41 @@ void IntersectProcessor::loadFilesAsync (const std::vector<juce::File>& files, b
     requestSampleLoad (orderedFiles, LoadKindReplace, &sampleIds, &sampleIds);
 }
 
-void IntersectProcessor::relinkFileAsync (const juce::File& file)
+void IntersectProcessor::relinkSessionSamplesAsync (const std::vector<std::pair<int, juce::File>>& relinks)
 {
+    auto sampleSnap = sampleData.getSnapshot();
+    if (sampleSnap == nullptr || sampleSnap->sessionSamples.empty() || relinks.empty())
+        return;
+
+    std::vector<juce::File> files;
+    std::vector<int> sampleIds;
+    files.reserve (sampleSnap->sessionSamples.size());
+    sampleIds.reserve (sampleSnap->sessionSamples.size());
+    bool changed = false;
+
+    for (const auto& sample : sampleSnap->sessionSamples)
+    {
+        juce::File file (sample.filePath);
+        for (const auto& [sampleId, replacement] : relinks)
+        {
+            if (sampleId == sample.sampleId && replacement.existsAsFile())
+            {
+                changed = changed || replacement != file || sample.isPlaceholder();
+                file = replacement;
+            }
+        }
+        files.push_back (file);
+        sampleIds.push_back (sample.sampleId);
+    }
+
+    if (! changed || ! enqueueUiUndoSnapshot())
+        return;
+
+    // Same ids, so per-sample params, stem metadata and the parked slices all carry over.
     pendingStateRestoreToken.store (0, std::memory_order_release);
-    requestSampleLoad (std::vector<juce::File> { file }, LoadKindRelink);
+    setPendingStateFile (files.front());
+    setPendingStateFiles (files);
+    requestSampleLoad (files, LoadKindPreserveSlices, &sampleIds);
 }
 
 void IntersectProcessor::reorderSessionSampleAsync (int sourceSampleId, int targetIndex)
@@ -1204,9 +1213,13 @@ bool IntersectProcessor::applyPendingSliceTimelineRemap()
         return false;
     }
 
-    const double ratio = (double) targetFrames / (double) sourceFrames;
-    const bool needsRemap = std::abs (ratio - 1.0) > 0.0001
-        || (sourceRate > 0.0 && targetRate > 0.0 && std::abs (sourceRate - targetRate) > 0.01);
+    // Prefer the sample-rate ratio when the saved rate is known: the total frame count also
+    // counts silent placeholders and per-file lengths, so it only stands in for old states
+    // that never recorded their rate.
+    const double ratio = (sourceRate > 0.0 && targetRate > 0.0)
+        ? targetRate / sourceRate
+        : (double) targetFrames / (double) sourceFrames;
+    const bool needsRemap = std::abs (ratio - 1.0) > 0.0001;
 
     if (! needsRemap)
     {
@@ -1268,11 +1281,50 @@ int IntersectProcessor::generateSessionSampleId()
     return nextSessionSampleId.fetch_add (1, std::memory_order_relaxed) + 1;
 }
 
+bool IntersectProcessor::isPlaceholderSample (int sampleId) const
+{
+    const auto sampleSnap = sampleData.getSnapshot();
+    if (sampleSnap == nullptr)
+        return false;
+
+    for (const auto& sample : sampleSnap->sessionSamples)
+        if (sample.sampleId == sampleId)
+            return sample.isPlaceholder();
+    return false;
+}
+
+void IntersectProcessor::updateSampleMissingState()
+{
+    const auto sampleSnap = sampleData.getSnapshot();
+    const bool anyMissing = sampleSnap != nullptr && sampleSnap->hasPlaceholders();
+    sampleMissing.store (anyMissing, std::memory_order_relaxed);
+    sampleAvailability.store ((int) (anyMissing ? SampleStateMissingAwaitingRelink
+                                     : sampleData.isLoaded() ? SampleStateLoaded
+                                                             : SampleStateEmpty),
+                              std::memory_order_relaxed);
+}
+
+// Parked slices can't be edited (their sample has no audio), so they never stay selected.
+void IntersectProcessor::deselectParkedSlice()
+{
+    const int sel = sliceManager.selectedSlice.load (std::memory_order_relaxed);
+    if (sel >= 0 && sel < sliceManager.getNumSlices() && sliceManager.getSlice (sel).parked)
+        sliceManager.selectedSlice.store (-1, std::memory_order_relaxed);
+}
+
 void IntersectProcessor::syncSliceOwnershipFromAbsolute (Slice& slice, bool clampToSessionBounds)
 {
     const auto sampleSnap = sampleData.getSnapshot();
     if (sampleSnap == nullptr || sampleSnap->sessionSamples.empty())
         return;
+
+    // Slices of a placeholder are parked: their in-sample positions are the only record of
+    // where they sit in the real file, so the silent slot must never rewrite them.
+    if (isPlaceholderSample (slice.sampleId))
+    {
+        syncSliceAbsoluteToCurrentSession (slice);
+        return;
+    }
 
     int bestIndex = 0;
     for (int i = 0; i < (int) sampleSnap->sessionSamples.size(); ++i)
@@ -1300,6 +1352,7 @@ void IntersectProcessor::syncSliceOwnershipFromAbsolute (Slice& slice, bool clam
     }
 
     slice.sampleId = owner.sampleId;
+    slice.parked = owner.isPlaceholder();
     slice.startInSample = startInSample;
     slice.endInSample = endInSample;
     slice.startSample = sampleStart + startInSample;
@@ -1329,6 +1382,7 @@ void IntersectProcessor::syncSliceAbsoluteToCurrentSession (Slice& slice)
     if (owner == nullptr)
         owner = &sampleSnap->sessionSamples.front();
 
+    const bool parked = owner->isPlaceholder() && slice.endInSample > slice.startInSample;
     int startInSample = slice.startInSample;
     int endInSample = slice.endInSample;
     if (endInSample <= startInSample)
@@ -1343,10 +1397,17 @@ void IntersectProcessor::syncSliceAbsoluteToCurrentSession (Slice& slice)
         endInSample = juce::jmin (owner->numFrames, startInSample + kMinSliceLengthSamples);
 
     slice.sampleId = owner->sampleId;
-    slice.startInSample = startInSample;
-    slice.endInSample = endInSample;
+    slice.parked = owner->isPlaceholder();
     slice.startSample = owner->startFrame + startInSample;
     slice.endSample = owner->startFrame + endInSample;
+
+    // A parked slice only gets safe absolute bounds inside the silent slot; its in-sample
+    // positions and loop settings wait untouched for the relinked file.
+    if (parked)
+        return;
+
+    slice.startInSample = startInSample;
+    slice.endInSample = endInSample;
 
     const int sLen = slice.endSample - slice.startSample;
     slice.loopStartOffset = juce::jlimit (0, juce::jmax (0, sLen - 1), slice.loopStartOffset);
@@ -1408,9 +1469,7 @@ void IntersectProcessor::deleteSessionSample (int sampleId)
         sampleData.clear();
         sampleParams.clear();
         sliceManager.clearAll();
-        sampleMissing.store (false, std::memory_order_relaxed);
-        sampleAvailability.store ((int) SampleStateEmpty, std::memory_order_relaxed);
-        clearMissingFileInfo();
+        updateSampleMissingState();
         clearPendingStateFiles();
         selectedSessionSampleId.store (-1, std::memory_order_relaxed);
         uiSnapshotDirty.store (true, std::memory_order_release);
@@ -1454,12 +1513,11 @@ void IntersectProcessor::deleteSessionSample (int sampleId)
     clearVoicesBeforeSampleSwap();
     sampleData.applyDecodedSample (std::move (rebuilt));
     sampleParams.syncToSession (sampleData.getSessionSamples());
-    sampleMissing.store (false, std::memory_order_relaxed);
-    sampleAvailability.store ((int) SampleStateLoaded, std::memory_order_relaxed);
-    clearMissingFileInfo();
+    updateSampleMissingState();
     selectedSessionSampleId.store (nextSelectedSampleId, std::memory_order_relaxed);
     syncAllSliceAbsolutePositions();
     clampSlicesToSampleBounds();
+    deselectParkedSlice();
     sliceManager.rebuildMidiMap();
     uiSnapshotDirty.store (true, std::memory_order_release);
 }
@@ -1469,7 +1527,6 @@ void IntersectProcessor::publishUiSliceSnapshot()
     const int writeIndex = 1 - uiSliceSnapshotIndex.load (std::memory_order_relaxed);
     auto& snap = uiSliceSnapshots[(size_t) writeIndex];
     auto sampleSnap = sampleData.getSnapshot();
-    const auto& missingInfo = getMissingFileInfo();
     const auto& status = getUiStatusMessage();
     snap.numSlices = sliceManager.getNumSlices();
     snap.numSessionSamples = sampleSnap ? juce::jmin ((int) sampleSnap->sessionSamples.size(),
@@ -1496,11 +1553,10 @@ void IntersectProcessor::publishUiSliceSnapshot()
         else
             snap.sampleFileName.assign (sampleSnap->fileName);
     }
-    else if (snap.sampleMissing)
-        snap.sampleFileName = missingInfo.fileName;
     else
         snap.sampleFileName.clear();
 
+    snap.numMissingSessionSamples = 0;
     for (int i = 0; i < SampleData::kMaxSessionSamples; ++i)
     {
         if (sampleSnap != nullptr && i < snap.numSessionSamples)
@@ -1512,6 +1568,15 @@ void IntersectProcessor::publishUiSliceSnapshot()
             uiSample.numFrames = sample.numFrames;
             uiSample.fileName.assign (sample.fileName);
             uiSample.params = paramsForSample (sample.sampleId);
+            uiSample.availability = sample.availability;
+            uiSample.parkedSlices = 0;
+            if (sample.isPlaceholder())
+            {
+                ++snap.numMissingSessionSamples;
+                for (int s = 0; s < snap.numSlices; ++s)
+                    if (sliceManager.getSlice (s).sampleId == sample.sampleId)
+                        ++uiSample.parkedSlices;
+            }
         }
         else
         {
@@ -1835,9 +1900,7 @@ void IntersectProcessor::restoreSnapshot (const UndoManager::Snapshot& snap)
     {
         clearVoicesBeforeSampleSwap();
         sampleData.clear();
-        sampleMissing.store (false, std::memory_order_relaxed);
-        sampleAvailability.store ((int) SampleStateEmpty, std::memory_order_relaxed);
-        clearMissingFileInfo();
+        updateSampleMissingState();
         clearPendingStateFile();
         clearPendingStateFiles();
         sliceManager.rebuildMidiMap();
@@ -1869,7 +1932,6 @@ void IntersectProcessor::handleCommand (const Command& cmd)
         case CmdAppendFiles:
         case CmdLazyChopStart:
         case CmdLazyChopStop:
-        case CmdRelinkFile:
         case CmdFileLoadCompleted:
         case CmdFileLoadFailed:
         case CmdUndo:
@@ -2412,10 +2474,6 @@ void IntersectProcessor::handleCommand (const Command& cmd)
             break;
         }
 
-        case CmdRelinkFile:
-            relinkFileAsync (cmd.fileParam);
-            break;
-
         case CmdFileLoadCompleted:
             jassertfalse; // Legacy path no longer used; completions arrive via completedLoadSuccess.
             break;
@@ -2447,6 +2505,8 @@ void IntersectProcessor::handleCommand (const Command& cmd)
         case CmdSelectSlice:
         {
             const int selected = juce::jlimit (-1, juce::jmax (-1, sliceManager.getNumSlices() - 1), cmd.intParam1);
+            if (selected >= 0 && sliceManager.getSlice (selected).parked)
+                break;
             sliceManager.selectedSlice.store (selected, std::memory_order_relaxed);
             if (selected >= 0 && selected < sliceManager.getNumSlices())
                 selectedSessionSampleId.store (sliceManager.getSlice (selected).sampleId, std::memory_order_relaxed);
@@ -2926,10 +2986,8 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 sampleData.applyDecodedSample (std::move (decoded));
                 // New session samples start at factory defaults; removed ones lose their entry.
                 sampleParams.syncToSession (sampleData.getSessionSamples());
-                sampleMissing.store (false);
-                clearMissingFileInfo();
+                updateSampleMissingState();
                 clearPendingStateFiles();
-                sampleAvailability.store ((int) SampleStateLoaded, std::memory_order_relaxed);
                 if (sampleData.getNumSessionSamples() > 0)
                 {
                     const auto& sessionSamples = sampleData.getSessionSamples();
@@ -2986,6 +3044,7 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     applyPendingSliceTimelineRemap();
                     syncAllSliceAbsolutePositions();
                     clampSlicesToSampleBounds();
+                    deselectParkedSlice();
                     sliceManager.rebuildMidiMap();
                 }
 
@@ -3038,14 +3097,10 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         {
             std::unique_ptr<FailedLoadResult> failed (rawFailure);
             const bool isStateRestoreLoad = pendingStateRestoreToken.load (std::memory_order_acquire) == failed->token;
-            if (failed->token == latestLoadToken.load (std::memory_order_acquire)
-                && failed->kind == LoadKindRelink)
+            // Unreadable files become placeholders, so a whole load only fails when the
+            // decoder had nothing to work with; leave the current kit as it is.
+            if (failed->token == latestLoadToken.load (std::memory_order_acquire))
             {
-                sampleMissing.store (true);
-                setMissingFileInfo (failed->fileName, failed->filePath);
-                sampleAvailability.store ((int) SampleStateMissingAwaitingRelink,
-                                         std::memory_order_relaxed);
-
                 if (isStateRestoreLoad)
                     pendingStateRestoreToken.store (0, std::memory_order_release);
 
@@ -3300,12 +3355,6 @@ void IntersectProcessor::getStateInformation (juce::MemoryBlock& destData)
             filePath = sampleSnap->filePath;
             fileName = sampleSnap->fileName;
         }
-    }
-    else if (sampleMissing.load (std::memory_order_relaxed))
-    {
-        const auto& missingInfo = getMissingFileInfo();
-        filePath = missingInfo.filePath.toString();
-        fileName = missingInfo.fileName.toString();
     }
     else
     {
@@ -3873,6 +3922,13 @@ bool IntersectProcessor::restoreState (const void* data, int sizeInBytes, const 
             parsed.startInSample = postSliceResult->sliceStartsInSample[(size_t) i];
             parsed.endInSample = postSliceResult->sliceEndsInSample[(size_t) i];
         }
+        else
+        {
+            // Legacy (pre multi-sample) states store only absolute positions on a single
+            // sample starting at frame 0, so in-sample positions equal absolute ones.
+            parsed.startInSample = parsed.startSample;
+            parsed.endInSample = parsed.endSample;
+        }
 
         sliceManager.getSlice (i) = sanitiseRestoredSlice (parsed);
     }
@@ -3902,10 +3958,14 @@ bool IntersectProcessor::restoreState (const void* data, int sizeInBytes, const 
         }
     }
 
+    // A path that can't be resolved (e.g. saved on another OS) is kept verbatim: the sample
+    // loads as a placeholder the user can relink instead of silently leaving the kit.
     auto resolveSamplePath = [&options] (const juce::String& savedPath)
     {
-        return options.resolveSamplePath != nullptr ? options.resolveSamplePath (savedPath)
-                                                    : juce::File (savedPath);
+        auto file = options.resolveSamplePath != nullptr
+            ? options.resolveSamplePath (savedPath)
+            : (juce::File::isAbsolutePath (savedPath) ? juce::File (savedPath) : juce::File());
+        return file != juce::File() ? file : juce::File::createFileWithoutCheckingPath (savedPath);
     };
 
     std::vector<juce::File> restoreFiles;
@@ -3954,28 +4014,24 @@ bool IntersectProcessor::restoreState (const void* data, int sizeInBytes, const 
 
     if (! restoreFiles.empty())
     {
-        sampleMissing.store (false);
-        clearMissingFileInfo();
+        updateSampleMissingState();
         setPendingStateFile (restoreFiles.front());
         setPendingStateFiles (restoreFiles);
-        sampleAvailability.store ((int) SampleStateEmpty, std::memory_order_relaxed);
         primePendingSliceTimelineRemap (version,
                                         savedDecodedNumFrames,
                                         savedDecodedSampleRate,
                                         savedSourceNumFrames,
                                         savedSourceSampleRate);
-        // Preserve restored slices while loading, and report missing path via relink state.
+        // Preserve restored slices while loading; missing files come back as placeholders.
         selectedSessionSampleId.store (postSliceResult->selectedSessionSampleId, std::memory_order_relaxed);
-        pendingStateRestoreToken.store (requestSampleLoad (restoreFiles, LoadKindRelink, &restoreSampleIds),
+        pendingStateRestoreToken.store (requestSampleLoad (restoreFiles, LoadKindPreserveSlices, &restoreSampleIds),
                                         std::memory_order_release);
     }
     else
     {
-        sampleMissing.store (false);
-        clearMissingFileInfo();
+        updateSampleMissingState();
         clearPendingStateFile();
         clearPendingStateFiles();
-        sampleAvailability.store ((int) SampleStateEmpty, std::memory_order_relaxed);
         clearPendingSliceTimelineRemap();
         selectedSessionSampleId.store (-1, std::memory_order_relaxed);
     }
@@ -4019,10 +4075,6 @@ juce::StringArray IntersectProcessor::getStateSampleFilePaths() const
 
         if (numSessionSamples == 0)
             paths.add (sampleSnap->filePath);
-    }
-    else if (sampleMissing.load (std::memory_order_relaxed))
-    {
-        paths.add (getMissingFileInfo().filePath.toString());
     }
     else if (const auto pendingFile = getPendingStateFile(); pendingFile != juce::File())
     {

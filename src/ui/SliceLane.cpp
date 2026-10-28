@@ -52,7 +52,7 @@ void SliceLane::paint (juce::Graphics& g)
     for (int i = 0; i < num; ++i)
     {
         const auto& s = ui.slices[(size_t) i];
-        if (! s.active) continue;
+        if (! s.active || s.parked) continue;
         int startSample = s.startSample;
         int endSample = s.endSample;
         if (hasPreview && i == previewIdx)
@@ -159,7 +159,7 @@ void SliceLane::mouseDown (const juce::MouseEvent& e)
     for (int i = 0; i < num; ++i)
     {
         const auto& s = ui.slices[(size_t) i];
-        if (! s.active) continue;
+        if (! s.active || s.parked) continue;
 
         int x1 = (int) ((float) (s.startSample - visStart) / visLen * w);
         int x2 = (int) ((float) (s.endSample - visStart) / visLen * w);

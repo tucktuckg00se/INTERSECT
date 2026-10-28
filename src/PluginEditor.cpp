@@ -151,6 +151,11 @@ IntersectEditor::IntersectEditor (IntersectProcessor& p)
     sampleLane.onStemPanelRequested = [this] { setBrowserVisible (false); };
     sampleLane.writeMidiForDrag = [this] (int sampleId) { return writeMidiForDrag (sampleId); };
     sampleLane.onMidiSaveRequested = [this] (int sampleId) { saveMidiAs (sampleId); };
+    sampleLane.onRelinkRequested = [this] (int sampleId) { startRelink (sampleId); };
+    waveformView.onRelinkRequested = [this] (int sampleId) { startRelink (sampleId); };
+    waveformView.onRelinkFileDropped = [this] (int sampleId, const juce::File& file) { relinkSample (sampleId, file); };
+    headerBar.onRelinkRequested = [this] (int sampleId) { startRelink (sampleId); };
+    browser.onRelinkFile = [this] (int sampleId, const juce::File& file) { relinkSample (sampleId, file); };
 
     signalChainBar.onHeightChanged = [this] { applyLogicalSize(); };
 
@@ -524,6 +529,7 @@ void IntersectEditor::setBrowserVisible (bool shouldBeVisible)
     }
     else
     {
+        browser.endRelink();
         processor.stopAudition();
         persistSettings();
         grabKeyboardFocus();
@@ -651,6 +657,69 @@ void IntersectEditor::handleDroppedFiles (const std::vector<juce::File>& files)
     addFilesToKit (files);
 }
 
+void IntersectEditor::startRelink (int sampleId)
+{
+    const auto sampleSnap = processor.sampleData.getSnapshot();
+    if (sampleSnap == nullptr)
+        return;
+
+    for (const auto& sample : sampleSnap->sessionSamples)
+    {
+        if (sample.sampleId == sampleId && sample.isPlaceholder())
+        {
+            processor.selectedSessionSampleId.store (sampleId, std::memory_order_relaxed);
+            processor.markUiSnapshotDirty();
+            setBrowserVisible (true);
+            browser.beginRelink (sampleId, sample.fileName,
+                                 juce::File::createFileWithoutCheckingPath (sample.filePath));
+            return;
+        }
+    }
+}
+
+void IntersectEditor::relinkSample (int sampleId, const juce::File& file)
+{
+    const auto sampleSnap = processor.sampleData.getSnapshot();
+    if (sampleSnap == nullptr || existingAudioFiles ({ file }).empty())
+        return;
+
+    // Missing files usually moved together: any other placeholder whose file name exists next
+    // to the chosen file is relinked in the same step.
+    std::vector<std::pair<int, juce::File>> relinks { { sampleId, file } };
+    const auto folder = file.getParentDirectory();
+    for (const auto& sample : sampleSnap->sessionSamples)
+    {
+        if (sample.sampleId == sampleId || ! sample.isPlaceholder())
+            continue;
+        const auto sibling = folder.getChildFile (sample.fileName);
+        if (sibling.existsAsFile() && ! existingAudioFiles ({ sibling }).empty())
+            relinks.emplace_back (sample.sampleId, sibling);
+    }
+
+    processor.stopAudition();
+    processor.relinkSessionSamplesAsync (relinks);
+    processor.showTransientStatusMessage (relinks.size() == 1
+                                              ? "Relinked " + file.getFileName()
+                                              : "Relinked " + juce::String ((int) relinks.size()) + " samples",
+                                          false);
+
+    // Keep going with the next missing sample, or return to the editor when none are left.
+    for (const auto& sample : sampleSnap->sessionSamples)
+    {
+        const bool handled = std::any_of (relinks.begin(), relinks.end(),
+                                          [&sample] (const auto& r) { return r.first == sample.sampleId; });
+        if (sample.isPlaceholder() && ! handled)
+        {
+            browser.beginRelink (sample.sampleId, sample.fileName,
+                                 juce::File::createFileWithoutCheckingPath (sample.filePath));
+            return;
+        }
+    }
+
+    browser.endRelink();
+    setBrowserVisible (false);
+}
+
 void IntersectEditor::openFileDialog()
 {
     openChooser = std::make_unique<juce::FileChooser> (
@@ -669,6 +738,12 @@ void IntersectEditor::openFileDialog()
 
             std::vector<juce::File> files (results.begin(), results.end());
             browser.revealFile (files.front());
+            if (browser.isRelinking())
+            {
+                if (const auto audio = existingAudioFiles (files); ! audio.empty())
+                    relinkSample (browser.getRelinkSampleId(), audio.front());
+                return;
+            }
             handleDroppedFiles (files);
         });
 }
