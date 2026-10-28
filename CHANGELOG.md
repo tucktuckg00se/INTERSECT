@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.17.2] - 2026-10-27
+
 ### Fixed
 - Clicking an error message in the top bar now copies the whole message. Before, long errors (such as GPU stem separation errors) were cut off after 255 characters, which hid the part that explains what went wrong (#56).
 - Projects made with versions before 0.13 open with their slices again (#57). Before, the sample loaded but every slice was squashed into the first instant, so nothing could be seen or heard.
