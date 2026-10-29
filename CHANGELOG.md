@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-10-29
+
 ### Added
 - Three new stem separation models, each downloadable from the stem view. All are MIT-licensed.
   - **SCNet**: small and fast, and runs well on the CPU.
