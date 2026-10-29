@@ -1,7 +1,5 @@
 #include "SampleLane.h"
-#include "StemExportPanel.h"
 #include "IntersectLookAndFeel.h"
-#include "WaveformView.h"
 #include "browser/BrowserTypes.h"
 #include "../PluginProcessor.h"
 #include <algorithm>
@@ -27,12 +25,9 @@ bool isStemJobRunningForSample (const IntersectProcessor::UiSliceSnapshot& ui, i
 }
 }
 
-SampleLane::SampleLane (IntersectProcessor& p, WaveformView& wv) : processor (p), waveformView (wv) {}
+SampleLane::SampleLane (IntersectProcessor& p) : processor (p) {}
 
-SampleLane::~SampleLane()
-{
-    dismissStemExportPanel();
-}
+SampleLane::~SampleLane() = default;
 
 std::vector<SampleLane::VisibleSample> SampleLane::buildVisibleSamples() const
 {
@@ -331,12 +326,9 @@ void SampleLane::mouseDown (const juce::MouseEvent& e)
         {
             processor.cancelStemSeparation();
         }
-        else
+        else if (onStemViewRequested != nullptr)
         {
-            if (stemExportPanel != nullptr && stemExportPanel->getTargetSampleId() == hitId)
-                dismissStemExportPanel();
-            else
-                showStemExportPanel (hitId);
+            onStemViewRequested (hitId);
         }
         return;
     }
@@ -485,35 +477,4 @@ void SampleLane::itemDropped (const SourceDetails& details)
     const auto files = Browser::parseDragDescription (details.description.toString());
     if (! files.empty() && onFilesDropped != nullptr)
         onFilesDropped (files);
-}
-
-void SampleLane::showStemExportPanel (int sampleId)
-{
-    if (onStemPanelRequested != nullptr)
-        onStemPanelRequested();
-
-    dismissStemExportPanel();
-    stemExportPanel = std::make_unique<StemExportPanel> (processor, sampleId);
-
-    if (auto* editor = waveformView.getParentComponent())
-    {
-        auto wfBounds = waveformView.getBoundsInParent();
-        int panelH = 72;
-        int panelX = wfBounds.getX();
-        int panelW = wfBounds.getWidth();
-        int panelY = wfBounds.getY();
-        stemExportPanel->setBounds (panelX, panelY, panelW, panelH);
-        editor->addAndMakeVisible (*stemExportPanel);
-    }
-}
-
-void SampleLane::dismissStemExportPanel()
-{
-    if (stemExportPanel == nullptr)
-        return;
-
-    if (auto* parent = stemExportPanel->getParentComponent())
-        parent->removeChildComponent (stemExportPanel.get());
-
-    stemExportPanel.reset();
 }

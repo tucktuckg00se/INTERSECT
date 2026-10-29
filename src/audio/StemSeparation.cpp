@@ -1,73 +1,292 @@
 #include "StemSeparation.h"
+#include <algorithm>
 
 namespace
 {
 constexpr auto kStemModelManifestFileName = "intersect_stem_models_manifest.json";
-constexpr auto kStemModelManifestDownloadUrl = "https://github.com/tucktuckg00se/intersect-stem-models/releases/download/v0.1.0/intersect_stem_models_manifest.json";
+constexpr auto kStemModelManifestDownloadUrl = "https://github.com/tucktuckg00se/intersect-stem-models/releases/download/v0.2.0/intersect_stem_models_manifest.json";
 
 constexpr auto kOrtBundleManifestFileName    = "intersect_ort_bundles_manifest.json";
 constexpr auto kOrtBundleManifestDownloadUrl = "https://github.com/tucktuckg00se/intersect-ort-providers/releases/latest/download/intersect_ort_bundles_manifest.json";
 
-const std::array<StemModelCatalogEntry, 1> kStemModelCatalog =
-{{
-    { StemModelId::bsRoformerSw6stem,
-      "BS-RoFormer SW 6-Stem",
-      "bs_roformer_sw_6stem.onnx",
-      "https://github.com/tucktuckg00se/intersect-stem-models/releases/download/v0.1.0/bs_roformer_sw_6stem.onnx",
-      6,
-      { StemRole::bass, StemRole::drums, StemRole::other, StemRole::vocals, StemRole::guitar, StemRole::piano },
-      false,
-      StemRole::unknown,
-      44100.0, 131072, 0.5f },
-}};
+constexpr auto kDefaultStemModelId = "bs-roformer-sw-6stem";
 
-bool applyManifestEntryToCatalogEntry (const juce::var& manifestModel, StemModelCatalogEntry& entry)
+std::vector<StemOutputDesc> makeOutputs (std::initializer_list<const char*> names, const juce::String& group = {})
+{
+    std::vector<StemOutputDesc> outputs;
+    for (const auto* name : names)
+        outputs.push_back ({ name, stemOutputLabelFromName (name), group });
+    return outputs;
+}
+
+std::vector<StemModelCatalogEntry> makeBuiltInCatalog()
+{
+    std::vector<StemModelCatalogEntry> catalog;
+
+    StemModelCatalogEntry sw;
+    sw.id = kDefaultStemModelId;
+    sw.menuLabel = "BS-RoFormer SW 6-Stem";
+    sw.fileName = "bs_roformer_sw_6stem.onnx";
+    sw.downloadUrl = "https://github.com/tucktuckg00se/intersect-stem-models/releases/download/v0.1.0/bs_roformer_sw_6stem.onnx";
+    sw.downloadBytes = 739269627;
+    sw.sha256 = "718c3304a4a051bc8b1adfa776ce0aeab54165e207d0a5f5890d683c16188e5e";
+    sw.license = "MIT";
+    sw.attribution = "jarredou";
+    sw.notes = "Full-size BS-RoFormer, with separate guitar and piano stems.";
+    sw.requirements = { 6.0f, 3.5f, StemGpuAdvice::recommended };
+    sw.outputs = makeOutputs ({ "bass", "drums", "other", "vocals", "guitar", "piano" });
+    sw.runtimeKind = StemRuntimeKind::waveform;
+    sw.sampleRate = 44100.0;
+    sw.chunkSize = 131072;
+    sw.overlapRatio = 0.5f;
+    catalog.push_back (std::move (sw));
+
+    // SCNet (starrytong, MIT; ONNX export by audiojs, pinned revision). The network without its
+    // STFT: the host computes it (StemStft) with SCNet's own settings.
+    StemModelCatalogEntry scnet;
+    scnet.id = "scnet";
+    scnet.menuLabel = "SCNet";
+    scnet.fileName = "scnet.int8.onnx";
+    scnet.downloadUrl = "https://huggingface.co/audiojs/scnet/resolve/e71bcdb42bce1d62b7fae25ba90fcbcf90f73f46/scnet.int8.onnx";
+    scnet.downloadBytes = 12900277;
+    scnet.sha256 = "98228931494151762a1c4ab1ec7899a894b1f81fd4a509921a9d2f9bacc50845";
+    scnet.license = "MIT";
+    scnet.attribution = "starrytong, ONNX by audiojs";
+    scnet.notes = "The smallest and fastest model here (8-bit weights).";
+    scnet.requirements = { 3.0f, 0.6f, StemGpuAdvice::notNeeded };
+    scnet.outputs = makeOutputs ({ "drums", "bass", "other", "vocals" });
+    scnet.runtimeKind = StemRuntimeKind::spectral;
+    scnet.spectral = {};   // defaults are SCNet's: 4096 / 1024, rectangular, normalized, 476 frames, 11 s every 2.75 s
+    scnet.sampleRate = 44100.0;
+    catalog.push_back (std::move (scnet));
+
+    // Mini-BS-RoFormer V2.5 (HiDolen, MIT), the author's own ONNX export at a pinned revision. It
+    // estimates complex masks from a 4096-point STFT; the host applies them to a 2048-point STFT.
+    StemModelCatalogEntry mini;
+    mini.id = "mini-bs-roformer-v2.5";
+    mini.menuLabel = "Mini-BS-RoFormer V2.5";
+    mini.fileName = "mini_bs_roformer_v25.onnx";
+    mini.downloadUrl = "https://huggingface.co/HiDolen/Mini-BS-RoFormer-V2.5-46.2M/resolve/38dafc78834607aec57d8c0cb3568523f9ea5563/onnx/freq_weights.onnx";
+    mini.downloadBytes = 96538997;
+    mini.sha256 = "c019650a7fb9e6a208353fead62471ed6ffdf20a3069ddadd8278edeb411d556";
+    mini.license = "MIT";
+    mini.attribution = "HiDolen";
+    mini.notes = "Compact BS-RoFormer: much faster than full-size models, slightly lower quality.";
+    mini.requirements = { 5.0f, 0.8f, StemGpuAdvice::optional };
+    mini.outputs = makeOutputs ({ "bass", "drums", "other", "vocals" });
+    mini.runtimeKind = StemRuntimeKind::spectralMask;
+    mini.spectral.nFft = 4096;
+    mini.spectral.hopSize = 512;
+    mini.spectral.hannWindow = true;
+    mini.spectral.normalized = false;
+    mini.spectral.frames = 690;
+    mini.spectral.segmentSamples = 352800;   // 8 s
+    mini.spectral.strideSamples = 176400;
+    mini.spectral.normalizeInput = false;
+    mini.spectral.maskNFft = 2048;
+    mini.sampleRate = 44100.0;
+    catalog.push_back (std::move (mini));
+
+    // MVSep Mega 53 (ZFTurbo / MVSep, MIT per MSST issue #245), exported by intersect-stem-models
+    // v0.2.0. Stems are in the model's (alphabetical) output order; display groups are ours.
+    StemModelCatalogEntry mega;
+    mega.id = "mvsep-mega-53";
+    mega.menuLabel = "MVSep Mega 53";
+    mega.fileName = "mvsep_mega_53.onnx";
+    mega.downloadUrl = "https://github.com/tucktuckg00se/intersect-stem-models/releases/download/v0.2.0/mvsep_mega_53.onnx";
+    mega.downloadBytes = 1415950413;
+    mega.sha256 = "d3b1c838303a44cffdb7358c536ec99ebf8ded1f1c34075144c413839b40101a";
+    mega.license = "MIT";
+    mega.attribution = "ZFTurbo / MVSep";
+    mega.notes = "53 instruments. Stems overlap and don't add up to the mix. Slow to load.";
+    mega.requirements = { 9.0f, 5.0f, StemGpuAdvice::recommended };
+    // { name, group, label override }
+    struct MegaStem { const char* name = nullptr; const char* group = nullptr; const char* label = nullptr; };
+    static constexpr MegaStem megaStems[] = {
+        { "accordion", "Keys" },
+        { "acoustic-guitar", "Guitars & Plucked" },
+        { "back-vocal", "Vocals" },
+        { "banjo", "Guitars & Plucked" },
+        { "bass", "Bass" },
+        { "bassoon", "Woodwinds" },
+        { "bells", "Percussion" },
+        { "bowed_strings", "Strings" },
+        { "brass", "Brass" },
+        { "cello", "Strings" },
+        { "clarinet", "Woodwinds" },
+        { "congas", "Percussion" },
+        { "digital-piano", "Keys" },
+        { "dobro", "Guitars & Plucked" },
+        { "double-bass", "Bass" },
+        { "drums", "Drums" },
+        { "electric-guitar", "Guitars & Plucked" },
+        { "flute", "Woodwinds" },
+        { "french-horn", "Brass" },
+        { "glockenspiel", "Percussion" },
+        { "guitar", "Guitars & Plucked" },
+        { "harmonica", "Woodwinds" },
+        { "harp", "Guitars & Plucked" },
+        { "harpsichord", "Keys" },
+        { "hh", "Drums", "Hi-Hat" },
+        { "keys", "Keys" },
+        { "kick", "Drums" },
+        { "lead-vocal", "Vocals" },
+        { "mandolin", "Guitars & Plucked" },
+        { "marimba", "Percussion" },
+        { "oboe", "Woodwinds" },
+        { "organ", "Keys" },
+        { "percussion", "Percussion" },
+        { "piano", "Keys" },
+        { "saxophone", "Woodwinds" },
+        { "sitar", "Guitars & Plucked" },
+        { "snare", "Drums" },
+        { "strings", "Strings" },
+        { "synth", "Synth" },
+        { "tambourine", "Percussion" },
+        { "timpani", "Percussion" },
+        { "toms", "Drums" },
+        { "triangle", "Percussion" },
+        { "trombone", "Brass" },
+        { "trumpet", "Brass" },
+        { "tuba", "Brass" },
+        { "ukulele", "Guitars & Plucked" },
+        { "viola", "Strings" },
+        { "violin", "Strings" },
+        { "vocal", "Vocals" },
+        { "wind", "Woodwinds" },
+        { "wind-chimes", "Percussion" },
+        { "woodwind", "Woodwinds" },
+    };
+    for (const auto& stem : megaStems)
+        mega.outputs.push_back ({ stem.name, stem.label != nullptr ? juce::String (stem.label) : stemOutputLabelFromName (stem.name), stem.group });
+    mega.groupOrder = { "Vocals", "Drums", "Percussion", "Bass", "Guitars & Plucked", "Keys", "Synth", "Strings", "Brass", "Woodwinds" };
+    mega.runtimeKind = StemRuntimeKind::waveform;
+    mega.sampleRate = 44100.0;
+    mega.chunkSize = 131072;
+    mega.overlapRatio = 0.5f;
+    catalog.push_back (std::move (mega));
+
+    return catalog;
+}
+
+juce::String readManifestModelId (const juce::var& manifestModel)
 {
     auto* object = manifestModel.getDynamicObject();
     if (object == nullptr)
-        return false;
+        return {};
 
-    // Match by model_id field
-    StemModelId manifestId {};
     auto idField = object->getProperty ("model_id").toString();
     if (idField.isEmpty())
         idField = object->getProperty ("id").toString();
-    if (! stemModelIdFromString (idField, manifestId) || manifestId != entry.id)
+    return normaliseStemModelId (idField);
+}
+
+bool parseStemOutputs (const juce::var& stemsVar, std::vector<StemOutputDesc>& outputs)
+{
+    auto* stemsArray = stemsVar.getArray();
+    if (stemsArray == nullptr || stemsArray->isEmpty())
         return false;
 
-    if (auto text = object->getProperty ("name").toString(); text.isNotEmpty())
-        entry.menuLabel = text;
-
-    // Artifacts block
-    if (auto* artifacts = object->getProperty ("artifacts").getDynamicObject())
+    std::vector<StemOutputDesc> parsed;
+    parsed.reserve ((size_t) stemsArray->size());
+    for (const auto& stemVar : *stemsArray)
     {
-        if (auto text = artifacts->getProperty ("release_asset_name").toString(); text.isNotEmpty())
-            entry.fileName = text;
-        if (auto text = artifacts->getProperty ("release_asset_url").toString(); text.isNotEmpty())
-            entry.downloadUrl = text;
-    }
-
-    // Runtime block
-    if (auto* runtime = object->getProperty ("runtime").getDynamicObject())
-    {
-        if (auto* stemsArray = runtime->getProperty ("stems").getArray())
+        StemOutputDesc desc;
+        if (auto* stemObject = stemVar.getDynamicObject())
         {
-            entry.numModelOutputs = juce::jlimit (0, 6, (int) stemsArray->size());
-            for (int i = 0; i < 6; ++i)
-                entry.modelOutputRoles[i] = i < entry.numModelOutputs
-                                                ? stemRoleFromString ((*stemsArray)[(size_t) i].toString())
-                                                : StemRole::unknown;
+            desc.name = stemObject->getProperty ("name").toString().trim();
+            desc.label = stemObject->getProperty ("label").toString().trim();
+            desc.group = stemObject->getProperty ("group").toString().trim();
+        }
+        else
+        {
+            desc.name = stemVar.toString().trim();
         }
 
-        if (runtime->hasProperty ("sample_rate_hz"))
-            entry.sampleRate = (double) runtime->getProperty ("sample_rate_hz");
-        if (runtime->hasProperty ("chunk_size_samples"))
-            entry.chunkSize = (int) runtime->getProperty ("chunk_size_samples");
-        if (runtime->hasProperty ("recommended_overlap_ratio"))
-            entry.overlapRatio = (float) (double) runtime->getProperty ("recommended_overlap_ratio");
+        if (desc.name.isEmpty())
+            return false;
+        if (desc.label.isEmpty())
+            desc.label = stemOutputLabelFromName (desc.name);
+        parsed.push_back (std::move (desc));
     }
 
+    outputs = std::move (parsed);
     return true;
+}
+
+bool parseRuntimeKind (const juce::String& text, StemRuntimeKind& kind)
+{
+    const auto trimmed = text.trim();
+    if (trimmed.isEmpty() || trimmed.equalsIgnoreCase ("waveform"))
+    {
+        kind = StemRuntimeKind::waveform;
+        return true;
+    }
+    if (trimmed.equalsIgnoreCase ("spectral"))
+    {
+        kind = StemRuntimeKind::spectral;
+        return true;
+    }
+    if (trimmed.equalsIgnoreCase ("spectral_mask"))
+    {
+        kind = StemRuntimeKind::spectralMask;
+        return true;
+    }
+    return false;
+}
+
+void parseSpectralParams (const juce::DynamicObject& stft, StemSpectralParams& params)
+{
+    auto readInt = [&stft] (const char* key, int& value)
+    {
+        if (stft.hasProperty (key))
+            value = (int) stft.getProperty (key);
+    };
+
+    readInt ("n_fft", params.nFft);
+    readInt ("hop_length", params.hopSize);
+    readInt ("frames", params.frames);
+    readInt ("segment_samples", params.segmentSamples);
+    readInt ("stride_samples", params.strideSamples);
+    readInt ("mask_n_fft", params.maskNFft);
+    if (stft.hasProperty ("normalize_input"))
+        params.normalizeInput = (bool) stft.getProperty ("normalize_input");
+    if (stft.hasProperty ("window"))
+        params.hannWindow = stft.getProperty ("window").toString().equalsIgnoreCase ("hann");
+    if (stft.hasProperty ("normalized"))
+        params.normalized = (bool) stft.getProperty ("normalized");
+}
+
+bool isPowerOfTwoAtLeast16 (int n)
+{
+    return n >= 16 && (n & (n - 1)) == 0;
+}
+
+bool areSpectralParamsUsable (const StemSpectralParams& p, StemRuntimeKind kind)
+{
+    if (! isPowerOfTwoAtLeast16 (p.nFft) || p.hopSize <= 0 || p.hopSize > p.nFft
+        || p.frames <= 1 || p.segmentSamples <= 0 || p.strideSamples <= 0
+        || p.strideSamples > p.segmentSamples)
+        return false;
+
+    // The STFT runs over the segment, zero-padded up to the frame count; both must agree.
+    const int signal = juce::jmax (p.segmentSamples, (p.frames - 1) * p.hopSize);
+    if (1 + signal / p.hopSize != p.frames || signal <= p.nFft / 2)
+        return false;
+
+    return kind != StemRuntimeKind::spectralMask || isPowerOfTwoAtLeast16 (p.maskNFft);
+}
+
+juce::var loadManifestModels (const juce::File& modelFolder)
+{
+    const auto manifestFile = getStemModelManifestFile (modelFolder);
+    if (! manifestFile.existsAsFile())
+        return {};
+
+    const auto parsed = juce::JSON::parse (manifestFile.loadFileAsString());
+    if (auto* rootObject = parsed.getDynamicObject())
+        return rootObject->getProperty ("models");
+    return {};
 }
 }
 
@@ -84,42 +303,30 @@ StemRole stemRoleFromString (const juce::String& text)
     return StemRole::unknown;
 }
 
-juce::String stemModelIdToString (StemModelId modelId)
+juce::String stemOutputLabelFromName (const juce::String& name)
 {
-    switch (modelId)
-    {
-        case StemModelId::bsRoformerSw6stem: return "bs-roformer-sw-6stem";
-    }
-
-    return "unknown";
+    // "lead-vocal" / "bowed_strings" -> "Lead Vocal" / "Bowed Strings"
+    auto words = juce::StringArray::fromTokens (name.trim(), "-_ ", {});
+    words.removeEmptyStrings();
+    for (auto& word : words)
+        word = word.substring (0, 1).toUpperCase() + word.substring (1);
+    return words.joinIntoString (" ");
 }
 
-bool stemModelIdFromString (const juce::String& text, StemModelId& modelId)
+juce::String getDefaultStemModelId()
 {
-    const auto trimmed = text.trim();
-    if (trimmed.equalsIgnoreCase ("bs-roformer-sw-6stem"))
-    {
-        modelId = StemModelId::bsRoformerSw6stem;
-        return true;
-    }
-
-    // Legacy fallback: old model IDs map to the single available model
-    if (trimmed.equalsIgnoreCase ("bsroformer4stem_uint8")
-        || trimmed.equalsIgnoreCase ("bsroformer4stem_fp32"))
-    {
-        modelId = StemModelId::bsRoformerSw6stem;
-        return true;
-    }
-
-    return false;
+    return kDefaultStemModelId;
 }
 
-juce::String stemModelMenuLabel (StemModelId modelId)
+StemModelId normaliseStemModelId (const juce::String& text)
 {
-    if (const auto* entry = findStemModelCatalogEntry (modelId))
-        return entry->menuLabel;
+    const auto trimmed = text.trim().toLowerCase();
 
-    return "Unknown model";
+    // Legacy ids from the 4-stem builds map to the model that replaced them.
+    if (trimmed == "bsroformer4stem_uint8" || trimmed == "bsroformer4stem_fp32")
+        return kDefaultStemModelId;
+
+    return trimmed;
 }
 
 juce::String stemComputeDeviceToString (StemComputeDevice device)
@@ -174,18 +381,10 @@ StemExportMode stemExportModeFromString (const juce::String& text)
     return StemExportMode::combine;
 }
 
-const StemModelCatalogEntry* findStemModelCatalogEntry (StemModelId modelId)
+const std::vector<StemModelCatalogEntry>& getBuiltInStemModelCatalog()
 {
-    for (const auto& entry : kStemModelCatalog)
-        if (entry.id == modelId)
-            return &entry;
-
-    return nullptr;
-}
-
-const std::array<StemModelCatalogEntry, 1>& getStemModelCatalog()
-{
-    return kStemModelCatalog;
+    static const auto catalog = makeBuiltInCatalog();
+    return catalog;
 }
 
 juce::String getStemModelManifestFileName()
@@ -218,64 +417,158 @@ juce::File getStemModelManifestFile (const juce::File& modelFolder)
     return modelFolder.getChildFile (getStemModelManifestFileName());
 }
 
-juce::File resolveStemModelFile (const juce::File& modelFolder, StemModelId modelId)
+StemModelCatalogEntry parseStemModelManifestEntry (const juce::var& manifestModel, const StemModelCatalogEntry& base)
 {
-    const auto entry = getEffectiveStemModelCatalogEntry (modelId, modelFolder);
-    return modelFolder.getChildFile (entry.fileName);
-}
+    auto* object = manifestModel.getDynamicObject();
+    if (object == nullptr)
+        return {};
 
-StemModelCatalogEntry getEffectiveStemModelCatalogEntry (StemModelId modelId, const juce::File& modelFolder)
-{
-    if (const auto* builtInEntry = findStemModelCatalogEntry (modelId))
+    auto entry = base;
+    entry.id = readManifestModelId (manifestModel);
+    if (entry.id.isEmpty())
+        return {};
+
+    if (auto text = object->getProperty ("name").toString(); text.isNotEmpty())
+        entry.menuLabel = text;
+    if (auto text = object->getProperty ("license").toString(); text.isNotEmpty())
+        entry.license = text;
+    if (auto text = object->getProperty ("attribution").toString(); text.isNotEmpty())
+        entry.attribution = text;
+    if (auto text = object->getProperty ("notes").toString(); text.isNotEmpty())
+        entry.notes = text;
+
+    // "requirements": { "ram_gb": 5, "cpu_realtime_factor": 3.5, "gpu": "recommended" }; each optional.
+    if (auto* req = object->getProperty ("requirements").getDynamicObject())
     {
-        auto entry = *builtInEntry;
-        const auto manifestFile = getStemModelManifestFile (modelFolder);
-        if (! manifestFile.existsAsFile())
-            return entry;
-
-        juce::String manifestText = manifestFile.loadFileAsString();
-        if (manifestText.isEmpty())
-            return entry;
-
-        juce::var parsed = juce::JSON::parse (manifestText);
-        auto* rootObject = parsed.getDynamicObject();
-        if (rootObject == nullptr)
-            return entry;
-
-        if (auto* modelsArray = rootObject->getProperty ("models").getArray())
-            for (const auto& modelVar : *modelsArray)
-                if (applyManifestEntryToCatalogEntry (modelVar, entry))
-                    break;
-
-        return entry;
+        if (const auto ram = (float) (double) req->getProperty ("ram_gb"); ram > 0.0f)
+            entry.requirements.ramGb = ram;
+        if (const auto factor = (float) (double) req->getProperty ("cpu_realtime_factor"); factor > 0.0f)
+            entry.requirements.cpuRealtimeFactor = factor;
+        const auto gpu = req->getProperty ("gpu").toString().trim();
+        if (gpu.equalsIgnoreCase ("not_needed"))
+            entry.requirements.gpu = StemGpuAdvice::notNeeded;
+        else if (gpu.equalsIgnoreCase ("optional"))
+            entry.requirements.gpu = StemGpuAdvice::optional;
+        else if (gpu.equalsIgnoreCase ("recommended"))
+            entry.requirements.gpu = StemGpuAdvice::recommended;
     }
 
+    if (auto* artifacts = object->getProperty ("artifacts").getDynamicObject())
+    {
+        if (auto text = artifacts->getProperty ("release_asset_name").toString(); text.isNotEmpty())
+            entry.fileName = text;
+        if (auto text = artifacts->getProperty ("release_asset_url").toString(); text.isNotEmpty())
+            entry.downloadUrl = text;
+        if (artifacts->hasProperty ("release_asset_bytes"))
+            entry.downloadBytes = (juce::int64) artifacts->getProperty ("release_asset_bytes");
+        if (auto* sha = artifacts->getProperty ("sha256").getDynamicObject())
+            if (auto text = sha->getProperty ("onnx").toString().trim().toLowerCase(); text.length() == 64)
+                entry.sha256 = text;
+    }
+
+    if (auto* runtime = object->getProperty ("runtime").getDynamicObject())
+    {
+        // Unknown runtime kinds come from manifests newer than this build: skip the model.
+        if (! parseRuntimeKind (runtime->getProperty ("kind").toString(), entry.runtimeKind))
+            return {};
+
+        if (runtime->hasProperty ("stems") && ! parseStemOutputs (runtime->getProperty ("stems"), entry.outputs))
+            return {};
+
+        if (auto* groups = runtime->getProperty ("stem_groups").getArray())
+        {
+            entry.groupOrder.clear();
+            for (const auto& group : *groups)
+                entry.groupOrder.addIfNotAlreadyThere (group.toString().trim());
+            entry.groupOrder.removeEmptyStrings();
+        }
+
+        if (runtime->hasProperty ("sample_rate_hz"))
+            entry.sampleRate = (double) runtime->getProperty ("sample_rate_hz");
+        if (runtime->hasProperty ("chunk_size_samples"))
+            entry.chunkSize = (int) runtime->getProperty ("chunk_size_samples");
+        if (runtime->hasProperty ("recommended_overlap_ratio"))
+            entry.overlapRatio = (float) (double) runtime->getProperty ("recommended_overlap_ratio");
+        if (auto* stft = runtime->getProperty ("stft").getDynamicObject())
+            parseSpectralParams (*stft, entry.spectral);
+    }
+
+    if (entry.menuLabel.isEmpty())
+        entry.menuLabel = entry.id;
+
+    const bool runtimeUsable = entry.runtimeKind == StemRuntimeKind::waveform
+                                   ? entry.chunkSize > 0 && entry.overlapRatio >= 0.0f && entry.overlapRatio < 1.0f
+                                   : areSpectralParamsUsable (entry.spectral, entry.runtimeKind);
+    if (! entry.isValid() || ! runtimeUsable || entry.sampleRate <= 0.0)
+        return {};
+
+    return entry;
+}
+
+std::vector<StemModelCatalogEntry> getEffectiveStemModelCatalog (const juce::File& modelFolder)
+{
+    auto catalog = getBuiltInStemModelCatalog();
+
+    const auto models = loadManifestModels (modelFolder);
+    if (auto* modelsArray = models.getArray())
+    {
+        for (const auto& modelVar : *modelsArray)
+        {
+            const auto id = readManifestModelId (modelVar);
+            if (id.isEmpty())
+                continue;
+
+            auto existing = std::find_if (catalog.begin(), catalog.end(),
+                                          [&id] (const StemModelCatalogEntry& e) { return e.id == id; });
+            const auto parsed = parseStemModelManifestEntry (modelVar, existing != catalog.end() ? *existing
+                                                                                                  : StemModelCatalogEntry {});
+            if (! parsed.isValid())
+                continue;   // keep the built-in entry when the manifest's version is unusable
+
+            if (existing != catalog.end())
+                *existing = parsed;
+            else
+                catalog.push_back (parsed);
+        }
+    }
+
+    return catalog;
+}
+
+StemModelCatalogEntry getEffectiveStemModelCatalogEntry (const StemModelId& modelId, const juce::File& modelFolder)
+{
+    const auto id = normaliseStemModelId (modelId);
+    for (auto& entry : getEffectiveStemModelCatalog (modelFolder))
+        if (entry.id == id)
+            return entry;
+
     return {};
+}
+
+juce::File resolveStemModelFile (const juce::File& modelFolder, const StemModelId& modelId)
+{
+    const auto entry = getEffectiveStemModelCatalogEntry (modelId, modelFolder);
+    return entry.isValid() ? modelFolder.getChildFile (entry.fileName) : juce::File();
+}
+
+StemSelection normaliseStemSelection (StemSelection selection, int numOutputs)
+{
+    selection.erase (std::remove_if (selection.begin(), selection.end(),
+                                     [numOutputs] (int index) { return index < 0 || index >= numOutputs; }),
+                     selection.end());
+    std::sort (selection.begin(), selection.end());
+    selection.erase (std::unique (selection.begin(), selection.end()), selection.end());
+    return selection;
 }
 
 std::vector<StemModelId> scanInstalledStemModels (const juce::File& modelFolder)
 {
     std::vector<StemModelId> installed;
-    installed.reserve (kStemModelCatalog.size());
-
-    for (const auto& entry : kStemModelCatalog)
-    {
+    for (const auto& entry : getEffectiveStemModelCatalog (modelFolder))
         if (modelFolder.getChildFile (entry.fileName).existsAsFile())
             installed.push_back (entry.id);
-    }
 
     return installed;
-}
-
-StemSelectionMask stemSelectionBitForIndex (int outputIndex)
-{
-    return outputIndex >= 0 && outputIndex < 32 ? (StemSelectionMask (1u) << (uint32_t) outputIndex)
-                                                : StemSelectionMask (0);
-}
-
-bool isStemOutputSelected (StemSelectionMask mask, int outputIndex)
-{
-    return (mask & stemSelectionBitForIndex (outputIndex)) != 0;
 }
 
 // ── ORT bundle catalog ──────────────────────────────────────────────────

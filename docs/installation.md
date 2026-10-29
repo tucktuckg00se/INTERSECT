@@ -49,9 +49,9 @@ Then re-launch your DAW (or the standalone app) and rescan plugins.
 Stem separation requires two on-demand downloads performed from inside the plugin. Both live under **SET → Stem Separation** in the header bar.
 
 1. **ONNX Runtime bundle** — open **SET → Stem Separation → ONNX Runtime** and pick the bundle that matches your platform and (optionally) your GPU. Only one bundle is active at a time; installing a different one switches which runtime the plugin loads. Restart INTERSECT after the install completes so the new runtime is picked up.
-2. **Stem model** — open **SET → Stem Separation → Download Models** and pick a BS-RoFormer model.
+2. **Stem model** — open a sample's `STEMS` view and press `DOWNLOAD` on a model (or use **SET → Stem Separation → Download Models**). See [Stem separation]({{ site.baseurl }}{% link stem-separation.md %}#models) for the available models.
 
-After both are installed, open a sample's `STEMS` button to export.
+After both are installed, open a sample's `STEMS` view to separate it.
 
 ## GPU runtime requirements (per ONNX Runtime bundle)
 

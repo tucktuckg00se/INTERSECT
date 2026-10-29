@@ -15,7 +15,8 @@ public:
     StemModelDownloadState getState() const { return state.load (std::memory_order_acquire); }
     float getProgress() const { return progress.load (std::memory_order_acquire); }
     juce::String getStatusText() const;
-    StemModelId getCurrentModelId() const { return currentModelId.load (std::memory_order_acquire); }
+    // Model currently being downloaded (empty when idle).
+    StemModelId getCurrentModelId() const;
     juce::String consumeResultMessage();
 
     // Invoked from the job's thread when run() returns. Set by the owner
@@ -29,12 +30,12 @@ private:
 
     std::atomic<StemModelDownloadState> state { StemModelDownloadState::idle };
     std::atomic<float> progress { 0.0f };
-    std::atomic<StemModelId> currentModelId { StemModelId::bsRoformerSw6stem };
     std::atomic<bool> shouldCancel { false };
 
     juce::CriticalSection lock;
     juce::String statusText;
     juce::String resultMessage;
+    StemModelId currentModelId;
     juce::File downloadFolder;
     std::vector<StemModelId> requestedModels;
 };

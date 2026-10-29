@@ -489,8 +489,16 @@ void IntersectProcessor::handleStemJobCompletionOnMessageThread()
         if (! stemResult.stemFiles.empty())
         {
             auto* pending = new PendingStemImport();
-            pending->roles = std::move (stemResult.stemRoles);
             pending->parentSourceSampleId = sourceSampleId;
+            for (const auto& name : stemResult.stemNames)
+            {
+                StemMetadata meta;
+                meta.parentSourceSampleId = sourceSampleId;
+                meta.role = stemRoleFromString (name);
+                meta.isGenerated = true;
+                meta.setName (name);
+                pending->metas.push_back (meta);
+            }
             auto* old = pendingStemImport.exchange (pending, std::memory_order_acq_rel);
             delete old;
 
@@ -917,9 +925,10 @@ std::vector<StemModelId> IntersectProcessor::getInstalledStemModels() const
     return scanInstalledStemModels (getResolvedStemModelFolder());
 }
 
-bool IntersectProcessor::isStemModelInstalled (StemModelId modelId) const
+bool IntersectProcessor::isStemModelInstalled (const StemModelId& modelId) const
 {
-    return resolveStemModelFile (getResolvedStemModelFolder(), modelId).existsAsFile();
+    const auto file = resolveStemModelFile (getResolvedStemModelFolder(), modelId);
+    return file != juce::File() && file.existsAsFile();
 }
 
 void IntersectProcessor::startStemModelDownload (const std::vector<StemModelId>& modelIds)
@@ -1012,8 +1021,8 @@ void IntersectProcessor::cancelStemSeparation()
 }
 
 void IntersectProcessor::startStemSeparation (int sampleId,
-                                              StemModelId modelId,
-                                              StemSelectionMask stemSelectionMask,
+                                              const StemModelId& modelId,
+                                              const StemSelection& stemSelection,
                                               StemExportMode exportMode,
                                               const juce::File& outputFolder)
 {
@@ -1025,14 +1034,15 @@ void IntersectProcessor::startStemSeparation (int sampleId,
 
     const auto modelFolder = getResolvedStemModelFolder();
     const auto catalogEntry = getEffectiveStemModelCatalogEntry (modelId, modelFolder);
-    const auto modelFile = modelFolder.getChildFile (catalogEntry.fileName);
-    if (! modelFile.existsAsFile())
+    const auto modelFile = catalogEntry.isValid() ? modelFolder.getChildFile (catalogEntry.fileName) : juce::File();
+    if (modelFile == juce::File() || ! modelFile.existsAsFile())
     {
         setUiStatusMessage ("Selected stem model is not installed", true);
         return;
     }
 
-    if (stemSelectionMask == 0)
+    const auto selection = normaliseStemSelection (stemSelection, catalogEntry.getNumOutputs());
+    if (selection.empty())
     {
         setUiStatusMessage ("Select at least one stem", true);
         return;
@@ -1099,10 +1109,10 @@ void IntersectProcessor::startStemSeparation (int sampleId,
     if (sourceName.isEmpty())
         sourceName = targetSample->fileName;
     auto timestamp = juce::String (juce::Time::currentTimeMillis());
-    auto jobDir = outputRoot.getChildFile (sourceName + "_" + stemModelIdToString (modelId) + "_" + timestamp);
+    auto jobDir = outputRoot.getChildFile (sourceName + "_" + catalogEntry.id + "_" + timestamp);
 
     stemJob.start (regionAudio, sampleSnap->decodedSampleRate, sampleId,
-                   sourceName, modelId, catalogEntry, stemSelectionMask, exportMode,
+                   sourceName, catalogEntry, selection, exportMode,
                    stemComputeDevice, modelFile, jobDir);
     uiSnapshotDirty.store (true, std::memory_order_release);
 }
@@ -3016,15 +3026,12 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     if (pending != nullptr)
                     {
                         const auto& sessionSamples = sampleData.getSessionSamples();
-                        const auto numNewStems = (int) pending->roles.size();
+                        const auto numNewStems = (int) pending->metas.size();
                         const int totalSamples = (int) sessionSamples.size();
                         const int firstStemIdx = totalSamples - numNewStems;
                         for (int i = 0; i < numNewStems && firstStemIdx + i < totalSamples; ++i)
                         {
-                            StemMetadata meta;
-                            meta.parentSourceSampleId = pending->parentSourceSampleId;
-                            meta.role = pending->roles[(size_t) i];
-                            meta.isGenerated = true;
+                            const auto& meta = pending->metas[(size_t) i];
                             const int stemId = sessionSamples[(size_t) (firstStemIdx + i)].sampleId;
                             setStemMeta (stemId, meta);
                             // Stems play the same material as their source, so they start with its
@@ -3383,7 +3390,7 @@ void IntersectProcessor::getStateInformation (juce::MemoryBlock& destData)
 
     // Optional v24 extension block for fields added without changing the base version.
     stream.writeInt (kStateExtensionMagic);
-    stream.writeInt (7);
+    stream.writeInt (8);
     stream.writeInt (numSlices);
     for (int i = 0; i < numSlices; ++i)
         stream.writeInt (sliceManager.getSlice (i).repitchMode);
@@ -3450,6 +3457,10 @@ void IntersectProcessor::getStateInformation (juce::MemoryBlock& destData)
             stream.writeFloat (params.getField (field));
         }
     }
+    // Extension v8: per-session-sample stem names (model output names such as "lead-vocal").
+    stream.writeInt (numSessionSamples);
+    for (int i = 0; i < numSessionSamples; ++i)
+        stream.writeString (getStemMeta (sampleSnap->sessionSamples[(size_t) i].sampleId).getName());
 }
 
 void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
@@ -3798,7 +3809,10 @@ bool IntersectProcessor::restoreState (const void* data, int sizeInBytes, const 
                         {
                             auto& meta = result.sessionSamples[(size_t) i].stemMeta;
                             meta.parentSourceSampleId = parentId;
-                            meta.role = static_cast<StemRole> (juce::jlimit (0, 4, roleInt));
+                            meta.role = static_cast<StemRole> (juce::jlimit (0, (int) StemRole::instrumental, roleInt));
+                            // Sessions saved before extension v8 have no names; the role is the name.
+                            if (isGenerated)
+                                meta.setName (stemRoleToString (meta.role));
                             meta.isGenerated = isGenerated;
                         }
                     }
@@ -3843,6 +3857,21 @@ bool IntersectProcessor::restoreState (const void* data, int sizeInBytes, const 
                         }
                         if (ok)
                             result.sampleParams = table;
+                    }
+
+                    // v8 follows v7, so only read it when v7 parsed cleanly.
+                    if (extensionVersion >= 8 && result.sampleParams.has_value() && requireBytes (4))
+                    {
+                        const int storedNames = trialStream.readInt();
+                        if (storedNames >= 0 && storedNames <= SampleData::kMaxSessionSamples)
+                        {
+                            for (int i = 0; i < storedNames && requireBytes (1); ++i)
+                            {
+                                const auto name = trialStream.readString();
+                                if (i < (int) result.sessionSamples.size() && name.isNotEmpty())
+                                    result.sessionSamples[(size_t) i].stemMeta.setName (name);
+                            }
+                        }
                     }
                 }
             }

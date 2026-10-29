@@ -1,13 +1,18 @@
 #include "StemModelDownloadJob.h"
+#include <juce_cryptography/juce_cryptography.h>
 
 namespace
 {
 
+// onBytes (received, total) reports progress; total is -1 when the server doesn't say.
+// When expectedSha256 is set, the file is only installed if its hash matches.
 bool downloadFileToTarget (const juce::URL& url,
                            const juce::File& targetFile,
                            std::atomic<bool>& shouldCancel,
                            juce::Thread& thread,
-                           juce::String& errorMessage)
+                           juce::String& errorMessage,
+                           const juce::String& expectedSha256 = {},
+                           const std::function<void (juce::int64, juce::int64)>& onBytes = {})
 {
     juce::TemporaryFile tempFile (targetFile);
     int statusCode = 0;
@@ -34,6 +39,8 @@ bool downloadFileToTarget (const juce::URL& url,
         return false;
     }
 
+    const auto totalBytes = input->getTotalLength();
+    juce::int64 receivedBytes = 0;
     juce::HeapBlock<char> buffer (64 * 1024);
     for (;;)
     {
@@ -49,11 +56,33 @@ bool downloadFileToTarget (const juce::URL& url,
         if (bytesRead <= 0)
             break;
 
-        output->write (buffer.getData(), (size_t) bytesRead);
+        if (! output->write (buffer.getData(), (size_t) bytesRead))
+        {
+            output.reset();
+            tempFile.deleteTemporaryFile();
+            errorMessage = "write failed";
+            return false;
+        }
+
+        receivedBytes += bytesRead;
+        if (onBytes)
+            onBytes (receivedBytes, totalBytes);
     }
 
     output->flush();
     output.reset();
+
+    if (expectedSha256.isNotEmpty())
+    {
+        juce::FileInputStream hashInput (tempFile.getFile());
+        const auto actual = hashInput.openedOk() ? juce::SHA256 (hashInput).toHexString() : juce::String();
+        if (! actual.equalsIgnoreCase (expectedSha256))
+        {
+            tempFile.deleteTemporaryFile();
+            errorMessage = "checksum mismatch";
+            return false;
+        }
+    }
 
     if (! tempFile.overwriteTargetFileWithTemporary())
     {
@@ -86,13 +115,13 @@ bool StemModelDownloadJob::start (juce::File modelFolder, std::vector<StemModelI
     downloadFolder = std::move (modelFolder);
     requestedModels = std::move (modelIds);
     progress.store (0.0f, std::memory_order_release);
-    currentModelId.store (requestedModels.front(), std::memory_order_release);
     shouldCancel.store (false, std::memory_order_release);
 
     {
         const juce::ScopedLock sl (lock);
         statusText = {};
         resultMessage = {};
+        currentModelId = requestedModels.front();
     }
 
     state.store (StemModelDownloadState::downloading, std::memory_order_release);
@@ -112,6 +141,12 @@ juce::String StemModelDownloadJob::getStatusText() const
     return statusText;
 }
 
+StemModelId StemModelDownloadJob::getCurrentModelId() const
+{
+    const juce::ScopedLock sl (lock);
+    return currentModelId;
+}
+
 juce::String StemModelDownloadJob::consumeResultMessage()
 {
     const juce::ScopedLock sl (lock);
@@ -119,7 +154,7 @@ juce::String StemModelDownloadJob::consumeResultMessage()
     resultMessage = {};
     statusText = {};
     progress.store (0.0f, std::memory_order_release);
-    currentModelId.store (StemModelId::bsRoformerSw6stem, std::memory_order_release);
+    currentModelId = {};
     state.store (StemModelDownloadState::idle, std::memory_order_release);
     return message;
 }
@@ -172,13 +207,20 @@ void StemModelDownloadJob::run()
         }
 
         const auto modelId = requestedModels[i];
-        currentModelId.store (modelId, std::memory_order_release);
-
         const auto entry = getEffectiveStemModelCatalogEntry (modelId, downloadFolder);
 
         {
             const juce::ScopedLock sl (lock);
+            currentModelId = modelId;
             statusText = "Downloading " + entry.menuLabel;
+        }
+
+        if (! entry.isValid())
+        {
+            const juce::ScopedLock sl (lock);
+            resultMessage = "Unknown stem model: " + modelId;
+            state.store (StemModelDownloadState::failed, std::memory_order_release);
+            return;
         }
 
         const auto targetFile = downloadFolder.getChildFile (entry.fileName);
@@ -191,7 +233,17 @@ void StemModelDownloadJob::run()
         }
 
         juce::String downloadError;
-        if (! downloadFileToTarget (juce::URL (entry.downloadUrl), targetFile, shouldCancel, *this, downloadError))
+        const auto numModels = (float) requestedModels.size();
+        const auto onBytes = [this, i, numModels, expectedBytes = entry.downloadBytes] (juce::int64 received, juce::int64 total)
+        {
+            if (total <= 0)
+                total = expectedBytes;
+            const float fileFraction = total > 0 ? juce::jlimit (0.0f, 1.0f, (float) ((double) received / (double) total)) : 0.0f;
+            progress.store (((float) i + fileFraction) / numModels, std::memory_order_release);
+        };
+
+        if (! downloadFileToTarget (juce::URL (entry.downloadUrl), targetFile, shouldCancel, *this,
+                                    downloadError, entry.sha256, onBytes))
         {
             const juce::ScopedLock sl (lock);
             if (downloadError == "cancelled")
@@ -208,6 +260,11 @@ void StemModelDownloadJob::run()
             else if (downloadError == "write failed")
             {
                 resultMessage = "Failed to write " + entry.fileName;
+                state.store (StemModelDownloadState::failed, std::memory_order_release);
+            }
+            else if (downloadError == "checksum mismatch")
+            {
+                resultMessage = "Download of " + entry.menuLabel + " was corrupted (checksum mismatch). Try again.";
                 state.store (StemModelDownloadState::failed, std::memory_order_release);
             }
             else if (downloadError == "install failed")

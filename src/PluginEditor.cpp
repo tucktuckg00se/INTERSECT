@@ -109,8 +109,9 @@ IntersectEditor::IntersectEditor (IntersectProcessor& p)
     : AudioProcessorEditor (p),
       processor (p),
       browser(),
+      stemView (p),
       headerBar (p),
-      sampleLane (p, waveformView),
+      sampleLane (p),
       signalChainBar (p),
       sliceLane (p),
       waveformView (p),
@@ -127,6 +128,7 @@ IntersectEditor::IntersectEditor (IntersectProcessor& p)
     addAndMakeVisible (scrollZoomBar);
     addAndMakeVisible (actionPanel);
     addChildComponent (browser);
+    addChildComponent (stemView);
 
     sliceLane.setWaveformView (&waveformView);
     sampleLane.onInteraction = [this] { deleteTarget = DeleteTarget::sample; };
@@ -148,7 +150,13 @@ IntersectEditor::IntersectEditor (IntersectProcessor& p)
     browser.onAuditionResumeRequested = [this] { processor.resumeAudition(); };
     browser.onAuditionGainChanged = [this] (float db) { processor.setAuditionGainDb (db); };
     sampleLane.onFilesDropped = [this] (const std::vector<juce::File>& files) { handleDroppedFiles (files); };
-    sampleLane.onStemPanelRequested = [this] { setBrowserVisible (false); };
+    sampleLane.onStemViewRequested = [this] (int sampleId)
+    {
+        // STEMS on the sample already shown closes the view; another sample retargets it.
+        const bool showingThisSample = stemViewVisible && stemView.getTargetSampleId() == sampleId;
+        setStemViewVisible (! showingThisSample, sampleId);
+    };
+    stemView.onCloseRequested = [this] { setStemViewVisible (false); };
     sampleLane.writeMidiForDrag = [this] (int sampleId) { return writeMidiForDrag (sampleId); };
     sampleLane.onMidiSaveRequested = [this] (int sampleId) { saveMidiAs (sampleId); };
     sampleLane.onRelinkRequested = [this] (int sampleId) { startRelink (sampleId); };
@@ -206,6 +214,7 @@ void IntersectEditor::resized()
 
     // The browser covers everything below the sample lane; header and lane stay usable.
     browser.setBounds (bounds.withTrimmedTop ((int) (kHeaderH + kSampleLaneH)));
+    stemView.setBounds (browser.getBounds());
 
     juce::FlexBox shell;
     shell.flexDirection = juce::FlexBox::Direction::column;
@@ -289,6 +298,17 @@ bool IntersectEditor::keyPressed (const juce::KeyPress& key)
         if (code == juce::KeyPress::escapeKey)
         {
             setBrowserVisible (false);
+            return true;
+        }
+        return false;
+    }
+
+    // Same for the stem view.
+    if (stemViewVisible)
+    {
+        if (code == juce::KeyPress::escapeKey)
+        {
+            setStemViewVisible (false);
             return true;
         }
         return false;
@@ -503,20 +523,28 @@ void IntersectEditor::performContextualDelete()
     actionPanel.deleteSelectedSliceDirect();
 }
 
+void IntersectEditor::setEditingBandsVisible (bool shouldBeVisible)
+{
+    // Full views take over the editing area; hiding the bands keeps them out of focus and
+    // hit-testing while one is open.
+    for (auto* band : std::initializer_list<juce::Component*> { &sliceLane, &waveformView, &scrollZoomBar,
+                                                                 &actionPanel, &signalChainBar })
+        band->setVisible (shouldBeVisible);
+}
+
 void IntersectEditor::setBrowserVisible (bool shouldBeVisible)
 {
     if (browserVisible == shouldBeVisible)
         return;
 
+    if (shouldBeVisible)
+        setStemViewVisible (false);
+
     browserVisible = shouldBeVisible;
     if (browserVisible && actionPanel.isAutoChopOpen())
         actionPanel.toggleAutoChop();
 
-    // The browser takes over the editing area; hiding the bands keeps them out of focus and
-    // hit-testing while it is open.
-    for (auto* band : std::initializer_list<juce::Component*> { &sliceLane, &waveformView, &scrollZoomBar,
-                                                                 &actionPanel, &signalChainBar })
-        band->setVisible (! browserVisible);
+    setEditingBandsVisible (! browserVisible);
 
     browser.setVisible (browserVisible);
     headerBar.setBrowserActive (browserVisible);
@@ -532,6 +560,36 @@ void IntersectEditor::setBrowserVisible (bool shouldBeVisible)
         browser.endRelink();
         processor.stopAudition();
         persistSettings();
+        grabKeyboardFocus();
+    }
+}
+
+void IntersectEditor::setStemViewVisible (bool shouldBeVisible, int sampleId)
+{
+    if (shouldBeVisible)
+    {
+        setBrowserVisible (false);
+        stemView.openForSample (sampleId);
+    }
+
+    if (stemViewVisible == shouldBeVisible)
+        return;
+
+    stemViewVisible = shouldBeVisible;
+    if (stemViewVisible && actionPanel.isAutoChopOpen())
+        actionPanel.toggleAutoChop();
+
+    setEditingBandsVisible (! stemViewVisible);
+    stemView.setVisible (stemViewVisible);
+
+    if (stemViewVisible)
+    {
+        stemView.toFront (false);
+        stemView.grabKeyboardFocus();
+    }
+    else
+    {
+        persistSettings();   // remembered model, stem choices and mode
         grabKeyboardFocus();
     }
 }
@@ -1016,6 +1074,7 @@ void IntersectEditor::applyTheme (const juce::String& themeName)
             processor.sliceManager.recolourFromPalette();
             processor.markUiSnapshotDirty();
             browser.refreshThemeColours();
+            stemView.refreshThemeColours();
             float scale = processor.apvts.getRawParameterValue (ParamIds::uiScale)->load();
             saveUserSettings (scale, themeName);
             repaint();
@@ -1033,6 +1092,7 @@ void IntersectEditor::applyTheme (const juce::String& themeName)
     processor.sliceManager.recolourFromPalette();
     processor.markUiSnapshotDirty();
     browser.refreshThemeColours();
+    stemView.refreshThemeColours();
     float scale = processor.apvts.getRawParameterValue (ParamIds::uiScale)->load();
     saveUserSettings (scale, themeName);
     repaint();
@@ -1082,6 +1142,10 @@ void IntersectEditor::saveUserSettings (float scale, const juce::String& themeNa
     if (presetFolder != juce::File())
         content << "presetFolder: " << presetFolder.getFullPathName() << "\n";
     content << "stemComputeDevice: " << stemComputeDeviceToString (processor.getStemComputeDevice()) << "\n";
+    if (const auto stemModel = stemView.getLastModelId(); stemModel.isNotEmpty())
+        content << "stemLastModel: " << stemModel << "\n";
+    content << "stemExportMode: " << stemExportModeToString (stemView.getExportMode()) << "\n";
+    writeList ("stemSelections", stemView.getRememberedSelections());
     file.replaceWithText (content);
 }
 
@@ -1091,6 +1155,7 @@ void IntersectEditor::loadUserSettings()
     juce::String themeName = "dark";
     juce::StringArray browserBookmarks;
     juce::StringArray recentFolders;
+    juce::StringArray stemSelections;
     juce::File customPresetsFolder;
     juce::File lastFolder;
     bool auditionAutoPlay = true;
@@ -1194,6 +1259,18 @@ void IntersectEditor::loadUserSettings()
                 processor.setStemComputeDevice (
                     stemComputeDeviceFromString (line.fromFirstOccurrenceOf (":", false, false).trim()));
             }
+            else if (line.startsWith ("stemLastModel:"))
+            {
+                stemView.setLastModelId (normaliseStemModelId (line.fromFirstOccurrenceOf (":", false, false)));
+            }
+            else if (line.startsWith ("stemExportMode:"))
+            {
+                stemView.setExportMode (stemExportModeFromString (line.fromFirstOccurrenceOf (":", false, false)));
+            }
+            else if (line.startsWith ("stemSelections:"))
+            {
+                readingList = &stemSelections;
+            }
             else if (line.startsWith ("stemModelPath:"))
             {
                 auto legacyPath = juce::File (line.fromFirstOccurrenceOf (":", false, false).trim());
@@ -1211,6 +1288,7 @@ void IntersectEditor::loadUserSettings()
     browser.setAutoPlay (auditionAutoPlay);
     browser.setAuditionGainDb (auditionGainDb);
     processor.setAuditionGainDb (auditionGainDb);
+    stemView.setRememberedSelections (stemSelections);
     if (lastFolder != juce::File())
         browser.setStartFolder (lastFolder);
 

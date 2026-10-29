@@ -176,8 +176,9 @@ target_sources(Intersect PRIVATE
     src/ui/SliceLane.cpp
     src/ui/ActionPanel.cpp
     src/ui/AutoChopPanel.cpp
-    src/ui/StemExportPanel.cpp
+    src/ui/stems/StemView.cpp
     src/audio/StemSeparationJob.cpp
+    src/audio/StemSpectral.cpp
     src/audio/AuditionPlayer.cpp
 )
 

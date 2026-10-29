@@ -329,6 +329,7 @@ void HeaderBar::showSettingsPopup()
     const auto stemFolder = processor.getResolvedStemModelFolder();
     const auto customStemFolder = processor.getStemModelFolder();
     const auto installedModels = processor.getInstalledStemModels();
+    const auto stemCatalog = getEffectiveStemModelCatalog (stemFolder);
     const bool downloadActive = processor.getUiSliceSnapshot().stemDownloadState == StemModelDownloadState::downloading;
 
     juce::PopupMenu stemComputeMenu;
@@ -342,10 +343,11 @@ void HeaderBar::showSettingsPopup()
     stemDownloadMenu.addSectionHeader ("Download Models");
     stemDownloadMenu.addItem (kMenuStemDownloadMissing, "Download Missing");
     stemDownloadMenu.addSeparator();
-    for (size_t i = 0; i < getStemModelCatalog().size(); ++i)
+    for (size_t i = 0; i < stemCatalog.size(); ++i)
     {
-        const auto& entry = getStemModelCatalog()[i];
-        const bool installed = processor.isStemModelInstalled (entry.id);
+        const auto& entry = stemCatalog[i];
+        const bool installed = std::find (installedModels.begin(), installedModels.end(), entry.id)
+                                   != installedModels.end();
         auto label = juce::String (entry.menuLabel);
         if (installed)
             label << "  (installed)";
@@ -421,7 +423,7 @@ void HeaderBar::showSettingsPopup()
                        .withTargetComponent (&settingsBtn);
 
     menu.showMenuAsync (options,
-        [this, editor, themes] (int result)
+        [this, editor, themes, stemCatalog] (int result)
         {
             float scale = processor.apvts.getRawParameterValue (ParamIds::uiScale)->load();
 
@@ -539,7 +541,7 @@ void HeaderBar::showSettingsPopup()
             else if (result == kMenuStemDownloadMissing)
             {
                 std::vector<StemModelId> missingModels;
-                for (const auto& entry : getStemModelCatalog())
+                for (const auto& entry : stemCatalog)
                     if (! processor.isStemModelInstalled (entry.id))
                         missingModels.push_back (entry.id);
 
@@ -553,9 +555,9 @@ void HeaderBar::showSettingsPopup()
                 processor.cancelStemModelDownload();
             }
             else if (result >= kMenuStemDownloadBase
-                     && result < kMenuStemDownloadBase + (int) getStemModelCatalog().size())
+                     && result < kMenuStemDownloadBase + (int) stemCatalog.size())
             {
-                const auto& entry = getStemModelCatalog()[(size_t) (result - kMenuStemDownloadBase)];
+                const auto& entry = stemCatalog[(size_t) (result - kMenuStemDownloadBase)];
                 processor.startStemModelDownload ({ entry.id });
             }
             else if (result == kMenuOrtCancelDownload)

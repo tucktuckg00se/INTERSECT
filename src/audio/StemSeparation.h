@@ -15,9 +15,16 @@ enum class StemRole
     instrumental
 };
 
-enum class StemModelId
+// Model ids are the manifest's `model_id` strings (e.g. "bs-roformer-sw-6stem"), so models
+// published in the manifest work without a plugin update.
+using StemModelId = juce::String;
+
+enum class StemRuntimeKind
 {
-    bsRoformerSw6stem = 0,
+    waveform = 0,   // [1, 2, chunk] audio in, [1, stems, 2, chunk] audio out; STFT inside the model
+    spectral,       // host STFT: [1, 4, bins, frames] spectrum in, [1, stems * 4, bins, frames] out
+    spectralMask,   // host STFT: [1, frames, bins * 4] in, [1, stems, frames, maskBins, 2, 2] complex
+                    // masks out, applied to a maskNFft STFT of the mix
 };
 
 enum class StemComputeDevice
@@ -82,35 +89,94 @@ struct OrtBundleCatalogEntry
 struct StemJobResult
 {
     std::vector<juce::File> stemFiles;
-    std::vector<StemRole> stemRoles;
+    std::vector<juce::String> stemNames;
     juce::String warningMessage;
     juce::String errorMessage;
 };
 
 struct StemMetadata
 {
+    static constexpr int kMaxNameBytes = 48;
+
     int parentSourceSampleId = -1;
     StemRole role = StemRole::unknown;
     bool isGenerated = false;
+    // Fixed-size so the audio thread can copy metadata without allocating.
+    std::array<char, kMaxNameBytes> name {};
+
+    void setName (const juce::String& text)
+    {
+        name.fill (0);
+        text.copyToUTF8 (name.data(), name.size());
+    }
+
+    juce::String getName() const { return juce::String::fromUTF8 (name.data()); }
+};
+
+struct StemOutputDesc
+{
+    juce::String name;    // file-name and metadata id, e.g. "lead-vocal"
+    juce::String label;   // display text, e.g. "Lead Vocal"
+    juce::String group;   // display grouping, e.g. "Vocals"; empty = ungrouped
+};
+
+struct StemSpectralParams
+{
+    int nFft = 4096;
+    int hopSize = 1024;
+    bool hannWindow = false;      // rectangular when false
+    bool normalized = true;       // forward and inverse scaled by 1/sqrt(nFft)
+    int frames = 476;             // STFT frames per segment (model input width)
+    int segmentSamples = 485100;  // audio samples per segment
+    int strideSamples = 121275;   // segment advance
+    bool normalizeInput = true;   // run on the mix less its mean over its deviation, scale back after
+    int maskNFft = 2048;          // spectralMask only: STFT size the output masks apply to
+};
+
+// How much a GPU helps a model, for the stem view's requirements line.
+enum class StemGpuAdvice
+{
+    unknown,
+    notNeeded,     // runs well on the CPU
+    optional,      // faster on a GPU, fine without
+    recommended,   // slow on the CPU
+};
+
+// What a model needs to run, as measured with INTERSECT's CPU settings on a fast desktop CPU.
+// Zero means not known.
+struct StemModelRequirements
+{
+    float ramGb = 0.0f;               // free memory needed while separating
+    float cpuRealtimeFactor = 0.0f;   // seconds of CPU processing per second of audio
+    StemGpuAdvice gpu = StemGpuAdvice::unknown;
 };
 
 struct StemModelCatalogEntry
 {
-    StemModelId id = StemModelId::bsRoformerSw6stem;
+    StemModelId id;
     juce::String menuLabel;
     juce::String fileName;
     juce::String downloadUrl;
-    int numModelOutputs = 1;
-    StemRole modelOutputRoles[6] = { StemRole::unknown, StemRole::unknown, StemRole::unknown,
-                                     StemRole::unknown, StemRole::unknown, StemRole::unknown };
-    bool computeResidual = false;
-    StemRole residualRole = StemRole::unknown;
+    juce::int64 downloadBytes = 0;
+    juce::String sha256;          // lowercase hex of the model file; empty = not verified
+    juce::String license;
+    juce::String attribution;
+    juce::String notes;
+    StemModelRequirements requirements;
+    std::vector<StemOutputDesc> outputs;
+    juce::StringArray groupOrder;  // display order of output groups; unlisted groups follow
+    StemRuntimeKind runtimeKind = StemRuntimeKind::waveform;
+    StemSpectralParams spectral;
     double sampleRate = 44100.0;
     int chunkSize = 131072;
     float overlapRatio = 0.5f;
+
+    int getNumOutputs() const noexcept { return (int) outputs.size(); }
+    bool isValid() const noexcept { return id.isNotEmpty() && fileName.isNotEmpty() && ! outputs.empty(); }
 };
 
-using StemSelectionMask = uint32_t;
+// Selected model output indices, ascending and unique.
+using StemSelection = std::vector<int>;
 
 inline juce::String stemRoleToString (StemRole role)
 {
@@ -129,25 +195,34 @@ inline juce::String stemRoleToString (StemRole role)
 }
 
 StemRole stemRoleFromString (const juce::String& text);
-juce::String stemModelIdToString (StemModelId modelId);
-bool stemModelIdFromString (const juce::String& text, StemModelId& modelId);
-juce::String stemModelMenuLabel (StemModelId modelId);
+juce::String stemOutputLabelFromName (const juce::String& name);
+juce::String getDefaultStemModelId();
+// Maps legacy ids (e.g. "bsroformer4stem_fp32") to their current model id; trims otherwise.
+StemModelId normaliseStemModelId (const juce::String& text);
 juce::String stemComputeDeviceToString (StemComputeDevice device);
 StemComputeDevice stemComputeDeviceFromString (const juce::String& text);
 juce::String getAvailableGpuProviderName();
 juce::String stemExportModeToString (StemExportMode mode);
 StemExportMode stemExportModeFromString (const juce::String& text);
-const StemModelCatalogEntry* findStemModelCatalogEntry (StemModelId modelId);
-const std::array<StemModelCatalogEntry, 1>& getStemModelCatalog();
+const std::vector<StemModelCatalogEntry>& getBuiltInStemModelCatalog();
 juce::String getStemModelManifestFileName();
 juce::String getStemModelManifestDownloadUrl();
 juce::File getDefaultStemModelFolder();
 juce::File getStemModelManifestFile (const juce::File& modelFolder);
-juce::File resolveStemModelFile (const juce::File& modelFolder, StemModelId modelId);
-StemModelCatalogEntry getEffectiveStemModelCatalogEntry (StemModelId modelId, const juce::File& modelFolder);
+
+// Built-in catalog overlaid with the downloaded manifest in modelFolder. The manifest can
+// override built-in entries and add models whose runtime kind this build supports.
+std::vector<StemModelCatalogEntry> getEffectiveStemModelCatalog (const juce::File& modelFolder);
+// Invalid (empty id) entry when the model is unknown.
+StemModelCatalogEntry getEffectiveStemModelCatalogEntry (const StemModelId& modelId, const juce::File& modelFolder);
+juce::File resolveStemModelFile (const juce::File& modelFolder, const StemModelId& modelId);
 std::vector<StemModelId> scanInstalledStemModels (const juce::File& modelFolder);
-StemSelectionMask stemSelectionBitForIndex (int outputIndex);
-bool isStemOutputSelected (StemSelectionMask mask, int outputIndex);
+
+// Sorted, unique, in-range copy of selection.
+StemSelection normaliseStemSelection (StemSelection selection, int numOutputs);
+
+// Parses one manifest `models[]` object. Returns an invalid entry when it can't be used.
+StemModelCatalogEntry parseStemModelManifestEntry (const juce::var& manifestModel, const StemModelCatalogEntry& base);
 
 // ── ONNX Runtime bundle management ──────────────────────────────────────
 //

@@ -32,3 +32,28 @@ target_link_libraries(IntersectAudioTests PRIVATE
     velociloops
 )
 add_test(NAME lazy_chop COMMAND IntersectAudioTests)
+
+juce_add_console_app(IntersectStemTests
+    PRODUCT_NAME "INTERSECT stem tests"
+    VERSION "${INTERSECT_VERSION}"
+)
+
+target_sources(IntersectStemTests PRIVATE
+    StemSeparationTests.cpp
+    ../src/audio/StemSeparation.cpp
+    ../src/audio/StemSpectral.cpp
+)
+target_include_directories(IntersectStemTests PRIVATE
+    ..
+    ../src
+)
+target_compile_definitions(IntersectStemTests PRIVATE
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+)
+target_link_libraries(IntersectStemTests PRIVATE
+    juce::juce_audio_basics
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_warning_flags
+)
+add_test(NAME stem_separation COMMAND IntersectStemTests)

@@ -1,4 +1,5 @@
 #include "StemSeparationJob.h"
+#include "StemSpectral.h"
 
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <cmath>
@@ -262,6 +263,7 @@ std::vector<float> makeHannWindow (int size)
 bool runWaveformChunked (Ort::Session& session,
                          const juce::AudioBuffer<float>& sourceAudio,
                          const StemModelCatalogEntry& catalog,
+                         const StemSelection& selection,
                          std::vector<juce::AudioBuffer<float>>& stemBuffers,
                          std::atomic<bool>& shouldCancel,
                          juce::Thread& thread,
@@ -279,6 +281,7 @@ bool runWaveformChunked (Ort::Session& session,
     const int chunkSize = catalog.chunkSize;
     const int hopSize = juce::jmax (1, (int) ((float) chunkSize * (1.0f - catalog.overlapRatio)));
     const auto hannWindow = makeHannWindow (chunkSize);
+    const int numModelStems = catalog.getNumOutputs();
 
     // Pad audio so that every sample is covered by at least one full chunk.
     // Add chunkSize - hopSize padding at both start and end, then round up to hop alignment.
@@ -299,9 +302,15 @@ bool runWaveformChunked (Ort::Session& session,
     std::vector<float> inputBuffer ((size_t) (2 * chunkSize));
     const std::array<int64_t, 3> inputShape = { 1, 2, (int64_t) chunkSize };
 
-    // Accumulation buffers (allocated after first inference tells us stem count)
-    int numOutputStems = 0;
+    // Only selected stems are accumulated: a 53-stem model would otherwise need several GB
+    // for a song-length sample.
     std::vector<juce::AudioBuffer<float>> accumBuffers;
+    accumBuffers.reserve (selection.size());
+    for (size_t s = 0; s < selection.size(); ++s)
+    {
+        accumBuffers.emplace_back (2, fullLen);
+        accumBuffers.back().clear();
+    }
     std::vector<float> weightAccum ((size_t) fullLen, 0.0f);
 
     for (int chunkIdx = 0; chunkIdx < totalChunks; ++chunkIdx)
@@ -344,36 +353,23 @@ bool runWaveformChunked (Ort::Session& session,
             return false;
         }
 
-        const int stemsInTensor = (int) shape[1];
-        const float* outputData = outputValues.front().GetTensorData<float>();
-
-        // Allocate accumulation buffers on first chunk
-        if (accumBuffers.empty())
+        if (shape[1] != (int64_t) numModelStems)
         {
-            numOutputStems = stemsInTensor;
-            accumBuffers.reserve ((size_t) numOutputStems);
-            for (int s = 0; s < numOutputStems; ++s)
-            {
-                accumBuffers.emplace_back (2, fullLen);
-                accumBuffers.back().clear();
-            }
-        }
-
-        if (stemsInTensor != numOutputStems)
-        {
-            errorMessage = "Model output stem count changed between chunks";
+            errorMessage = "Stem model output count did not match catalog";
             return false;
         }
 
+        const float* outputData = outputValues.front().GetTensorData<float>();
+
         // Apply Hann window and accumulate
         // Output layout: [stem, channel, sample]
-        const int stemStride = 2 * chunkSize;
-        for (int s = 0; s < numOutputStems; ++s)
+        const size_t stemStride = (size_t) (2 * chunkSize);
+        for (size_t s = 0; s < selection.size(); ++s)
         {
             for (int ch = 0; ch < 2; ++ch)
             {
-                const float* src = outputData + (size_t) (s * stemStride + ch * chunkSize);
-                float* dst = accumBuffers[(size_t) s].getWritePointer (ch, chunkStart);
+                const float* src = outputData + (size_t) selection[s] * stemStride + (size_t) (ch * chunkSize);
+                float* dst = accumBuffers[s].getWritePointer (ch, chunkStart);
                 for (int i = 0; i < chunkSize; ++i)
                     dst[i] += src[i] * hannWindow[(size_t) i];
             }
@@ -387,18 +383,12 @@ bool runWaveformChunked (Ort::Session& session,
                         std::memory_order_release);
     }
 
-    if (accumBuffers.empty())
-    {
-        errorMessage = "Stem model produced no output";
-        return false;
-    }
-
     // Normalize by accumulated window weight
-    for (int s = 0; s < numOutputStems; ++s)
+    for (auto& accum : accumBuffers)
     {
         for (int ch = 0; ch < 2; ++ch)
         {
-            float* dst = accumBuffers[(size_t) s].getWritePointer (ch);
+            float* dst = accum.getWritePointer (ch);
             for (int i = 0; i < fullLen; ++i)
             {
                 const float w = weightAccum[(size_t) i];
@@ -410,12 +400,12 @@ bool runWaveformChunked (Ort::Session& session,
 
     // Trim padding to recover original length
     stemBuffers.clear();
-    stemBuffers.reserve ((size_t) numOutputStems);
-    for (int s = 0; s < numOutputStems; ++s)
+    stemBuffers.reserve (accumBuffers.size());
+    for (const auto& accum : accumBuffers)
     {
         juce::AudioBuffer<float> stem (2, originalLen);
         for (int ch = 0; ch < 2; ++ch)
-            stem.copyFrom (ch, 0, accumBuffers[(size_t) s], ch, border, originalLen);
+            stem.copyFrom (ch, 0, accum, ch, border, originalLen);
         stemBuffers.push_back (std::move (stem));
     }
 
@@ -423,41 +413,244 @@ bool runWaveformChunked (Ort::Session& session,
     return true;
 }
 
+// Spectral models: the host does the STFT. Mirrors the reference pipelines these models were
+// verified against: optionally the mix normalized by its (mono) mean and deviation, demix()-style
+// segments, outputs scaled back by the deviation.
+//   spectral:     [1, 4, bins, frames] planes (L re, L im, R re, R im) in,
+//                 [1, stems * 4, bins, frames] stem spectra out (same planes per stem)
+//   spectralMask: [1, frames, bins * 4] (per frame and bin: L re, L im, R re, R im) in,
+//                 [1, stems, frames, maskBins, 2 channels, 2 (re, im)] masks out, multiplied onto a
+//                 maskNFft STFT of the mix
+bool runSpectralSegmented (Ort::Session& session,
+                           const juce::AudioBuffer<float>& sourceAudio,
+                           const StemModelCatalogEntry& catalog,
+                           const StemSelection& selection,
+                           std::vector<juce::AudioBuffer<float>>& stemBuffers,
+                           std::atomic<bool>& shouldCancel,
+                           juce::Thread& thread,
+                           std::atomic<float>& progress,
+                           juce::String& errorMessage)
+{
+    Ort::AllocatorWithDefaultOptions allocator;
+    auto inputName = session.GetInputNameAllocated (0, allocator);
+    auto outputName = session.GetOutputNameAllocated (0, allocator);
+    const char* inputNames[] = { inputName.get() };
+    const char* outputNames[] = { outputName.get() };
+    Ort::MemoryInfo memoryInfo = Ort::MemoryInfo::CreateCpu (OrtArenaAllocator, OrtMemTypeDefault);
+
+    const auto& params = catalog.spectral;
+    const bool masked = catalog.runtimeKind == StemRuntimeKind::spectralMask;
+    const int segmentSamples = params.segmentSamples;
+    const int signalSamples = getStemSpectralSignalSamples (params);
+    const int numStems = catalog.getNumOutputs();
+
+    StemStft stft (params.nFft, params.hopSize, params.hannWindow, params.normalized, signalSamples);
+    std::unique_ptr<StemStft> maskStft;
+    if (masked)
+        maskStft = std::make_unique<StemStft> (params.maskNFft, params.hopSize, params.hannWindow,
+                                               params.normalized, signalSamples);
+
+    const int bins = stft.getNumBins();
+    const int frames = stft.getNumFrames();
+    const size_t plane = stft.getPlaneSize();
+
+    // Mean and sample deviation of the mono mix, in double.
+    const int numSamples = sourceAudio.getNumSamples();
+    double mean = 0.0, deviation = 1.0;
+    if (params.normalizeInput)
+    {
+        double sum = 0.0, sumSq = 0.0;
+        for (int i = 0; i < numSamples; ++i)
+        {
+            const double mono = 0.5 * ((double) sourceAudio.getSample (0, i) + (double) sourceAudio.getSample (1, i));
+            sum += mono;
+            sumSq += mono * mono;
+        }
+        mean = sum / juce::jmax (1, numSamples);
+        const double variance = numSamples > 1 ? (sumSq - (double) numSamples * mean * mean) / (double) (numSamples - 1) : 0.0;
+        deviation = std::sqrt (juce::jmax (0.0, variance)) + 1.0e-8;
+    }
+
+    juce::AudioBuffer<float> normalised (2, numSamples);
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        const float* src = sourceAudio.getReadPointer (ch);
+        float* dst = normalised.getWritePointer (ch);
+        for (int i = 0; i < numSamples; ++i)
+            dst[i] = (float) (((double) src[i] - mean) / deviation);
+    }
+
+    // Planar STFT of both channels: L re, L im, R re, R im.
+    std::vector<float> spectrum (4 * plane);
+    std::vector<float> inputBuffer (4 * plane);
+    std::array<int64_t, 4> inputShape4 = { 1, 4, (int64_t) bins, (int64_t) frames };
+    std::array<int64_t, 3> inputShape3 = { 1, (int64_t) frames, (int64_t) bins * 4 };
+
+    const int maskBins = masked ? maskStft->getNumBins() : 0;
+    const size_t maskPlane = masked ? maskStft->getPlaneSize() : 0;
+    std::vector<float> mixMaskSpectrum (4 * maskPlane);
+    std::vector<float> stemRe (masked ? maskPlane : 0), stemIm (masked ? maskPlane : 0);
+
+    auto processSegment = [&] (const juce::AudioBuffer<float>& segment,
+                               std::vector<juce::AudioBuffer<float>>& outputs,
+                               int segmentIndex, int numSegments) -> bool
+    {
+        if (thread.threadShouldExit() || shouldCancel.load (std::memory_order_acquire))
+            return false;
+
+        for (int ch = 0; ch < 2; ++ch)
+            stft.forward (segment.getReadPointer (ch), segmentSamples,
+                          spectrum.data() + (size_t) (2 * ch) * plane,
+                          spectrum.data() + (size_t) (2 * ch + 1) * plane);
+
+        if (masked)
+        {
+            // [frame][bin][L re, L im, R re, R im]
+            for (int t = 0; t < frames; ++t)
+                for (int k = 0; k < bins; ++k)
+                    for (int c = 0; c < 4; ++c)
+                        inputBuffer[((size_t) t * (size_t) bins + (size_t) k) * 4 + (size_t) c]
+                            = spectrum[(size_t) c * plane + (size_t) k * (size_t) frames + (size_t) t];
+        }
+        else
+        {
+            std::copy (spectrum.begin(), spectrum.end(), inputBuffer.begin());
+        }
+
+        auto inputTensor = masked
+            ? Ort::Value::CreateTensor<float> (memoryInfo, inputBuffer.data(), inputBuffer.size(),
+                                               inputShape3.data(), inputShape3.size())
+            : Ort::Value::CreateTensor<float> (memoryInfo, inputBuffer.data(), inputBuffer.size(),
+                                               inputShape4.data(), inputShape4.size());
+
+        auto outputValues = session.Run (Ort::RunOptions { nullptr },
+                                          inputNames, &inputTensor, 1,
+                                          outputNames, 1);
+
+        if (outputValues.empty() || ! outputValues.front().IsTensor())
+        {
+            errorMessage = "Stem model returned no output tensor";
+            return false;
+        }
+
+        const auto shape = outputValues.front().GetTensorTypeAndShapeInfo().GetShape();
+        const float* outputData = outputValues.front().GetTensorData<float>();
+
+        if (! masked)
+        {
+            if (shape.size() != 4 || shape[0] != 1 || shape[1] != (int64_t) (numStems * 4)
+                || shape[2] != (int64_t) bins || shape[3] != (int64_t) frames)
+            {
+                errorMessage = "Unexpected model output shape (expected [1, " + juce::String (numStems * 4) + ", "
+                             + juce::String (bins) + ", " + juce::String (frames) + "])";
+                return false;
+            }
+
+            for (size_t s = 0; s < selection.size(); ++s)
+            {
+                const float* stem = outputData + (size_t) selection[s] * 4 * plane;
+                for (int ch = 0; ch < 2; ++ch)
+                    stft.inverse (stem + (size_t) (2 * ch) * plane, stem + (size_t) (2 * ch + 1) * plane,
+                                  outputs[s].getWritePointer (ch), segmentSamples);
+            }
+        }
+        else
+        {
+            // [1, stems, frames, maskBins, 2, 2], possibly with the last three axes flattened.
+            int64_t perFrame = 1;
+            for (size_t d = 3; d < shape.size(); ++d)
+                perFrame *= shape[d];
+            if (shape.size() < 4 || shape[0] != 1 || shape[1] != (int64_t) numStems || shape[2] != (int64_t) frames
+                || perFrame != (int64_t) maskBins * 4)
+            {
+                errorMessage = "Unexpected model output shape (expected [1, " + juce::String (numStems) + ", "
+                             + juce::String (frames) + ", " + juce::String (maskBins) + ", 2, 2])";
+                return false;
+            }
+
+            for (int ch = 0; ch < 2; ++ch)
+                maskStft->forward (segment.getReadPointer (ch), segmentSamples,
+                                   mixMaskSpectrum.data() + (size_t) (2 * ch) * maskPlane,
+                                   mixMaskSpectrum.data() + (size_t) (2 * ch + 1) * maskPlane);
+
+            for (size_t s = 0; s < selection.size(); ++s)
+            {
+                const float* mask = outputData + (size_t) selection[s] * (size_t) frames * (size_t) maskBins * 4;
+                for (int ch = 0; ch < 2; ++ch)
+                {
+                    const float* mixRe = mixMaskSpectrum.data() + (size_t) (2 * ch) * maskPlane;
+                    const float* mixIm = mixMaskSpectrum.data() + (size_t) (2 * ch + 1) * maskPlane;
+                    for (int t = 0; t < frames; ++t)
+                        for (int k = 0; k < maskBins; ++k)
+                        {
+                            const size_t m = (((size_t) t * (size_t) maskBins + (size_t) k) * 2 + (size_t) ch) * 2;
+                            const size_t p = (size_t) k * (size_t) frames + (size_t) t;
+                            const float mr = mask[m], mi = mask[m + 1];
+                            stemRe[p] = mixRe[p] * mr - mixIm[p] * mi;
+                            stemIm[p] = mixRe[p] * mi + mixIm[p] * mr;
+                        }
+                    maskStft->inverse (stemRe.data(), stemIm.data(), outputs[s].getWritePointer (ch), segmentSamples);
+                }
+            }
+        }
+
+        progress.store (0.15f + 0.55f * ((float) (segmentIndex + 1) / (float) numSegments),
+                        std::memory_order_release);
+        return true;
+    };
+
+    if (! runStemSegments (normalised, segmentSamples, params.strideSamples,
+                           (int) selection.size(), processSegment, stemBuffers))
+        return false;
+
+    if (params.normalizeInput)
+        for (auto& stem : stemBuffers)
+            stem.applyGain ((float) deviation);
+
+    progress.store (0.7f, std::memory_order_release);
+    return true;
+}
+
+// Runs the model and returns one buffer per selected output, in selection order.
+bool runStemInference (Ort::Session& session,
+                       const juce::AudioBuffer<float>& sourceAudio,
+                       const StemModelCatalogEntry& catalog,
+                       const StemSelection& selection,
+                       std::vector<juce::AudioBuffer<float>>& stemBuffers,
+                       std::atomic<bool>& shouldCancel,
+                       juce::Thread& thread,
+                       std::atomic<float>& progress,
+                       juce::String& errorMessage)
+{
+    switch (catalog.runtimeKind)
+    {
+        case StemRuntimeKind::waveform:
+            return runWaveformChunked (session, sourceAudio, catalog, selection, stemBuffers,
+                                       shouldCancel, thread, progress, errorMessage);
+        case StemRuntimeKind::spectral:
+        case StemRuntimeKind::spectralMask:
+            return runSpectralSegmented (session, sourceAudio, catalog, selection, stemBuffers,
+                                         shouldCancel, thread, progress, errorMessage);
+    }
+
+    errorMessage = "This stem model needs a newer version of INTERSECT";
+    return false;
+}
+
 #endif // INTERSECT_HAS_ONNX_RUNTIME
 
-std::vector<StemRole> buildStemRoles (const StemModelCatalogEntry& catalog)
-{
-    std::vector<StemRole> roles;
-    roles.reserve ((size_t) (catalog.numModelOutputs + (catalog.computeResidual ? 1 : 0)));
-    for (int i = 0; i < catalog.numModelOutputs && i < 6; ++i)
-        roles.push_back (catalog.modelOutputRoles[i]);
-    if (catalog.computeResidual)
-        roles.push_back (catalog.residualRole);
-    return roles;
-}
-
-int countSelectedStemOutputs (StemSelectionMask selectionMask, int numOutputs)
-{
-    int count = 0;
-    for (int i = 0; i < numOutputs; ++i)
-        if (isStemOutputSelected (selectionMask, i))
-            ++count;
-    return count;
-}
-
-juce::String buildCombinedStemName (const std::vector<StemRole>& roles, StemSelectionMask selectionMask)
+juce::String buildCombinedStemName (const StemModelCatalogEntry& catalog, const StemSelection& selection)
 {
     juce::StringArray parts;
-    for (int i = 0; i < (int) roles.size(); ++i)
-    {
-        if (! isStemOutputSelected (selectionMask, i))
-            continue;
-
-        parts.add (sanitisePathComponent (stemRoleToString (roles[(size_t) i])));
-    }
+    for (int index : selection)
+        parts.add (sanitisePathComponent (catalog.outputs[(size_t) index].name));
 
     if (parts.isEmpty())
         return "stem";
+
+    // Long combinations would make unwieldy file names.
+    if (parts.size() > 4)
+        return "mix-" + juce::String (parts.size()) + "-stems";
 
     return parts.joinIntoString ("+");
 }
@@ -517,9 +710,8 @@ bool StemSeparationJob::start (const juce::AudioBuffer<float>& sourceAudio,
                                double sampleRate,
                                int sampleId,
                                const juce::String& sourceName,
-                               StemModelId modelId,
                                const StemModelCatalogEntry& catalogEntry,
-                               StemSelectionMask stemSelectionMask,
+                               const StemSelection& stemSelection,
                                StemExportMode exportMode,
                                StemComputeDevice computeDevice,
                                const juce::File& modelPath,
@@ -532,9 +724,8 @@ bool StemSeparationJob::start (const juce::AudioBuffer<float>& sourceAudio,
     jobSampleRate = sampleRate;
     sourceSampleId.store (sampleId, std::memory_order_release);
     jobSourceName = sourceName;
-    jobModelId = modelId;
     jobCatalogEntry = catalogEntry;
-    jobStemSelectionMask = stemSelectionMask;
+    jobStemSelection = normaliseStemSelection (stemSelection, catalogEntry.getNumOutputs());
     jobExportMode = exportMode;
     jobComputeDevice = computeDevice;
     jobModelPath = modelPath;
@@ -600,9 +791,9 @@ void StemSeparationJob::run()
 #else
     StemJobState finalState = StemJobState::failed;
 
-    if (jobCatalogEntry.numModelOutputs <= 0)
+    if (! jobCatalogEntry.isValid() || jobStemSelection.empty())
     {
-        localResult.errorMessage = "Unknown stem model";
+        localResult.errorMessage = jobCatalogEntry.isValid() ? "Select at least one stem" : "Unknown stem model";
         const juce::ScopedLock sl (resultLock);
         result = std::move (localResult);
         state.store (StemJobState::failed, std::memory_order_release);
@@ -661,8 +852,8 @@ void StemSeparationJob::run()
 
         std::vector<juce::AudioBuffer<float>> stemBuffers;
         juce::String parseError;
-        if (! runWaveformChunked (session, inferenceAudio, jobCatalogEntry, stemBuffers,
-                                  shouldCancel, *this, progress, parseError))
+        if (! runStemInference (session, inferenceAudio, jobCatalogEntry, jobStemSelection, stemBuffers,
+                                shouldCancel, *this, progress, parseError))
         {
             if (threadShouldExit() || shouldCancel.load (std::memory_order_acquire))
             {
@@ -673,27 +864,14 @@ void StemSeparationJob::run()
             throw std::runtime_error (parseError.toStdString());
         }
 
-        const auto roles = buildStemRoles (jobCatalogEntry);
-        if (roles.empty())
-            throw std::runtime_error ("Stem model has no configured outputs");
-
-        if ((int) stemBuffers.size() != (int) roles.size())
-            throw std::runtime_error ("Stem model output count did not match catalog");
-
-        if (countSelectedStemOutputs (jobStemSelectionMask, (int) roles.size()) <= 0)
-            throw std::runtime_error ("Select at least one stem");
+        if (stemBuffers.size() != jobStemSelection.size())
+            throw std::runtime_error ("Stem model output count did not match selection");
 
         state.store (StemJobState::writing, std::memory_order_release);
 
         juce::String writeError;
         if (jobExportMode == StemExportMode::separate)
         {
-            int selectedStemCount = 0;
-            for (size_t i = 0; i < stemBuffers.size(); ++i)
-                if (isStemOutputSelected (jobStemSelectionMask, (int) i))
-                    ++selectedStemCount;
-
-            int writtenStemCount = 0;
             for (size_t i = 0; i < stemBuffers.size(); ++i)
             {
                 if (threadShouldExit() || shouldCancel.load (std::memory_order_acquire))
@@ -702,20 +880,16 @@ void StemSeparationJob::run()
                     return;
                 }
 
-                if (! isStemOutputSelected (jobStemSelectionMask, (int) i))
-                    continue;
-
+                const auto& output = jobCatalogEntry.outputs[(size_t) jobStemSelection[i]];
                 auto resampledStem = resampleStereoBuffer (stemBuffers[i], modelRate, jobSampleRate);
-                const auto roleName = sanitisePathComponent (stemRoleToString (roles[i]));
-                auto stemFile = jobOutputDir.getChildFile (jobSourceName + "_" + roleName + ".wav");
+                auto stemFile = jobOutputDir.getChildFile (jobSourceName + "_" + sanitisePathComponent (output.name) + ".wav");
 
                 if (! writeWaveFile (stemFile, resampledStem, jobSampleRate, writeError))
                     throw std::runtime_error (writeError.toStdString());
 
                 localResult.stemFiles.push_back (stemFile);
-                localResult.stemRoles.push_back (roles[i]);
-                ++writtenStemCount;
-                progress.store (0.7f + (0.3f * (float) writtenStemCount / (float) juce::jmax (1, selectedStemCount)),
+                localResult.stemNames.push_back (output.name);
+                progress.store (0.7f + (0.3f * (float) (i + 1) / (float) stemBuffers.size()),
                                 std::memory_order_release);
             }
         }
@@ -732,9 +906,6 @@ void StemSeparationJob::run()
                     return;
                 }
 
-                if (! isStemOutputSelected (jobStemSelectionMask, (int) i))
-                    continue;
-
                 for (int ch = 0; ch < 2; ++ch)
                     combinedStem.addFrom (ch, 0, stemBuffers[i], ch, 0, combinedStem.getNumSamples());
 
@@ -743,14 +914,17 @@ void StemSeparationJob::run()
             }
 
             auto resampledCombinedStem = resampleStereoBuffer (combinedStem, modelRate, jobSampleRate);
-            const auto stemName = buildCombinedStemName (roles, jobStemSelectionMask);
+            const auto stemName = buildCombinedStemName (jobCatalogEntry, jobStemSelection);
             auto stemFile = jobOutputDir.getChildFile (jobSourceName + "_" + stemName + ".wav");
 
             if (! writeWaveFile (stemFile, resampledCombinedStem, jobSampleRate, writeError))
                 throw std::runtime_error (writeError.toStdString());
 
             localResult.stemFiles.push_back (stemFile);
-            localResult.stemRoles.push_back (StemRole::unknown);
+            // A single selected output keeps its name; a real mix has no single instrument.
+            localResult.stemNames.push_back (jobStemSelection.size() == 1
+                                                 ? jobCatalogEntry.outputs[(size_t) jobStemSelection.front()].name
+                                                 : stemName);
             progress.store (1.0f, std::memory_order_release);
         }
 

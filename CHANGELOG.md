@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Three new stem separation models, each downloadable from the stem view. All are MIT-licensed.
+  - **SCNet**: small and fast, and runs well on the CPU.
+  - **Mini-BS-RoFormer V2.5**: much faster than full-size models, with slightly lower quality.
+  - **MVSep Mega 53**: finds 53 individual instruments, such as kick, snare, hi-hat, lead and backing vocals, piano, strings and brass. Its stems overlap, so they don't add up to the mix.
+- Each model now shows what it needs to run: how much RAM (in red when your computer has less), roughly how long a 3-minute song takes on the CPU, and whether a GPU is recommended.
+
+### Changed
+- **STEMS** now opens a full-size stem view, like the file browser.
+  - On the left, pick a model. Each one shows its description, license, credits and download progress.
+  - On the right, tick the stems you want. Stems are grouped, with search and all/none buttons.
+  - Along the bottom, choose the device, mode and output folder.
+  - The view remembers the last model you used and which stems you picked for each model.
+- Model downloads are checked before they're installed, so a damaged download is caught right away instead of failing later.
+- Generated stems keep their names (such as "lead-vocal" or "kick") when you save and reopen a project.
+
+### Fixed
+- Reopening a project no longer turns piano stems and combined stems into guitar stems.
+
 ## [0.17.2] - 2026-10-27
 
 ### Fixed

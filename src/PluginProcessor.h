@@ -165,8 +165,8 @@ public:
     void reorderSessionSampleAsync (int sourceSampleId, int targetIndex);
     void deleteSessionSampleAsync (int sampleId);
     void startStemSeparation (int sampleId,
-                              StemModelId modelId,
-                              StemSelectionMask stemSelectionMask,
+                              const StemModelId& modelId,
+                              const StemSelection& stemSelection,
                               StemExportMode exportMode,
                               const juce::File& outputFolder = {});
     void cancelStemSeparation();
@@ -178,7 +178,8 @@ public:
     StemComputeDevice getStemComputeDevice() const noexcept { return stemComputeDevice; }
     void setStemComputeDevice (StemComputeDevice device) noexcept { stemComputeDevice = device; }
     std::vector<StemModelId> getInstalledStemModels() const;
-    bool isStemModelInstalled (StemModelId modelId) const;
+    bool isStemModelInstalled (const StemModelId& modelId) const;
+    const StemModelDownloadJob& getStemModelDownloadJob() const { return stemModelDownloadJob; }
 
     // ORT runtime bundle management
     juce::File getOrtRootFolder() const;
@@ -563,7 +564,7 @@ private:
     // Pending stem metadata to apply after the import load completes
     struct PendingStemImport
     {
-        std::vector<StemRole> roles;
+        std::vector<StemMetadata> metas;   // one per imported file, built on the message thread
         int parentSourceSampleId = -1;
     };
     std::atomic<PendingStemImport*> pendingStemImport { nullptr };

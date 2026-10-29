@@ -99,7 +99,7 @@ Each sample in the sample lane has a `MIDI` button (`M` when the sample is narro
 
 ## Stem separation
 
-Each sample in the sample lane has a `STEMS` button that opens the stem-separation overlay panel for that sample. While a job is running on that sample, the button reads `CANCEL`.
+Each sample in the sample lane has a `STEMS` button that opens the stem view for that sample. Like the `FILES` browser, it takes over the editing area below the sample lane: models on the left, the model's stems (grouped, with search) on the right, and device / mode / output / `START` along the bottom. While a job is running on that sample, the button reads `CANCEL`.
 
 For an end-to-end walkthrough — picking a model, device, and mode, then running the export — see the dedicated [Stem separation]({{ site.baseurl }}{% link stem-separation.md %}) page.
 

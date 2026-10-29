@@ -5,6 +5,7 @@
 #include "ui/HeaderBar.h"
 #include "ui/SampleLane.h"
 #include "ui/browser/BrowserView.h"
+#include "ui/stems/StemView.h"
 #include "ui/SignalChainBar.h"
 #include "ui/SliceLane.h"
 #include "ui/WaveformView.h"
@@ -44,6 +45,8 @@ private:
     void ensureDefaultThemes();
     void loadUserSettings();
     void setBrowserVisible (bool shouldBeVisible);
+    void setStemViewVisible (bool shouldBeVisible, int sampleId = -1);
+    void setEditingBandsVisible (bool shouldBeVisible);
     void addFilesToKit (const std::vector<juce::File>& files);
     void replaceKitWithFiles (const std::vector<juce::File>& files);
     void loadPreset (const juce::File& preset);
@@ -78,12 +81,14 @@ private:
     bool lastPreviewActive = false;
     float savedScale = -1.0f;
     bool browserVisible = false;
+    bool stemViewVisible = false;
     uint32_t lastUiSnapshotVersion = 0;
     uint32_t lastPresetSaveVersion = 0;
     DeleteTarget deleteTarget = DeleteTarget::slice;
 
     IntersectLookAndFeel lnf;
     BrowserView browser;
+    StemView    stemView;
     HeaderBar       headerBar;
     SampleLane      sampleLane;
     SignalChainBar  signalChainBar;
