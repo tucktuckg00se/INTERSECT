@@ -26,6 +26,7 @@ enum SettingsMenuItemId
     kMenuMidiPrev,
     kMenuMidiNext,
     kMenuSponsor,
+    kMenuDiscord,
     kMenuThemeBase = 2000,
     kMenuMiddleCBase = 3000,  // +0=C3, +1=C4, +2=C5
     kMenuStemFolder = 4000,
@@ -417,6 +418,7 @@ void HeaderBar::showSettingsPopup()
 
     menu.addSeparator();
     menu.addSectionHeader ("Support");
+    menu.addItem (kMenuDiscord, "Join the Discord");
     menu.addItem (kMenuSponsor, juce::CharPointer_UTF8 ("\xe2\x98\x95  Buy Me a Coffee"));
 
     auto options = IntersectLookAndFeel::makeEditorMenuOptions (*this, 220, 24)
@@ -463,6 +465,10 @@ void HeaderBar::showSettingsPopup()
             else if (result == kMenuSponsor)
             {
                 juce::URL ("https://buymeacoffee.com/tucktuckgoose").launchInDefaultBrowser();
+            }
+            else if (result == kMenuDiscord)
+            {
+                juce::URL ("https://discord.gg/yhNReDnQvE").launchInDefaultBrowser();
             }
             else if (result >= kMenuMiddleCBase && result <= kMenuMiddleCBase + 2)
             {

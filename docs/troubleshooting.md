@@ -6,7 +6,7 @@ description: "Symptom-first troubleshooting for INTERSECT — install, audio, MI
 
 # Troubleshooting
 
-Find your symptom in the list, then follow the fix. If you don't see your issue, please [open an issue](https://github.com/tucktuckg00se/INTERSECT/issues) with your OS, DAW, INTERSECT version (visible at the bottom of **SET**), and a short description of what you tried.
+Find your symptom in the list, then follow the fix. If you don't see your issue, please [open an issue](https://github.com/tucktuckg00se/INTERSECT/issues) with your OS, DAW, INTERSECT version (visible at the bottom of **SET**), and a short description of what you tried. For quick questions, ask on [Discord](https://discord.gg/yhNReDnQvE).
 
 ## Install & loading
 
@@ -128,3 +128,5 @@ This happens when the project sample rate differs from what the sample was recor
 - DAW + version (or "standalone")
 - A short description of the steps that reproduce the problem
 - Any text from the header status bar (click warning/error text to copy it to the clipboard)
+
+For quick questions or general help, ask on [Discord](https://discord.gg/yhNReDnQvE).

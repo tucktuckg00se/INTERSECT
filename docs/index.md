@@ -46,6 +46,10 @@ Start with the **[Getting started]({{ site.baseurl }}{% link getting-started.md 
 - [Troubleshooting]({{ site.baseurl }}{% link troubleshooting.md %}) — symptom-first FAQ
 - [Build from source]({{ site.baseurl }}{% link building-from-source.md %}) — per-OS toolchain setup and dependencies
 
+## Community
+
+Questions, feedback, or want to share what you made? [Join the INTERSECT Discord](https://discord.gg/yhNReDnQvE).
+
 ## Support development
 
 - [Sponsor on GitHub](https://github.com/sponsors/tucktuckg00se)
