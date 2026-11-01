@@ -1,8 +1,15 @@
 # INTERSECT
 
-**Full documentation:** <https://tucktuckg00se.github.io/INTERSECT/>
+[![Latest release](https://img.shields.io/github/v/release/tucktuckg00se/INTERSECT)](https://github.com/tucktuckg00se/INTERSECT/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/tucktuckg00se/INTERSECT/total)](https://github.com/tucktuckg00se/INTERSECT/releases)
+[![License](https://img.shields.io/github/license/tucktuckg00se/INTERSECT)](LICENSE)
+![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-informational)
+![Formats](https://img.shields.io/badge/formats-VST3%20%7C%20AU%20%7C%20Standalone-informational)
 
-**Support development:** [Sponsor on GitHub](https://github.com/sponsors/tucktuckg00se) · [Buy me a coffee](https://buymeacoffee.com/tucktuckgoose)
+[![Discord](https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/yhNReDnQvE)
+[![Docs](https://img.shields.io/badge/docs-read%20online-0A7BBB?logo=readthedocs&logoColor=white)](https://tucktuckg00se.github.io/INTERSECT/)
+[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-EA4AAA?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/tucktuckg00se)
+[![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/tucktuckgoose)
 
 INTERSECT is a sample slicer instrument plugin (VST3/AU/Standalone) with multi-sample sessions, per-slice locking, slice note ranges, multiple time/pitch algorithms, and MIDI-triggered slice playback.
 
