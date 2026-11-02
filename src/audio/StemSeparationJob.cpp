@@ -197,6 +197,24 @@ Ort::Env& getOrtEnv()
     return env;
 }
 
+juce::String describeGpuUnavailable (const juce::String& details)
+{
+    return "GPU unavailable: INTERSECT couldn't start the GPU runtime. Switch DEVICE to CPU to separate on the CPU. Details: "
+         + details;
+}
+
+// Status-bar message for a GPU provider that failed to load or run a model.
+juce::String describeGpuFailure (const juce::String& modelName, const juce::String& details)
+{
+    const auto lower = details.toLowerCase();
+    const bool outOfMemory = lower.contains ("out of memory") || lower.contains ("not enough memory")
+                          || lower.contains ("8007000e") || lower.contains ("failed to allocate");
+
+    return (outOfMemory ? "The GPU ran out of memory running " + modelName + ". Switch DEVICE to CPU, or try a smaller model."
+                        : "The GPU couldn't run " + modelName + ". Switch DEVICE to CPU to separate on the CPU.")
+         + " Details: " + details;
+}
+
 bool configureExecutionProvider (Ort::SessionOptions& options, StemComputeDevice requestedDevice, juce::String& errorMessage)
 {
     if (requestedDevice == StemComputeDevice::cpu)
@@ -806,7 +824,6 @@ void StemSeparationJob::run()
         if (! ensureOrtApiInitialized (initError))
             throw std::runtime_error (initError.toStdString());
 
-        juce::String fallbackWarning;
         const double modelRate = jobCatalogEntry.sampleRate;
         juce::AudioBuffer<float> inferenceAudio = resampleStereoBuffer (audioBuffer, jobSampleRate, modelRate);
         if (inferenceAudio.getNumChannels() < 2)
@@ -863,18 +880,14 @@ void StemSeparationJob::run()
 
         auto sessionOptions = makeSessionOptions();
         juce::String providerError;
-        const bool gpuConfigured = configureExecutionProvider (sessionOptions, jobComputeDevice, providerError);
-        if (! gpuConfigured && jobComputeDevice == StemComputeDevice::gpu)
-        {
-            fallbackWarning = "GPU unavailable, used CPU instead: " + providerError;
-            juce::Logger::writeToLog ("GPU provider failed, falling back to CPU: " + providerError);
-        }
+        if (! configureExecutionProvider (sessionOptions, jobComputeDevice, providerError))
+            throw std::runtime_error (describeGpuUnavailable (providerError).toStdString());
 
         bool inferenceOk = false;
-        if (gpuConfigured && jobComputeDevice == StemComputeDevice::gpu)
+        if (jobComputeDevice == StemComputeDevice::gpu)
         {
-            // A GPU provider can refuse a model it doesn't support or run out of GPU memory. Rather
-            // than failing the job, retry the whole separation once on the CPU and say so.
+            // A GPU provider can refuse a model or run out of GPU memory. Never switch to the CPU on
+            // the user's behalf (a CPU run can starve the DAW's audio thread): stop and say why.
             try
             {
                 inferenceOk = openAndRun (sessionOptions);
@@ -887,12 +900,7 @@ void StemSeparationJob::run()
                     return;
                 }
 
-                fallbackWarning = "GPU couldn't run this model, used CPU instead: " + juce::String (e.what());
-                juce::Logger::writeToLog ("GPU inference failed, retrying on CPU: " + juce::String (e.what()));
-                progress.store (0.1f, std::memory_order_release);
-
-                auto cpuOptions = makeSessionOptions();
-                inferenceOk = openAndRun (cpuOptions);
+                throw std::runtime_error (describeGpuFailure (jobCatalogEntry.menuLabel, e.what()).toStdString());
             }
         }
         else
@@ -974,8 +982,6 @@ void StemSeparationJob::run()
                                                  : stemName);
             progress.store (1.0f, std::memory_order_release);
         }
-
-        localResult.warningMessage = fallbackWarning;
 
         finalState = StemJobState::completed;
     }
