@@ -3,6 +3,38 @@
 #include <atomic>
 #include <functional>
 
+// Manifest URL of the newest release in this build's stem-model series (GitHub releases API),
+// or the built-in baseline release's manifest when that fails. Blocking: worker threads only.
+juce::String resolveStemModelManifestUrl (juce::Thread& thread);
+
+// Downloads the series' newest manifest into modelFolder's cache file. The cache is only replaced
+// by a manifest with a `models` array. Blocking: worker threads only.
+bool downloadStemModelManifest (const juce::File& modelFolder, juce::Thread& thread,
+                                std::atomic<bool>& shouldCancel, juce::String& errorMessage);
+
+// Background refresh of the cached stem-model manifest, so model fixes published in the series
+// reach users who already have models installed (an installed model never starts a download).
+class StemManifestRefreshJob : private juce::Thread
+{
+public:
+    StemManifestRefreshJob();
+    ~StemManifestRefreshJob() override;
+
+    // False when a refresh is already running.
+    bool start (juce::File modelFolder);
+    bool isRunning() const { return isThreadRunning(); }
+
+    // Called on the job's thread when a refresh installed a manifest that differs from the cached one.
+    // Set before start().
+    std::function<void()> onManifestChanged;
+
+private:
+    void run() override;
+
+    std::atomic<bool> shouldCancel { false };
+    juce::File folder;
+};
+
 class StemModelDownloadJob : private juce::Thread
 {
 public:

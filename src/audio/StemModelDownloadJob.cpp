@@ -96,6 +96,115 @@ bool downloadFileToTarget (const juce::URL& url,
 
 } // namespace
 
+namespace
+{
+// Small text fetch with a short timeout: the manifest and the releases list are a few KB, and the
+// refresh thread must stop quickly when the plugin is unloaded. Empty on any failure.
+juce::String fetchText (const juce::URL& url, juce::Thread& thread, const juce::String& extraHeaders = {})
+{
+    if (thread.threadShouldExit())
+        return {};
+
+    int statusCode = 0;
+    auto input = url.createInputStream (
+        juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inAddress)
+            .withConnectionTimeoutMs (10000)
+            .withNumRedirectsToFollow (5)
+            .withStatusCode (&statusCode)
+            .withExtraHeaders (extraHeaders));
+
+    if (input == nullptr || statusCode != 200 || thread.threadShouldExit())
+        return {};
+
+    return input->readEntireStreamAsString();
+}
+} // namespace
+
+juce::String resolveStemModelManifestUrl (juce::Thread& thread)
+{
+    // GitHub's API rejects requests without a User-Agent.
+    const auto releases = fetchText (juce::URL (getStemModelReleasesApiUrl()), thread,
+                                     "User-Agent: INTERSECT\r\nAccept: application/vnd.github+json");
+    const auto latest = releases.isNotEmpty()
+                          ? pickLatestSeriesManifestUrl (juce::JSON::parse (releases), getStemModelReleaseSeries(),
+                                                         getStemModelManifestAssetName())
+                          : juce::String();
+    return latest.isNotEmpty() ? latest : getStemModelManifestDownloadUrl();
+}
+
+bool downloadStemModelManifest (const juce::File& modelFolder, juce::Thread& thread,
+                                std::atomic<bool>& shouldCancel, juce::String& errorMessage)
+{
+    const auto text = fetchText (juce::URL (resolveStemModelManifestUrl (thread)), thread);
+    if (thread.threadShouldExit() || shouldCancel.load (std::memory_order_acquire))
+    {
+        errorMessage = "cancelled";
+        return false;
+    }
+
+    // Only replace the cache with a manifest this build can read; a bad download keeps the old one.
+    const auto parsed = juce::JSON::parse (text);
+    auto* root = parsed.getDynamicObject();
+    if (root == nullptr || root->getProperty ("models").getArray() == nullptr)
+    {
+        errorMessage = text.isEmpty() ? "network connection failed" : "invalid manifest";
+        return false;
+    }
+
+    // TemporaryFile picks a unique name, so a refresh and a model download can't collide.
+    const auto manifestFile = getStemModelManifestFile (modelFolder);
+    juce::TemporaryFile temp (manifestFile);
+    if (! temp.getFile().replaceWithText (text) || ! temp.overwriteTargetFileWithTemporary())
+    {
+        errorMessage = "install failed";
+        return false;
+    }
+
+    return true;
+}
+
+StemManifestRefreshJob::StemManifestRefreshJob()
+    : juce::Thread ("StemManifestRefresh")
+{
+}
+
+StemManifestRefreshJob::~StemManifestRefreshJob()
+{
+    shouldCancel.store (true, std::memory_order_release);
+    stopThread (25000);   // two 10 s connects at worst
+}
+
+bool StemManifestRefreshJob::start (juce::File modelFolder)
+{
+    if (isThreadRunning())
+        return false;
+
+    folder = std::move (modelFolder);
+    shouldCancel.store (false, std::memory_order_release);
+    startThread (juce::Thread::Priority::background);
+    return true;
+}
+
+void StemManifestRefreshJob::run()
+{
+    if (! folder.createDirectory().wasOk())
+        return;
+
+    const auto manifestFile = getStemModelManifestFile (folder);
+    const auto before = manifestFile.existsAsFile() ? manifestFile.loadFileAsString() : juce::String();
+
+    juce::String error;
+    if (! downloadStemModelManifest (folder, *this, shouldCancel, error))
+    {
+        // Offline or GitHub unreachable: keep whatever is cached; the built-in entries cover the rest.
+        juce::Logger::writeToLog ("Stem model manifest refresh failed: " + error);
+        return;
+    }
+
+    if (onManifestChanged && manifestFile.loadFileAsString() != before)
+        onManifestChanged();
+}
+
 StemModelDownloadJob::StemModelDownloadJob()
     : juce::Thread ("StemModelDownload")
 {
@@ -180,9 +289,7 @@ void StemModelDownloadJob::run()
 
     {
         juce::String downloadError;
-        const auto manifestUrl = juce::URL (getStemModelManifestDownloadUrl());
-        const auto manifestFile = getStemModelManifestFile (downloadFolder);
-        if (! downloadFileToTarget (manifestUrl, manifestFile, shouldCancel, *this, downloadError))
+        if (! downloadStemModelManifest (downloadFolder, *this, shouldCancel, downloadError))
         {
             if (downloadError == "cancelled")
             {

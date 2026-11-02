@@ -3,8 +3,16 @@
 
 namespace
 {
-constexpr auto kStemModelManifestFileName = "intersect_stem_models_manifest.json";
-constexpr auto kStemModelManifestDownloadUrl = "https://github.com/tucktuckg00se/intersect-stem-models/releases/download/v0.2.0/intersect_stem_models_manifest.json";
+// intersect-stem-models release series this build follows. The manifest comes from the newest
+// v<series>.N release (found through the GitHub releases API), so model fixes published as patch
+// releases reach this build without a plugin update. The baseline tag is the fallback when the API
+// can't be reached. The cached manifest's file name includes the series, so a cache left by an
+// older build (pointing at older model files) is ignored instead of overriding the built-in entries.
+constexpr auto kStemModelSeries = "0.2";
+constexpr auto kStemModelBaselineTag = "v0.2.1";
+constexpr auto kStemModelManifestAssetName = "intersect_stem_models_manifest.json";
+constexpr auto kStemModelReleaseBaseUrl = "https://github.com/tucktuckg00se/intersect-stem-models/releases/download/";
+constexpr auto kStemModelReleasesApiUrl = "https://api.github.com/repos/tucktuckg00se/intersect-stem-models/releases?per_page=100";
 
 constexpr auto kOrtBundleManifestFileName    = "intersect_ort_bundles_manifest.json";
 constexpr auto kOrtBundleManifestDownloadUrl = "https://github.com/tucktuckg00se/intersect-ort-providers/releases/latest/download/intersect_ort_bundles_manifest.json";
@@ -46,10 +54,12 @@ std::vector<StemModelCatalogEntry> makeBuiltInCatalog()
     StemModelCatalogEntry scnet;
     scnet.id = "scnet";
     scnet.menuLabel = "SCNet";
-    scnet.fileName = "scnet.int8.onnx";
-    scnet.downloadUrl = "https://huggingface.co/audiojs/scnet/resolve/e71bcdb42bce1d62b7fae25ba90fcbcf90f73f46/scnet.int8.onnx";
-    scnet.downloadBytes = 12900277;
-    scnet.sha256 = "98228931494151762a1c4ab1ec7899a894b1f81fd4a509921a9d2f9bacc50845";
+    // Patched for DirectML by intersect-stem-models (scripts/patch_onnx_for_directml.py): dead
+    // nodes removed, Split rewritten as Slice. CPU output is bit-identical to the original file.
+    scnet.fileName = "scnet_int8_dml.onnx";
+    scnet.downloadUrl = "https://github.com/tucktuckg00se/intersect-stem-models/releases/download/v0.2.1/scnet_int8_dml.onnx";
+    scnet.downloadBytes = 12907957;
+    scnet.sha256 = "86c35a1f513de688149d5a36c16a0bb1c67c60dcdfa01563ffda7e73708676db";
     scnet.license = "MIT";
     scnet.attribution = "starrytong, ONNX by audiojs";
     scnet.notes = "The smallest and fastest model here (8-bit weights).";
@@ -65,10 +75,12 @@ std::vector<StemModelCatalogEntry> makeBuiltInCatalog()
     StemModelCatalogEntry mini;
     mini.id = "mini-bs-roformer-v2.5";
     mini.menuLabel = "Mini-BS-RoFormer V2.5";
-    mini.fileName = "mini_bs_roformer_v25.onnx";
-    mini.downloadUrl = "https://huggingface.co/HiDolen/Mini-BS-RoFormer-V2.5-46.2M/resolve/38dafc78834607aec57d8c0cb3568523f9ea5563/onnx/freq_weights.onnx";
-    mini.downloadBytes = 96538997;
-    mini.sha256 = "c019650a7fb9e6a208353fead62471ed6ffdf20a3069ddadd8278edeb411d556";
+    // Patched for DirectML by intersect-stem-models (scripts/patch_onnx_for_directml.py): Reshape
+    // allowzero cleared (no target shape has a zero). CPU output is bit-identical to the original file.
+    mini.fileName = "mini_bs_roformer_v25_dml.onnx";
+    mini.downloadUrl = "https://github.com/tucktuckg00se/intersect-stem-models/releases/download/v0.2.1/mini_bs_roformer_v25_dml.onnx";
+    mini.downloadBytes = 96537413;
+    mini.sha256 = "27512ae01eb16a3130911fbd6c811fff255250892d6bbcef2a1ad068a370e174";
     mini.license = "MIT";
     mini.attribution = "HiDolen";
     mini.notes = "Compact BS-RoFormer: much faster than full-size models, slightly lower quality.";
@@ -389,12 +401,74 @@ const std::vector<StemModelCatalogEntry>& getBuiltInStemModelCatalog()
 
 juce::String getStemModelManifestFileName()
 {
-    return kStemModelManifestFileName;
+    return juce::String ("intersect_stem_models_manifest-v") + kStemModelSeries + ".json";
 }
 
 juce::String getStemModelManifestDownloadUrl()
 {
-    return kStemModelManifestDownloadUrl;
+    return juce::String (kStemModelReleaseBaseUrl) + kStemModelBaselineTag + "/" + kStemModelManifestAssetName;
+}
+
+juce::String getStemModelReleaseSeries()
+{
+    return kStemModelSeries;
+}
+
+juce::String getStemModelManifestAssetName()
+{
+    return kStemModelManifestAssetName;
+}
+
+juce::String getStemModelReleasesApiUrl()
+{
+    return kStemModelReleasesApiUrl;
+}
+
+juce::String pickLatestSeriesManifestUrl (const juce::var& releases, const juce::String& series, const juce::String& assetName)
+{
+    const auto* list = releases.getArray();
+    if (list == nullptr || series.isEmpty() || assetName.isEmpty())
+        return {};
+
+    const auto prefix = "v" + series + ".";
+    int bestPatch = -1;
+    juce::String bestUrl;
+
+    for (const auto& release : *list)
+    {
+        auto* object = release.getDynamicObject();
+        if (object == nullptr || (bool) object->getProperty ("draft") || (bool) object->getProperty ("prerelease"))
+            continue;
+
+        const auto tag = object->getProperty ("tag_name").toString().trim();
+        const auto patchText = tag.fromFirstOccurrenceOf (prefix, false, false);
+        if (! tag.startsWith (prefix) || patchText.isEmpty() || patchText.length() > 6
+            || ! patchText.containsOnly ("0123456789"))
+            continue;
+
+        const int patch = patchText.getIntValue();
+        if (patch <= bestPatch)
+            continue;
+
+        if (auto* assets = object->getProperty ("assets").getArray())
+        {
+            for (const auto& asset : *assets)
+            {
+                if (asset["name"].toString() != assetName)
+                    continue;
+
+                const auto url = asset["browser_download_url"].toString().trim();
+                if (url.startsWith ("https://"))
+                {
+                    bestPatch = patch;
+                    bestUrl = url;
+                }
+                break;
+            }
+        }
+    }
+
+    return bestUrl;
 }
 
 juce::File getDefaultStemModelFolder()

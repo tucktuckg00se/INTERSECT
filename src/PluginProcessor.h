@@ -180,6 +180,11 @@ public:
     std::vector<StemModelId> getInstalledStemModels() const;
     bool isStemModelInstalled (const StemModelId& modelId) const;
     const StemModelDownloadJob& getStemModelDownloadJob() const { return stemModelDownloadJob; }
+    // Re-fetches the stem-model manifest in the background unless the cache is fresh or a fetch is
+    // already running. Message thread. getStemManifestGeneration() changes when a refresh installed
+    // a different manifest, so the stem view knows to reload its catalog.
+    void refreshStemModelManifestIfStale();
+    int getStemManifestGeneration() const noexcept { return stemManifestGeneration.load (std::memory_order_acquire); }
 
     // ORT runtime bundle management
     juce::File getOrtRootFolder() const;
@@ -543,6 +548,8 @@ private:
     juce::File stemModelFolder;
     StemComputeDevice stemComputeDevice = StemComputeDevice::cpu;
     StemModelDownloadJob stemModelDownloadJob;
+    std::atomic<int> stemManifestGeneration { 0 };
+    StemManifestRefreshJob stemManifestRefreshJob;   // after stemManifestGeneration: its callback uses it
     OrtBundleDownloadJob ortBundleDownloadJob;
     StemSeparationJob stemJob;
     std::atomic<bool> stemCompletionQueued { false };

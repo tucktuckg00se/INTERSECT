@@ -820,48 +820,95 @@ void StemSeparationJob::run()
         progress.store (0.1f, std::memory_order_release);
         state.store (StemJobState::separating, std::memory_order_release);
 
-        Ort::SessionOptions sessionOptions;
-       #if JUCE_WINDOWS
-        sessionOptions.SetIntraOpNumThreads (juce::jlimit (1, 4, juce::SystemStats::getNumCpus()));
-        sessionOptions.SetExecutionMode (ExecutionMode::ORT_SEQUENTIAL);
-        sessionOptions.DisableMemPattern();
-        sessionOptions.DisableCpuMemArena();
-        sessionOptions.SetGraphOptimizationLevel (GraphOptimizationLevel::ORT_ENABLE_BASIC);
-       #else
-        sessionOptions.SetIntraOpNumThreads (juce::jmax (1, juce::SystemStats::getNumCpus() - 1));
-        sessionOptions.SetGraphOptimizationLevel (GraphOptimizationLevel::ORT_ENABLE_ALL);
-       #endif
-
-        juce::String providerError;
-        if (! configureExecutionProvider (sessionOptions, jobComputeDevice, providerError))
+        const auto makeSessionOptions = []
         {
-            if (jobComputeDevice == StemComputeDevice::gpu)
-            {
-                fallbackWarning = "GPU unavailable, used CPU instead: " + providerError;
-                juce::Logger::writeToLog ("GPU provider failed, falling back to CPU: " + providerError);
-            }
-        }
+            Ort::SessionOptions options;
+           #if JUCE_WINDOWS
+            options.SetIntraOpNumThreads (juce::jlimit (1, 4, juce::SystemStats::getNumCpus()));
+            options.SetExecutionMode (ExecutionMode::ORT_SEQUENTIAL);
+            options.DisableMemPattern();
+            options.DisableCpuMemArena();
+            options.SetGraphOptimizationLevel (GraphOptimizationLevel::ORT_ENABLE_BASIC);
+           #else
+            options.SetIntraOpNumThreads (juce::jmax (1, juce::SystemStats::getNumCpus() - 1));
+            options.SetGraphOptimizationLevel (GraphOptimizationLevel::ORT_ENABLE_ALL);
+           #endif
+            return options;
+        };
 
        #if JUCE_WINDOWS
         const std::wstring modelPathStr = jobModelPath.getFullPathName().toWideCharPointer();
-        Ort::Session session (getOrtEnv(), modelPathStr.c_str(), sessionOptions);
        #else
         const std::string modelPathStr = jobModelPath.getFullPathName().toStdString();
-        Ort::Session session (getOrtEnv(), modelPathStr.c_str(), sessionOptions);
        #endif
 
         std::vector<juce::AudioBuffer<float>> stemBuffers;
-        juce::String parseError;
-        if (! runStemInference (session, inferenceAudio, jobCatalogEntry, jobStemSelection, stemBuffers,
-                                shouldCancel, *this, progress, parseError))
+        juce::String inferenceError;
+
+        // Opens a session with the given options and runs the model. Returns false with
+        // inferenceError set on a model-level failure; ORT failures (load or run) throw.
+        const auto openAndRun = [&] (Ort::SessionOptions& options)
         {
-            if (threadShouldExit() || shouldCancel.load (std::memory_order_acquire))
+            stemBuffers.clear();
+            inferenceError.clear();
+            Ort::Session session (getOrtEnv(), modelPathStr.c_str(), options);
+            return runStemInference (session, inferenceAudio, jobCatalogEntry, jobStemSelection, stemBuffers,
+                                     shouldCancel, *this, progress, inferenceError);
+        };
+
+        const auto isCancelled = [this]
+        {
+            return threadShouldExit() || shouldCancel.load (std::memory_order_acquire);
+        };
+
+        auto sessionOptions = makeSessionOptions();
+        juce::String providerError;
+        const bool gpuConfigured = configureExecutionProvider (sessionOptions, jobComputeDevice, providerError);
+        if (! gpuConfigured && jobComputeDevice == StemComputeDevice::gpu)
+        {
+            fallbackWarning = "GPU unavailable, used CPU instead: " + providerError;
+            juce::Logger::writeToLog ("GPU provider failed, falling back to CPU: " + providerError);
+        }
+
+        bool inferenceOk = false;
+        if (gpuConfigured && jobComputeDevice == StemComputeDevice::gpu)
+        {
+            // A GPU provider can refuse a model it doesn't support or run out of GPU memory. Rather
+            // than failing the job, retry the whole separation once on the CPU and say so.
+            try
+            {
+                inferenceOk = openAndRun (sessionOptions);
+            }
+            catch (const std::exception& e)
+            {
+                if (isCancelled())
+                {
+                    state.store (StemJobState::cancelled, std::memory_order_release);
+                    return;
+                }
+
+                fallbackWarning = "GPU couldn't run this model, used CPU instead: " + juce::String (e.what());
+                juce::Logger::writeToLog ("GPU inference failed, retrying on CPU: " + juce::String (e.what()));
+                progress.store (0.1f, std::memory_order_release);
+
+                auto cpuOptions = makeSessionOptions();
+                inferenceOk = openAndRun (cpuOptions);
+            }
+        }
+        else
+        {
+            inferenceOk = openAndRun (sessionOptions);
+        }
+
+        if (! inferenceOk)
+        {
+            if (isCancelled())
             {
                 state.store (StemJobState::cancelled, std::memory_order_release);
                 return;
             }
 
-            throw std::runtime_error (parseError.toStdString());
+            throw std::runtime_error (inferenceError.toStdString());
         }
 
         if (stemBuffers.size() != jobStemSelection.size())

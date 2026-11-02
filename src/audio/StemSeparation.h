@@ -205,8 +205,18 @@ juce::String getAvailableGpuProviderName();
 juce::String stemExportModeToString (StemExportMode mode);
 StemExportMode stemExportModeFromString (const juce::String& text);
 const std::vector<StemModelCatalogEntry>& getBuiltInStemModelCatalog();
+// Cached manifest's file name in the model folder (scoped to the release series).
 juce::String getStemModelManifestFileName();
+// Manifest of the baseline release built into this build; the fallback when the API is unreachable.
 juce::String getStemModelManifestDownloadUrl();
+// Release series this build follows ("0.2" -> newest v0.2.N), the manifest's asset name, and the
+// GitHub API URL listing the releases.
+juce::String getStemModelReleaseSeries();
+juce::String getStemModelManifestAssetName();
+juce::String getStemModelReleasesApiUrl();
+// From a GitHub "list releases" response: the manifest asset URL of the highest published
+// (non-draft, non-prerelease) v<series>.<N> release that has it. Empty when there is none.
+juce::String pickLatestSeriesManifestUrl (const juce::var& releases, const juce::String& series, const juce::String& assetName);
 juce::File getDefaultStemModelFolder();
 juce::File getStemModelManifestFile (const juce::File& modelFolder);
 

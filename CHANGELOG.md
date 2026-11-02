@@ -9,6 +9,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 - Join the Discord link in the SET menu
 
+### Fixed
+- SCNet and Mini-BS-RoFormer V2.5 now work on Windows GPUs (DirectML). Before, they stopped with "The parameter is incorrect". If you already downloaded either model, STEMS now offers the fixed version: click **DOWNLOAD** once to replace it.
+- When the GPU can't load or run a stem model, for example because it runs out of GPU memory, separation now finishes on the CPU and says so, instead of stopping with an error.
+
+### Changed
+- Fixes to stem models now reach INTERSECT without an update. STEMS checks for an updated model list when it opens.
+
 ## [0.18.0] - 2026-10-29
 
 ### Added

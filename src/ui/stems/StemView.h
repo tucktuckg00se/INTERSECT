@@ -88,6 +88,7 @@ private:
     bool ortSupported = false;
     bool ortInstalled = false;
     bool wasDownloading = false;
+    int seenManifestGeneration = 0;
     bool wasJobRunning = false;
 
     std::unique_ptr<ModelList> modelList;

@@ -948,9 +948,15 @@ void StemView::mouseDown (const juce::MouseEvent& e)
 void StemView::visibilityChanged()
 {
     if (isVisible())
+    {
+        // Model fixes are published as new manifests; pick them up while the view is open.
+        processor.refreshStemModelManifestIfStale();
         startTimerHz (10);
+    }
     else
+    {
         stopTimer();
+    }
 }
 
 void StemView::timerCallback()
@@ -978,6 +984,15 @@ void StemView::timerCallback()
     {
         wasJobRunning = jobRunning;
         updateControls();
+    }
+
+    // A background refresh installed a different manifest (e.g. a fixed model under a new file name).
+    if (const auto generation = processor.getStemManifestGeneration(); generation != seenManifestGeneration && ! downloading)
+    {
+        seenManifestGeneration = generation;
+        reloadCatalog();
+        updateControls();
+        repaint();
     }
 
     if (downloading)

@@ -136,6 +136,34 @@ juce::var parseJson (const char* text)
     return juce::JSON::parse (juce::String (text));
 }
 
+void latestSeriesManifestIsPicked()
+{
+    const auto releases = parseJson (R"([
+        { "tag_name": "v0.3.0", "assets": [ { "name": "m.json", "browser_download_url": "https://x/v0.3.0/m.json" } ] },
+        { "tag_name": "v0.2.12", "prerelease": true,
+          "assets": [ { "name": "m.json", "browser_download_url": "https://x/v0.2.12/m.json" } ] },
+        { "tag_name": "v0.2.11", "draft": true,
+          "assets": [ { "name": "m.json", "browser_download_url": "https://x/v0.2.11/m.json" } ] },
+        { "tag_name": "v0.2.9", "assets": [ { "name": "other.onnx", "browser_download_url": "https://x/v0.2.9/o" } ] },
+        { "tag_name": "v0.2.x", "assets": [ { "name": "m.json", "browser_download_url": "https://x/v0.2.x/m.json" } ] },
+        { "tag_name": "v0.20.0", "assets": [ { "name": "m.json", "browser_download_url": "https://x/v0.20.0/m.json" } ] },
+        { "tag_name": "v0.2.10", "assets": [ { "name": "m.json", "browser_download_url": "https://x/v0.2.10/m.json" } ] },
+        { "tag_name": "v0.2.2", "assets": [ { "name": "m.json", "browser_download_url": "https://x/v0.2.2/m.json" } ] },
+        { "tag_name": "v0.2.0", "assets": [ { "name": "m.json", "browser_download_url": "https://x/v0.2.0/m.json" } ] }
+    ])");
+
+    // Numeric, not string, order (10 > 2); skips other series, prereleases, drafts, missing assets, bad tags.
+    require (pickLatestSeriesManifestUrl (releases, "0.2", "m.json") == "https://x/v0.2.10/m.json", "newest v0.2.N");
+    require (pickLatestSeriesManifestUrl (releases, "0.3", "m.json") == "https://x/v0.3.0/m.json", "other series");
+    require (pickLatestSeriesManifestUrl (releases, "0.4", "m.json").isEmpty(), "no release in series");
+    require (pickLatestSeriesManifestUrl (parseJson (R"({ "message": "API rate limit exceeded" })"), "0.2", "m.json").isEmpty(),
+             "API error object");
+
+    // This build's own configuration resolves through the same rules.
+    require (getStemModelManifestDownloadUrl().endsWith ("/v0.2.1/" + getStemModelManifestAssetName()), "baseline manifest URL");
+    require (getStemModelManifestFileName() == "intersect_stem_models_manifest-v0.2.json", "series-scoped cache name");
+}
+
 void manifestEntriesParse()
 {
     // String stems, legacy shape (no kind): waveform.
@@ -274,6 +302,7 @@ int main()
     run ("segments reconstruct (short)", [] { segmentsReconstructAnIdentityModel (3000); });
     run ("segments reconstruct (exactly one)", [] { segmentsReconstructAnIdentityModel (4410); });
     run ("manifest entries", manifestEntriesParse);
+    run ("latest series manifest", latestSeriesManifestIsPicked);
     run ("selection and names", selectionAndNames);
     run ("built-in catalog", builtInCatalog);
 

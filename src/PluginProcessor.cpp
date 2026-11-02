@@ -353,6 +353,7 @@ IntersectProcessor::IntersectProcessor()
     // stemJob's use of AsyncUpdater; handleAsyncUpdate drains all three.
     stemModelDownloadJob.onTerminalState = [this] { triggerAsyncUpdate(); };
     ortBundleDownloadJob.onTerminalState = [this] { triggerAsyncUpdate(); };
+    stemManifestRefreshJob.onManifestChanged = [this] { stemManifestGeneration.fetch_add (1, std::memory_order_acq_rel); };
 
 	    publishUiSliceSnapshot();
 }
@@ -950,6 +951,22 @@ void IntersectProcessor::startStemModelDownload (const std::vector<StemModelId>&
 
     setUiStatusMessage ("Downloading stem models...", false);
     uiSnapshotDirty.store (true, std::memory_order_release);
+}
+
+void IntersectProcessor::refreshStemModelManifestIfStale()
+{
+    // A model download fetches the manifest itself.
+    if (stemModelDownloadJob.getState() == StemModelDownloadState::downloading || stemManifestRefreshJob.isRunning())
+        return;
+
+    const auto folder = getResolvedStemModelFolder();
+    const auto cached = getStemModelManifestFile (folder);
+    constexpr juce::int64 refreshIntervalMs = 6 * 60 * 60 * 1000;
+    if (cached.existsAsFile()
+        && (juce::Time::getCurrentTime() - cached.getLastModificationTime()).inMilliseconds() < refreshIntervalMs)
+        return;
+
+    (void) stemManifestRefreshJob.start (folder);
 }
 
 void IntersectProcessor::cancelStemModelDownload()
