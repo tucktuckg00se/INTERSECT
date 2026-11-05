@@ -1,7 +1,9 @@
 #include "StemSeparationJob.h"
+#include "StemGpuInfo.h"
 #include "StemSpectral.h"
 
 #include <juce_audio_formats/juce_audio_formats.h>
+#include <algorithm>
 #include <cmath>
 #include <mutex>
 #include <stdexcept>
@@ -103,6 +105,34 @@ juce::String sanitisePathComponent (juce::String text)
 
 #if INTERSECT_HAS_ONNX_RUNTIME
 
+// ── Stem separation log ──────────────────────────────────────────────────
+// <user data>/INTERSECT/logs/stem-separation.log: ONNX Runtime warnings and errors, plus each job's
+// GPU, model and per-segment times. About 2 MB at most; the previous log is kept as *.old.log.
+juce::File getStemLogFile()
+{
+    return getDefaultStemModelFolder().getParentDirectory().getChildFile ("logs").getChildFile ("stem-separation.log");
+}
+
+void stemLog (const juce::String& line)
+{
+    static std::mutex mutex;
+    const std::lock_guard<std::mutex> guard (mutex);
+    const auto file = getStemLogFile();
+    if (! file.getParentDirectory().createDirectory())
+        return;
+    if (file.getSize() > 2 * 1024 * 1024)
+        (void) file.moveFileTo (file.getSiblingFile ("stem-separation.old.log"));
+    juce::FileOutputStream out (file);   // appends
+    if (out.openedOk())
+        out << juce::Time::getCurrentTime().formatted ("%Y-%m-%d %H:%M:%S  ") << line << "\n";
+}
+
+juce::String& ortVersionString()
+{
+    static juce::String version;
+    return version;
+}
+
 struct OrtLoadState
 {
     bool loaded = false;
@@ -166,6 +196,8 @@ bool loadOrtSharedLibrary (const juce::File& libraryFile, juce::String& errorMes
     }
 
     Ort::InitApi (api);
+    if (const char* version = apiBase->GetVersionString(); version != nullptr)
+        ortVersionString() = version;
     return true;
 }
 
@@ -189,11 +221,19 @@ bool ensureOrtApiInitialized (juce::String& errorMessage)
     return state.loaded;
 }
 
+void ORT_API_CALL ortLogToStemLog (void*, OrtLoggingLevel severity, const char*, const char*,
+                                   const char*, const char* message)
+{
+    static constexpr const char* levels[] = { "verbose", "info", "warning", "error", "fatal" };
+    stemLog (juce::String ("ORT ") + levels[juce::jlimit (0, 4, (int) severity)] + ": "
+             + juce::String::fromUTF8 (message != nullptr ? message : ""));
+}
+
 Ort::Env& getOrtEnv()
 {
     juce::String unused;
     (void) ensureOrtApiInitialized (unused);
-    static Ort::Env env (ORT_LOGGING_LEVEL_WARNING, "INTERSECT");
+    static Ort::Env env (ORT_LOGGING_LEVEL_WARNING, "INTERSECT", ortLogToStemLog, nullptr);
     return env;
 }
 
@@ -206,13 +246,7 @@ juce::String describeGpuUnavailable (const juce::String& details)
 // Status-bar message for a GPU provider that failed to load or run a model.
 juce::String describeGpuFailure (const juce::String& modelName, const juce::String& details)
 {
-    const auto lower = details.toLowerCase();
-    const bool outOfMemory = lower.contains ("out of memory") || lower.contains ("not enough memory")
-                          || lower.contains ("8007000e") || lower.contains ("failed to allocate");
-
-    return (outOfMemory ? "The GPU ran out of memory running " + modelName + ". Switch DEVICE to CPU, or try a smaller model."
-                        : "The GPU couldn't run " + modelName + ". Switch DEVICE to CPU to separate on the CPU.")
-         + " Details: " + details;
+    return describeStemGpuFailure (modelName, details);
 }
 
 bool configureExecutionProvider (Ort::SessionOptions& options, StemComputeDevice requestedDevice, juce::String& errorMessage)
@@ -267,6 +301,38 @@ bool configureExecutionProvider (Ort::SessionOptions& options, StemComputeDevice
     }
 }
 
+// Times each model run for the log and, on the GPU, catches the silent failure: after a driver
+// reset (TDR) DirectML can return all zeros without an error; the error only comes with the next run.
+struct StemRunMonitor
+{
+    bool gpu = false;
+    int finishedRuns = 0;
+    int totalRuns = 0;
+    double lastSeconds = 0.0;
+    double slowestSeconds = 0.0;
+
+    void check (const float* output, size_t count, const float* input, size_t inputCount) const
+    {
+        if (! gpu)
+            return;
+        float inputPeak = 0.0f;
+        for (size_t i = 0; i < inputCount; ++i)
+            inputPeak = std::max (inputPeak, std::abs (input[i]));
+        if (isSuspectStemModelOutput (output, count, inputPeak))
+            throw std::runtime_error ("the GPU returned silence or invalid numbers for audio that isn't silent, "
+                                      "so the graphics driver was most likely reset (887A0006)");
+    }
+
+    void finished (double seconds)
+    {
+        ++finishedRuns;
+        lastSeconds = seconds;
+        slowestSeconds = std::max (slowestSeconds, seconds);
+        stemLog ("segment " + juce::String (finishedRuns) + "/" + juce::String (totalRuns) + ": "
+                 + juce::String (seconds, 2) + " s");
+    }
+};
+
 // ── Waveform overlap-add inference ──────────────────────────────────────
 
 std::vector<float> makeHannWindow (int size)
@@ -286,6 +352,7 @@ bool runWaveformChunked (Ort::Session& session,
                          std::atomic<bool>& shouldCancel,
                          juce::Thread& thread,
                          std::atomic<float>& progress,
+                         StemRunMonitor& monitor,
                          juce::String& errorMessage)
 {
     Ort::AllocatorWithDefaultOptions allocator;
@@ -330,6 +397,7 @@ bool runWaveformChunked (Ort::Session& session,
         accumBuffers.back().clear();
     }
     std::vector<float> weightAccum ((size_t) fullLen, 0.0f);
+    monitor.totalRuns = totalChunks;
 
     for (int chunkIdx = 0; chunkIdx < totalChunks; ++chunkIdx)
     {
@@ -352,6 +420,7 @@ bool runWaveformChunked (Ort::Session& session,
                                                              inputShape.data(),
                                                              inputShape.size());
 
+        const double runStart = juce::Time::getMillisecondCounterHiRes();
         auto outputValues = session.Run (Ort::RunOptions { nullptr },
                                           inputNames, &inputTensor, 1,
                                           outputNames, 1);
@@ -378,10 +447,12 @@ bool runWaveformChunked (Ort::Session& session,
         }
 
         const float* outputData = outputValues.front().GetTensorData<float>();
+        const size_t stemStride = (size_t) (2 * chunkSize);
+        monitor.check (outputData, (size_t) numModelStems * stemStride, inputBuffer.data(), inputBuffer.size());
+        monitor.finished ((juce::Time::getMillisecondCounterHiRes() - runStart) / 1000.0);
 
         // Apply Hann window and accumulate
         // Output layout: [stem, channel, sample]
-        const size_t stemStride = (size_t) (2 * chunkSize);
         for (size_t s = 0; s < selection.size(); ++s)
         {
             for (int ch = 0; ch < 2; ++ch)
@@ -447,6 +518,7 @@ bool runSpectralSegmented (Ort::Session& session,
                            std::atomic<bool>& shouldCancel,
                            juce::Thread& thread,
                            std::atomic<float>& progress,
+                           StemRunMonitor& monitor,
                            juce::String& errorMessage)
 {
     Ort::AllocatorWithDefaultOptions allocator;
@@ -541,6 +613,8 @@ bool runSpectralSegmented (Ort::Session& session,
             : Ort::Value::CreateTensor<float> (memoryInfo, inputBuffer.data(), inputBuffer.size(),
                                                inputShape4.data(), inputShape4.size());
 
+        monitor.totalRuns = numSegments;
+        const double runStart = juce::Time::getMillisecondCounterHiRes();
         auto outputValues = session.Run (Ort::RunOptions { nullptr },
                                           inputNames, &inputTensor, 1,
                                           outputNames, 1);
@@ -553,6 +627,11 @@ bool runSpectralSegmented (Ort::Session& session,
 
         const auto shape = outputValues.front().GetTensorTypeAndShapeInfo().GetShape();
         const float* outputData = outputValues.front().GetTensorData<float>();
+        size_t outputCount = 1;
+        for (const auto d : shape)
+            outputCount *= (size_t) juce::jmax<int64_t> (0, d);
+        monitor.check (outputData, outputCount, inputBuffer.data(), inputBuffer.size());
+        monitor.finished ((juce::Time::getMillisecondCounterHiRes() - runStart) / 1000.0);
 
         if (! masked)
         {
@@ -638,17 +717,18 @@ bool runStemInference (Ort::Session& session,
                        std::atomic<bool>& shouldCancel,
                        juce::Thread& thread,
                        std::atomic<float>& progress,
+                       StemRunMonitor& monitor,
                        juce::String& errorMessage)
 {
     switch (catalog.runtimeKind)
     {
         case StemRuntimeKind::waveform:
             return runWaveformChunked (session, sourceAudio, catalog, selection, stemBuffers,
-                                       shouldCancel, thread, progress, errorMessage);
+                                       shouldCancel, thread, progress, monitor, errorMessage);
         case StemRuntimeKind::spectral:
         case StemRuntimeKind::spectralMask:
             return runSpectralSegmented (session, sourceAudio, catalog, selection, stemBuffers,
-                                         shouldCancel, thread, progress, errorMessage);
+                                         shouldCancel, thread, progress, monitor, errorMessage);
     }
 
     errorMessage = "This stem model needs a newer version of INTERSECT";
@@ -809,6 +889,29 @@ void StemSeparationJob::run()
 #else
     StemJobState finalState = StemJobState::failed;
 
+    StemRunMonitor monitor;
+    monitor.gpu = jobComputeDevice == StemComputeDevice::gpu;
+    const auto providerName = monitor.gpu ? getAvailableGpuProviderName() : juce::String ("CPU");
+    const auto gpuInfo = monitor.gpu ? queryStemGpuInfo() : StemGpuInfo {};
+
+    // Short block appended to the copied error text, so one paste tells us what ran where.
+    const auto describeJob = [&]
+    {
+        juce::StringArray lines;
+        lines.add ("INTERSECT " + juce::String (JucePlugin_VersionString) + " on " + juce::SystemStats::getOperatingSystemName()
+                   + ", ONNX Runtime " + ortVersionString() + ", device "
+                   + (monitor.gpu ? "GPU (" + providerName + ")" : juce::String ("CPU")));
+        if (gpuInfo.valid)
+            lines.add (gpuInfo.describe());
+        lines.add ("Model: " + jobCatalogEntry.menuLabel + " (" + jobModelPath.getFileName() + ")");
+        if (monitor.totalRuns > 0)
+            lines.add ("Stopped at segment " + juce::String (monitor.finishedRuns + 1) + " of " + juce::String (monitor.totalRuns)
+                       + (monitor.finishedRuns > 0 ? "; slowest finished segment " + juce::String (monitor.slowestSeconds, 2) + " s"
+                                                   : juce::String()));
+        lines.add ("Log: " + getStemLogFile().getFullPathName());
+        return lines.joinIntoString ("\n");
+    };
+
     if (! jobCatalogEntry.isValid() || jobStemSelection.empty())
     {
         localResult.errorMessage = jobCatalogEntry.isValid() ? "Select at least one stem" : "Unknown stem model";
@@ -836,6 +939,14 @@ void StemSeparationJob::run()
 
         progress.store (0.1f, std::memory_order_release);
         state.store (StemJobState::separating, std::memory_order_release);
+
+        stemLog ("---- " + jobCatalogEntry.menuLabel + " (" + jobModelPath.getFileName() + ") on "
+                 + (monitor.gpu ? "GPU (" + providerName + ")" : juce::String ("CPU")) + ", ONNX Runtime "
+                 + ortVersionString() + ", INTERSECT " + juce::String (JucePlugin_VersionString) + ", "
+                 + juce::SystemStats::getOperatingSystemName() + ", "
+                 + juce::String (inferenceAudio.getNumSamples() / juce::jmax (1.0, modelRate), 1) + " s of audio");
+        if (gpuInfo.valid)
+            stemLog (gpuInfo.describe());
 
         const auto makeSessionOptions = []
         {
@@ -870,7 +981,7 @@ void StemSeparationJob::run()
             inferenceError.clear();
             Ort::Session session (getOrtEnv(), modelPathStr.c_str(), options);
             return runStemInference (session, inferenceAudio, jobCatalogEntry, jobStemSelection, stemBuffers,
-                                     shouldCancel, *this, progress, inferenceError);
+                                     shouldCancel, *this, progress, monitor, inferenceError);
         };
 
         const auto isCancelled = [this]
@@ -984,16 +1095,22 @@ void StemSeparationJob::run()
         }
 
         finalState = StemJobState::completed;
+        stemLog ("done: " + juce::String (monitor.finishedRuns) + " segments, slowest "
+                 + juce::String (monitor.slowestSeconds, 2) + " s");
     }
     catch (const std::exception& e)
     {
         localResult.errorMessage = juce::String (e.what());
+        localResult.diagnostics = describeJob();
         finalState = StemJobState::failed;
+        stemLog ("FAILED: " + localResult.errorMessage);
     }
     catch (...)
     {
         localResult.errorMessage = "Stem separation failed unexpectedly";
+        localResult.diagnostics = describeJob();
         finalState = StemJobState::failed;
+        stemLog ("FAILED: unexpected exception");
     }
 
     {

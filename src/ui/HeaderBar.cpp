@@ -232,7 +232,13 @@ void HeaderBar::mouseDown (const juce::MouseEvent& e)
     {
         const auto& ui = processor.getUiSliceSnapshot();
         if (ui.hasStatusMessage && ui.statusIsWarning)
-            juce::SystemClipboard::copyTextToClipboard (ui.statusMessage.toString());
+        {
+            // A failed stem job adds versions, GPU and model details, so one paste says what ran where.
+            auto text = ui.statusMessage.toString();
+            if (const auto diagnostics = processor.getStemFailureDiagnostics (text); diagnostics.isNotEmpty())
+                text << "\n\n" << diagnostics;
+            juce::SystemClipboard::copyTextToClipboard (text);
+        }
         else if (onRelinkRequested != nullptr)
         {
             for (int i = 0; i < ui.numSessionSamples; ++i)
@@ -330,6 +336,7 @@ void HeaderBar::showSettingsPopup()
     const auto stemFolder = processor.getResolvedStemModelFolder();
     const auto customStemFolder = processor.getStemModelFolder();
     const auto installedModels = processor.getInstalledStemModels();
+    const auto modelUpdates = processor.getStemModelUpdates();
     const auto stemCatalog = getEffectiveStemModelCatalog (stemFolder);
     const bool downloadActive = processor.getUiSliceSnapshot().stemDownloadState == StemModelDownloadState::downloading;
 
@@ -342,17 +349,20 @@ void HeaderBar::showSettingsPopup()
     juce::PopupMenu stemDownloadMenu;
     stemDownloadMenu.setLookAndFeel (&getLookAndFeel());
     stemDownloadMenu.addSectionHeader ("Download Models");
-    stemDownloadMenu.addItem (kMenuStemDownloadMissing, "Download Missing");
+    stemDownloadMenu.addItem (kMenuStemDownloadMissing, modelUpdates.empty() ? "Download Missing" : "Download Missing and Updates");
     stemDownloadMenu.addSeparator();
     for (size_t i = 0; i < stemCatalog.size(); ++i)
     {
         const auto& entry = stemCatalog[i];
         const bool installed = std::find (installedModels.begin(), installedModels.end(), entry.id)
                                    != installedModels.end();
+        const bool update = std::find (modelUpdates.begin(), modelUpdates.end(), entry.id) != modelUpdates.end();
         auto label = juce::String (entry.menuLabel);
-        if (installed)
+        if (update)
+            label << "  (update)";
+        else if (installed)
             label << "  (installed)";
-        stemDownloadMenu.addItem (kMenuStemDownloadBase + (int) i, label, ! installed);
+        stemDownloadMenu.addItem (kMenuStemDownloadBase + (int) i, label, ! installed || update);
     }
     if (downloadActive)
     {
@@ -425,7 +435,7 @@ void HeaderBar::showSettingsPopup()
                        .withTargetComponent (&settingsBtn);
 
     menu.showMenuAsync (options,
-        [this, editor, themes, stemCatalog] (int result)
+        [this, editor, themes, stemCatalog, modelUpdates] (int result)
         {
             float scale = processor.apvts.getRawParameterValue (ParamIds::uiScale)->load();
 
@@ -546,7 +556,7 @@ void HeaderBar::showSettingsPopup()
             }
             else if (result == kMenuStemDownloadMissing)
             {
-                std::vector<StemModelId> missingModels;
+                std::vector<StemModelId> missingModels = modelUpdates;
                 for (const auto& entry : stemCatalog)
                     if (! processor.isStemModelInstalled (entry.id))
                         missingModels.push_back (entry.id);

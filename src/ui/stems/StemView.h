@@ -63,6 +63,7 @@ private:
     void selectModel (int index);
     const StemModelCatalogEntry* getSelectedModel() const;
     bool isInstalled (const StemModelId& modelId) const;
+    bool hasUpdate (const StemModelId& modelId) const;   // only an earlier version is installed
     bool isDownloading (const StemModelId& modelId) const;
     std::set<juce::String>& selectionForSelectedModel();
     void selectionChanged();
@@ -78,6 +79,7 @@ private:
 
     std::vector<StemModelCatalogEntry> catalog;
     std::vector<StemModelId> installedModels;
+    std::vector<StemModelId> updateModels;
     int selectedModelIndex = -1;
     juce::String lastModelId;
     std::map<StemModelId, std::set<juce::String>> selections;   // stem names per model

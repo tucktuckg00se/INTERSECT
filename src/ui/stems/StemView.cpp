@@ -125,11 +125,14 @@ public:
 
             auto content = row.reduced (8, 4);
             const bool installed = owner.isInstalled (entry.id);
+            const bool update = owner.hasUpdate (entry.id);
 
             juce::String subtitle;
             subtitle << entry.getNumOutputs() << (entry.getNumOutputs() == 1 ? " stem" : " stems");
             if (owner.isDownloading (entry.id))
                 subtitle << separatorDot() << "Downloading " << juce::roundToInt (downloadProgress * 100.0f) << "%";
+            else if (update)
+                subtitle << separatorDot() << "Update available";
             else if (installed)
                 subtitle << separatorDot() << "Installed";
             else if (const auto size = formatBytes (entry.downloadBytes); size.isNotEmpty())
@@ -141,7 +144,7 @@ public:
             g.setFont (IntersectLookAndFeel::makeFont (9.5f, selected));
             g.drawText (entry.menuLabel, content.removeFromTop (13), juce::Justification::centredLeft, true);
 
-            g.setColour (installed ? getTheme().accent.withAlpha (0.8f) : getTheme().text0);
+            g.setColour (update ? getTheme().accent : installed ? getTheme().accent.withAlpha (0.8f) : getTheme().text0);
             g.setFont (IntersectLookAndFeel::makeFont (8.0f));
             g.drawText (subtitle, content, juce::Justification::centredLeft, true);
         }
@@ -487,6 +490,7 @@ void StemView::reloadCatalog()
     const auto modelFolder = processor.getResolvedStemModelFolder();
     catalog = getEffectiveStemModelCatalog (modelFolder);
     installedModels = scanInstalledStemModels (modelFolder);
+    updateModels = scanStemModelUpdates (modelFolder);
 
     // Keep the previous choice; otherwise prefer an installed model.
     int index = -1;
@@ -530,6 +534,11 @@ const StemModelCatalogEntry* StemView::getSelectedModel() const
 bool StemView::isInstalled (const StemModelId& modelId) const
 {
     return std::find (installedModels.begin(), installedModels.end(), modelId) != installedModels.end();
+}
+
+bool StemView::hasUpdate (const StemModelId& modelId) const
+{
+    return std::find (updateModels.begin(), updateModels.end(), modelId) != updateModels.end();
 }
 
 bool StemView::isDownloading (const StemModelId& modelId) const
@@ -640,9 +649,26 @@ void StemView::updateControls()
     const bool downloadingThis = entry != nullptr && isDownloading (entry->id);
     const bool anyDownload = processor.getUiSliceSnapshot().stemDownloadState == StemModelDownloadState::downloading;
 
-    downloadButton.setVisible (entry != nullptr && ! installed && entry->downloadUrl.isNotEmpty());
-    downloadButton.setButtonText (downloadingThis ? "CANCEL" : "DOWNLOAD");
+    const bool updateAvailable = entry != nullptr && hasUpdate (entry->id);
+
+    // A newer version of an installed model: a small, bright UPDATE in place of DOWNLOAD. The earlier
+    // version keeps working until the user clicks; the download then replaces it.
+    downloadButton.setVisible (entry != nullptr && (! installed || updateAvailable) && entry->downloadUrl.isNotEmpty());
+    downloadButton.setButtonText (downloadingThis ? "CANCEL" : updateAvailable ? "UPDATE" : "DOWNLOAD");
     downloadButton.setEnabled (downloadingThis || ! anyDownload);
+    styleButton (downloadButton);
+    if (updateAvailable && ! downloadingThis)
+    {
+        downloadButton.setColour (juce::TextButton::buttonColourId, getTheme().accent);
+        downloadButton.setColour (juce::TextButton::textColourOffId, getTheme().surface0);
+        downloadButton.setColour (juce::TextButton::textColourOnId, getTheme().surface0);
+        downloadButton.setTooltip (entry->updateNote.isNotEmpty() ? entry->updateNote
+                                                                  : juce::String ("A newer version of this model is available"));
+    }
+    else
+    {
+        downloadButton.setTooltip ({});
+    }
 
     const bool checklistUsable = ortSupported && ortInstalled && entry != nullptr;
     stemViewport.setVisible (checklistUsable);

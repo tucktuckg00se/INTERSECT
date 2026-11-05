@@ -519,10 +519,10 @@ void IntersectProcessor::handleStemJobCompletionOnMessageThread()
     else if (stemState == StemJobState::failed)
     {
         auto stemResult = stemJob.consumeResult();
-        setUiStatusMessage (stemResult.errorMessage.isNotEmpty()
-                                ? stemResult.errorMessage
-                                : juce::String ("Stem separation failed"),
-                            true);
+        lastStemFailureMessage = stemResult.errorMessage.isNotEmpty() ? stemResult.errorMessage
+                                                                      : juce::String ("Stem separation failed");
+        lastStemFailureDiagnostics = stemResult.diagnostics;
+        setUiStatusMessage (lastStemFailureMessage, true);
     }
 
     uiSnapshotDirty.store (true, std::memory_order_release);
@@ -745,11 +745,29 @@ void IntersectProcessor::loadFileAsync (const juce::File& file)
     loadFilesAsync (std::vector<juce::File> { file }, false);
 }
 
+void IntersectProcessor::warnIfAudioNotRunning()
+{
+    // Loads finish on the audio thread. The standalone app without an audio output device never
+    // runs it, so a load would otherwise wait silently forever.
+    if (wrapperType != wrapperType_Standalone)
+        return;
+
+    const auto now = juce::Time::getMillisecondCounter();
+    const auto last = lastProcessBlockMs.load (std::memory_order_relaxed);
+    if (now - createdMs < 3000 || (last != 0 && now - last < 1500))
+        return;
+
+    setUiStatusMessage ("No audio output is running, so INTERSECT can't finish loading. "
+                        "Choose an output device in Options > Audio/MIDI Settings.", true);
+}
+
 void IntersectProcessor::loadFilesAsync (const std::vector<juce::File>& files, bool append)
 {
     pendingStateRestoreToken.store (0, std::memory_order_release);
     if (files.empty())
         return;
+
+    warnIfAudioNotRunning();
 
     presetLoadGeneration.fetch_add (1, std::memory_order_acq_rel);   // a newer load wins over a pending preset
 
@@ -926,6 +944,18 @@ std::vector<StemModelId> IntersectProcessor::getInstalledStemModels() const
     return scanInstalledStemModels (getResolvedStemModelFolder());
 }
 
+std::vector<StemModelId> IntersectProcessor::getStemModelUpdates() const
+{
+    return scanStemModelUpdates (getResolvedStemModelFolder());
+}
+
+juce::String IntersectProcessor::getStemFailureDiagnostics (const juce::String& statusText) const
+{
+    // Only while the status bar still shows that failure (it may be shortened to fit).
+    return statusText.isNotEmpty() && lastStemFailureMessage.startsWith (statusText) ? lastStemFailureDiagnostics
+                                                                                     : juce::String();
+}
+
 bool IntersectProcessor::isStemModelInstalled (const StemModelId& modelId) const
 {
     const auto file = resolveStemModelFile (getResolvedStemModelFolder(), modelId);
@@ -1051,7 +1081,8 @@ void IntersectProcessor::startStemSeparation (int sampleId,
 
     const auto modelFolder = getResolvedStemModelFolder();
     const auto catalogEntry = getEffectiveStemModelCatalogEntry (modelId, modelFolder);
-    const auto modelFile = catalogEntry.isValid() ? modelFolder.getChildFile (catalogEntry.fileName) : juce::File();
+    // An earlier version of the model (listed in its `replaces`) keeps working until the user updates.
+    const auto modelFile = catalogEntry.isValid() ? findInstalledStemModelFile (catalogEntry, modelFolder) : juce::File();
     if (modelFile == juce::File() || ! modelFile.existsAsFile())
     {
         setUiStatusMessage ("Selected stem model is not installed", true);
@@ -2952,6 +2983,7 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                                             juce::MidiBuffer& midi)
 {
     juce::ScopedNoDenormals noDenormals;
+    lastProcessBlockMs.store (juce::Time::getMillisecondCounter(), std::memory_order_relaxed);
     buffer.clear();
 
     // Standalone has no host transport, so its shell provides the tempo directly.
@@ -4159,6 +4191,8 @@ void IntersectProcessor::loadPresetAsync (const juce::File& presetFile)
         setUiStatusMessage ("Finish or cancel stem separation before loading a preset", true);
         return;
     }
+
+    warnIfAudioNotRunning();
 
     const int generation = presetLoadGeneration.fetch_add (1, std::memory_order_acq_rel) + 1;
     const auto cacheDir = AppFiles::getPresetSampleCacheDir();

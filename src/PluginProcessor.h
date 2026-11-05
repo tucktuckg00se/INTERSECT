@@ -178,7 +178,11 @@ public:
     StemComputeDevice getStemComputeDevice() const noexcept { return stemComputeDevice; }
     void setStemComputeDevice (StemComputeDevice device) noexcept { stemComputeDevice = device; }
     std::vector<StemModelId> getInstalledStemModels() const;
+    // Models where only an earlier version is installed (the stem view shows UPDATE).
+    std::vector<StemModelId> getStemModelUpdates() const;
     bool isStemModelInstalled (const StemModelId& modelId) const;
+    // Message thread: the last failed stem job's diagnostics, while statusText still shows its error.
+    juce::String getStemFailureDiagnostics (const juce::String& statusText) const;
     const StemModelDownloadJob& getStemModelDownloadJob() const { return stemModelDownloadJob; }
     // Re-fetches the stem-model manifest in the background unless the cache is fresh or a fetch is
     // already running. Message thread. getStemManifestGeneration() changes when a refresh installed
@@ -551,7 +555,14 @@ private:
     std::atomic<int> stemManifestGeneration { 0 };
     StemManifestRefreshJob stemManifestRefreshJob;   // after stemManifestGeneration: its callback uses it
     OrtBundleDownloadJob ortBundleDownloadJob;
+    // Audio thread writes, message thread reads: lets a load say why it can't finish (no audio device).
+    std::atomic<juce::uint32> lastProcessBlockMs { 0 };
+    const juce::uint32 createdMs = juce::Time::getMillisecondCounter();
+    void warnIfAudioNotRunning();
+
     StemSeparationJob stemJob;
+    juce::String lastStemFailureMessage;       // message thread only
+    juce::String lastStemFailureDiagnostics;   // message thread only
     std::atomic<bool> stemCompletionQueued { false };
 
     // Stem metadata keyed by session sample ID.

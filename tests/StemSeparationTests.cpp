@@ -4,6 +4,7 @@
 #include <cmath>
 #include <complex>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -274,6 +275,82 @@ void builtInCatalog()
 }
 } // namespace
 
+void gpuFailuresAreExplained()
+{
+    const auto tdr = describeStemGpuFailure ("Mini", "Non-zero status code returned while running DmlFusedNode_0_0 node. "
+                                                     "... Exception(4) tid(2ac4) 887A0006 The GPU will not respond to more commands");
+    require (tdr.startsWith ("Windows reset the graphics driver") && tdr.contains ("Mini") && tdr.contains ("887A0006"),
+             "887A0006 is a driver reset, and the details are kept");
+    require (describeStemGpuFailure ("M", "887a0005").startsWith ("Windows reset"), "device removed");
+    require (describeStemGpuFailure ("M", "8007000E Not enough memory resources").contains ("ran out of graphics memory"), "out of memory");
+    require (describeStemGpuFailure ("M", "failed to allocate 2 GB").contains ("ran out of graphics memory"), "allocation failure");
+    require (describeStemGpuFailure ("M", "80070057 The parameter is incorrect").contains ("rejected"), "rejected model");
+    require (describeStemGpuFailure ("M", "887A0020").contains ("internal error"), "driver internal error");
+    require (describeStemGpuFailure ("M", "something else").startsWith ("The GPU couldn't run M"), "unknown error");
+}
+
+void suspectOutputIsCaught()
+{
+    std::vector<float> zeros (1000, 0.0f), audio (1000, 0.0f);
+    for (int i = 0; i < 1000; ++i)
+        audio[(size_t) i] = 0.1f * std::sin (0.05f * (float) i);
+
+    require (isSuspectStemModelOutput (zeros.data(), zeros.size(), 0.5f), "zeros for loud input (driver reset)");
+    require (! isSuspectStemModelOutput (zeros.data(), zeros.size(), 0.0f), "zeros for silent input are fine");
+    require (! isSuspectStemModelOutput (audio.data(), audio.size(), 0.5f), "real output is fine");
+    audio[500] = std::numeric_limits<float>::quiet_NaN();
+    require (isSuspectStemModelOutput (audio.data(), audio.size(), 0.5f), "NaN");
+    audio[500] = std::numeric_limits<float>::infinity();
+    require (isSuspectStemModelOutput (audio.data(), audio.size(), 0.0f), "Inf");
+}
+
+void modelUpdatesResolve()
+{
+    auto entry = parseStemModelManifestEntry (parseJson (R"({
+        "model_id": "mini",
+        "artifacts": { "release_asset_name": "mini2.onnx", "release_asset_url": "https://x/mini2.onnx",
+                       "replaces": [ "mini1.onnx", "mini2.onnx", "../evil.onnx", "sub/dir.onnx", "C:x.onnx", "", "mini0.onnx" ],
+                       "update_note": "  Fixes GPU crashes  " },
+        "runtime": { "stems": ["a", "b"], "chunk_size_samples": 1024 }
+    })"), {});
+    require (entry.isValid(), "entry with replaces parses");
+    require (entry.replacesFileNames.size() == 2 && entry.replacesFileNames[0] == "mini1.onnx"
+                 && entry.replacesFileNames[1] == "mini0.onnx",
+             "only bare file names other than the current file are kept");
+    require (entry.updateNote == "Fixes GPU crashes", "update note trimmed");
+
+    const auto older = parseStemModelManifestEntry (parseJson (R"({
+        "model_id": "mini", "artifacts": { "release_asset_name": "mini1.onnx" },
+        "runtime": { "stems": ["a", "b"], "chunk_size_samples": 1024 }
+    })"), {});
+    require (older.replacesFileNames.isEmpty() && older.updateNote.isEmpty(), "fields are optional");
+
+    const auto folder = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                            .getChildFile ("intersect-stem-update-test-" + juce::String (juce::Random::getSystemRandom().nextInt64()));
+    require (folder.createDirectory(), "temp folder");
+    const auto current = folder.getChildFile ("mini2.onnx");
+    const auto earlier = folder.getChildFile ("mini1.onnx");
+    const auto unrelated = folder.getChildFile ("other.onnx");
+
+    require (findInstalledStemModelFile (entry, folder) == current && ! isStemModelUpdateAvailable (entry, folder),
+             "nothing installed: no update, current path");
+
+    require (earlier.replaceWithText ("old") && unrelated.replaceWithText ("keep"), "write files");
+    require (findInstalledStemModelFile (entry, folder) == earlier, "old version is used until the update");
+    require (isStemModelUpdateAvailable (entry, folder), "old version only: update available");
+
+    require (current.replaceWithText ("new"), "write new file");
+    require (findInstalledStemModelFile (entry, folder) == current && ! isStemModelUpdateAvailable (entry, folder),
+             "new version wins once installed");
+
+    require (removeReplacedStemModelFiles (entry, folder) == 1, "old version deleted");
+    require (! earlier.existsAsFile() && current.existsAsFile() && unrelated.existsAsFile(),
+             "only listed earlier versions are deleted");
+    require (removeReplacedStemModelFiles (entry, folder) == 0, "nothing left to delete");
+
+    (void) folder.deleteRecursively();
+}
+
 int main()
 {
     int failed = 0;
@@ -305,6 +382,9 @@ int main()
     run ("latest series manifest", latestSeriesManifestIsPicked);
     run ("selection and names", selectionAndNames);
     run ("built-in catalog", builtInCatalog);
+    run ("GPU failures are explained", gpuFailuresAreExplained);
+    run ("suspect GPU output is caught", suspectOutputIsCaught);
+    run ("model updates resolve", modelUpdatesResolve);
 
     std::cout << passed << " passed, " << failed << " failed\n";
     return failed == 0 ? 0 : 1;

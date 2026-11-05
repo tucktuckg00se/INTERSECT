@@ -92,6 +92,7 @@ struct StemJobResult
     std::vector<juce::String> stemNames;
     juce::String warningMessage;
     juce::String errorMessage;
+    juce::String diagnostics;   // on failure: versions, GPU, model, failing segment, log path
 };
 
 struct StemMetadata
@@ -159,6 +160,10 @@ struct StemModelCatalogEntry
     juce::String downloadUrl;
     juce::int64 downloadBytes = 0;
     juce::String sha256;          // lowercase hex of the model file; empty = not verified
+    // Earlier file names of this model (manifest `artifacts.replaces`). When only one of them is
+    // installed, the model keeps working with it and the stem view offers UPDATE.
+    juce::StringArray replacesFileNames;
+    juce::String updateNote;      // one line shown with the UPDATE button (`artifacts.update_note`)
     juce::String license;
     juce::String attribution;
     juce::String notes;
@@ -225,8 +230,24 @@ juce::File getStemModelManifestFile (const juce::File& modelFolder);
 std::vector<StemModelCatalogEntry> getEffectiveStemModelCatalog (const juce::File& modelFolder);
 // Invalid (empty id) entry when the model is unknown.
 StemModelCatalogEntry getEffectiveStemModelCatalogEntry (const StemModelId& modelId, const juce::File& modelFolder);
+// The installed file for a model: its current file, otherwise an earlier version listed in
+// replacesFileNames. Returns the current file's path when neither exists.
+juce::File findInstalledStemModelFile (const StemModelCatalogEntry& entry, const juce::File& modelFolder);
+// True when only an earlier version (from replacesFileNames) is installed.
+bool isStemModelUpdateAvailable (const StemModelCatalogEntry& entry, const juce::File& modelFolder);
+// Deletes the earlier versions listed in replacesFileNames from modelFolder (never the current file).
+// Returns how many files were deleted.
+int removeReplacedStemModelFiles (const StemModelCatalogEntry& entry, const juce::File& modelFolder);
 juce::File resolveStemModelFile (const juce::File& modelFolder, const StemModelId& modelId);
 std::vector<StemModelId> scanInstalledStemModels (const juce::File& modelFolder);
+std::vector<StemModelId> scanStemModelUpdates (const juce::File& modelFolder);
+
+// Status message for a GPU provider that failed to load or run a model, chosen from the error's
+// HRESULT (e.g. 887A0006: Windows reset the graphics driver because a GPU step took too long).
+juce::String describeStemGpuFailure (const juce::String& modelName, const juce::String& details);
+// True when a model's output can't be a real separation: NaN/Inf anywhere, or all exact zeros for
+// an input that isn't silent. After a driver reset, DirectML can return zeros without an error.
+bool isSuspectStemModelOutput (const float* output, size_t count, float inputPeak);
 
 // Sorted, unique, in-range copy of selection.
 StemSelection normaliseStemSelection (StemSelection selection, int numOutputs);

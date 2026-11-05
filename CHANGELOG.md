@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- When a stem model gets a fixed version, STEMS shows a bright **UPDATE** button and "Update available" in the model list. The old version keeps working until you click **UPDATE**; updating replaces it and deletes the old file.
+- Stem separation keeps a log (`INTERSECT/logs/stem-separation.log` in your user data folder). Clicking a stem error in the status bar now also copies the details needed to help: INTERSECT and runtime versions, your GPU and driver, the model, and where it stopped.
+
+### Fixed
+- When Windows resets the graphics driver during a GPU separation (error 887A0006, common on older NVIDIA cards such as the GTX 900 series), the message now says so instead of showing a generic GPU error. Other GPU errors also name their cause, such as running out of graphics memory.
+- If the GPU hands back silence after such a reset, separation now stops with that message instead of writing silent stems.
+- In the standalone app with no audio output device, loading a sample now says why it can't finish instead of doing nothing.
+
 ## [0.18.1] - 2026-11-02
 
 ### Added

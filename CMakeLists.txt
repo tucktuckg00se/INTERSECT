@@ -178,6 +178,7 @@ target_sources(Intersect PRIVATE
     src/ui/AutoChopPanel.cpp
     src/ui/stems/StemView.cpp
     src/audio/StemSeparationJob.cpp
+    src/audio/StemGpuInfo.cpp
     src/audio/StemSpectral.cpp
     src/audio/AuditionPlayer.cpp
 )
@@ -228,6 +229,11 @@ target_link_libraries(Intersect
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(Intersect PRIVATE CURL::libcurl)
+endif()
+
+if(WIN32)
+    # DXGI adapter info (name, driver, compute preemption) for the stem separation log.
+    target_link_libraries(Intersect PRIVATE dxgi)
 endif()
 
 if(INTERSECT_HAS_ONNX_RUNTIME AND UNIX AND NOT APPLE)

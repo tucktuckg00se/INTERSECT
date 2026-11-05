@@ -388,6 +388,10 @@ void StemModelDownloadJob::run()
             return;
         }
 
+        // The new file is verified and installed: earlier versions of this model are no longer needed.
+        // A file still open by a running separation can't be deleted; it's simply left behind.
+        (void) removeReplacedStemModelFiles (entry, downloadFolder);
+
         progress.store ((float) (i + 1) / (float) requestedModels.size(), std::memory_order_release);
     }
 

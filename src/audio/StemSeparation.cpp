@@ -1,5 +1,6 @@
 #include "StemSeparation.h"
 #include <algorithm>
+#include <cmath>
 
 namespace
 {
@@ -538,6 +539,22 @@ StemModelCatalogEntry parseStemModelManifestEntry (const juce::var& manifestMode
         if (auto* sha = artifacts->getProperty ("sha256").getDynamicObject())
             if (auto text = sha->getProperty ("onnx").toString().trim().toLowerCase(); text.length() == 64)
                 entry.sha256 = text;
+
+        // Optional: earlier file names of this model, and a one-line note for the UPDATE button.
+        // Only bare file names are accepted, so a manifest can never point INTERSECT at other files.
+        if (auto* replaces = artifacts->getProperty ("replaces").getArray())
+        {
+            entry.replacesFileNames.clear();
+            for (const auto& name : *replaces)
+            {
+                const auto text = name.toString().trim();
+                if (text.isNotEmpty() && text != entry.fileName && text != "." && text != ".."
+                    && ! text.containsAnyOf ("/\\:") && juce::File::createLegalFileName (text) == text)
+                    entry.replacesFileNames.addIfNotAlreadyThere (text);
+            }
+        }
+        if (auto text = artifacts->getProperty ("update_note").toString().trim(); text.isNotEmpty())
+            entry.updateNote = text;
     }
 
     if (auto* runtime = object->getProperty ("runtime").getDynamicObject())
@@ -619,10 +636,49 @@ StemModelCatalogEntry getEffectiveStemModelCatalogEntry (const StemModelId& mode
     return {};
 }
 
+juce::File findInstalledStemModelFile (const StemModelCatalogEntry& entry, const juce::File& modelFolder)
+{
+    const auto current = modelFolder.getChildFile (entry.fileName);
+    if (current.existsAsFile())
+        return current;
+
+    for (const auto& name : entry.replacesFileNames)
+        if (const auto earlier = modelFolder.getChildFile (name); earlier.existsAsFile())
+            return earlier;
+
+    return current;
+}
+
+bool isStemModelUpdateAvailable (const StemModelCatalogEntry& entry, const juce::File& modelFolder)
+{
+    if (! entry.isValid() || modelFolder.getChildFile (entry.fileName).existsAsFile())
+        return false;
+
+    for (const auto& name : entry.replacesFileNames)
+        if (modelFolder.getChildFile (name).existsAsFile())
+            return true;
+
+    return false;
+}
+
+int removeReplacedStemModelFiles (const StemModelCatalogEntry& entry, const juce::File& modelFolder)
+{
+    int removed = 0;
+    for (const auto& name : entry.replacesFileNames)
+    {
+        const auto earlier = modelFolder.getChildFile (name);
+        // A replaced name can only refer to a file directly inside the model folder.
+        if (name != entry.fileName && earlier.getParentDirectory() == modelFolder && earlier.existsAsFile()
+            && earlier.deleteFile())
+            ++removed;
+    }
+    return removed;
+}
+
 juce::File resolveStemModelFile (const juce::File& modelFolder, const StemModelId& modelId)
 {
     const auto entry = getEffectiveStemModelCatalogEntry (modelId, modelFolder);
-    return entry.isValid() ? modelFolder.getChildFile (entry.fileName) : juce::File();
+    return entry.isValid() ? findInstalledStemModelFile (entry, modelFolder) : juce::File();
 }
 
 StemSelection normaliseStemSelection (StemSelection selection, int numOutputs)
@@ -639,10 +695,62 @@ std::vector<StemModelId> scanInstalledStemModels (const juce::File& modelFolder)
 {
     std::vector<StemModelId> installed;
     for (const auto& entry : getEffectiveStemModelCatalog (modelFolder))
-        if (modelFolder.getChildFile (entry.fileName).existsAsFile())
+        if (findInstalledStemModelFile (entry, modelFolder).existsAsFile())
             installed.push_back (entry.id);
 
     return installed;
+}
+
+std::vector<StemModelId> scanStemModelUpdates (const juce::File& modelFolder)
+{
+    std::vector<StemModelId> updates;
+    for (const auto& entry : getEffectiveStemModelCatalog (modelFolder))
+        if (isStemModelUpdateAvailable (entry, modelFolder))
+            updates.push_back (entry.id);
+
+    return updates;
+}
+
+juce::String describeStemGpuFailure (const juce::String& modelName, const juce::String& details)
+{
+    const auto lower = details.toLowerCase();
+    const auto has = [&lower] (const char* text) { return lower.contains (text); };
+
+    juce::String reason;
+    if (has ("887a0005") || has ("887a0006") || has ("887a0007"))
+        reason = "Windows reset the graphics driver because a GPU step took too long running " + modelName
+               + ". If INTERSECT offers an UPDATE for this model, install it; otherwise switch DEVICE to CPU.";
+    else if (has ("887a0020"))
+        reason = "The graphics driver hit an internal error running " + modelName
+               + ". Update the graphics driver, or switch DEVICE to CPU.";
+    else if (has ("8007000e") || has ("out of memory") || has ("not enough memory") || has ("failed to allocate"))
+        reason = "The GPU ran out of graphics memory for " + modelName
+               + ". Switch DEVICE to CPU, or try a smaller model.";
+    else if (has ("80070057"))
+        reason = "The GPU runtime rejected " + modelName
+               + ". If INTERSECT offers an UPDATE for this model, install it; otherwise switch DEVICE to CPU.";
+    else
+        reason = "The GPU couldn't run " + modelName + ". Switch DEVICE to CPU to separate on the CPU.";
+
+    return reason + " Details: " + details;
+}
+
+bool isSuspectStemModelOutput (const float* output, size_t count, float inputPeak)
+{
+    if (output == nullptr || count == 0)
+        return true;
+
+    float peak = 0.0f;
+    for (size_t i = 0; i < count; ++i)
+    {
+        const float v = output[i];
+        if (! std::isfinite (v))
+            return true;
+        peak = std::max (peak, std::abs (v));
+    }
+
+    // Exact zeros everywhere, for an input with content, is what a reset GPU hands back.
+    return peak == 0.0f && inputPeak > 1.0e-6f;
 }
 
 // ── ORT bundle catalog ──────────────────────────────────────────────────
