@@ -675,6 +675,15 @@ int removeReplacedStemModelFiles (const StemModelCatalogEntry& entry, const juce
     return removed;
 }
 
+int removeAllReplacedStemModelFiles (const juce::File& modelFolder)
+{
+    int removed = 0;
+    for (const auto& entry : getEffectiveStemModelCatalog (modelFolder))
+        if (entry.isValid() && modelFolder.getChildFile (entry.fileName).existsAsFile())
+            removed += removeReplacedStemModelFiles (entry, modelFolder);
+    return removed;
+}
+
 juce::File resolveStemModelFile (const juce::File& modelFolder, const StemModelId& modelId)
 {
     const auto entry = getEffectiveStemModelCatalogEntry (modelId, modelFolder);

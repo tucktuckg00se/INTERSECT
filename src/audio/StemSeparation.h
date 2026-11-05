@@ -238,6 +238,10 @@ bool isStemModelUpdateAvailable (const StemModelCatalogEntry& entry, const juce:
 // Deletes the earlier versions listed in replacesFileNames from modelFolder (never the current file).
 // Returns how many files were deleted.
 int removeReplacedStemModelFiles (const StemModelCatalogEntry& entry, const juce::File& modelFolder);
+// The same for every model whose current file is installed. A replaced file that is still open (a
+// separation was using it when the update finished) can't be deleted on Windows; calling this again
+// later, e.g. when STEMS opens or after a separation, removes it then.
+int removeAllReplacedStemModelFiles (const juce::File& modelFolder);
 juce::File resolveStemModelFile (const juce::File& modelFolder, const StemModelId& modelId);
 std::vector<StemModelId> scanInstalledStemModels (const juce::File& modelFolder);
 std::vector<StemModelId> scanStemModelUpdates (const juce::File& modelFolder);

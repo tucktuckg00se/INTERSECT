@@ -525,6 +525,10 @@ void IntersectProcessor::handleStemJobCompletionOnMessageThread()
         setUiStatusMessage (lastStemFailureMessage, true);
     }
 
+    // The job has closed its model file: a replaced version an update couldn't delete can go now.
+    if (stemModelDownloadJob.getState() != StemModelDownloadState::downloading)
+        (void) removeAllReplacedStemModelFiles (getResolvedStemModelFolder());
+
     uiSnapshotDirty.store (true, std::memory_order_release);
 
     if (loadStateChanged)
@@ -988,6 +992,9 @@ void IntersectProcessor::refreshStemModelManifestIfStale()
     // A model download fetches the manifest itself.
     if (stemModelDownloadJob.getState() == StemModelDownloadState::downloading || stemManifestRefreshJob.isRunning())
         return;
+
+    // Old versions an update couldn't delete because a separation still had them open.
+    (void) removeAllReplacedStemModelFiles (getResolvedStemModelFolder());
 
     const auto folder = getResolvedStemModelFolder();
     const auto cached = getStemModelManifestFile (folder);

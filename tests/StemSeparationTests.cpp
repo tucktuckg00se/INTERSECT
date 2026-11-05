@@ -348,6 +348,19 @@ void modelUpdatesResolve()
              "only listed earlier versions are deleted");
     require (removeReplacedStemModelFiles (entry, folder) == 0, "nothing left to delete");
 
+    // A replaced file that couldn't be deleted at update time (still open) is removed by a later
+    // sweep over the whole catalog, driven by the cached manifest.
+    require (getStemModelManifestFile (folder).replaceWithText (R"({ "models": [ {
+        "model_id": "mini",
+        "artifacts": { "release_asset_name": "mini2.onnx", "replaces": [ "mini1.onnx" ] },
+        "runtime": { "stems": ["a", "b"], "chunk_size_samples": 1024 } } ] })"), "write cached manifest");
+    require (earlier.replaceWithText ("old again"), "leftover old version");
+    require (removeAllReplacedStemModelFiles (folder) == 1 && ! earlier.existsAsFile() && current.existsAsFile(),
+             "sweep removes the leftover, keeps the current file");
+    require (current.deleteFile() && earlier.replaceWithText ("old only"), "only the old version installed");
+    require (removeAllReplacedStemModelFiles (folder) == 0 && earlier.existsAsFile(),
+             "sweep never removes the only installed version");
+
     (void) folder.deleteRecursively();
 }
 
