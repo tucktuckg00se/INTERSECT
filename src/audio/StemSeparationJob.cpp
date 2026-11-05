@@ -317,7 +317,7 @@ struct StemRunMonitor
             return;
         float inputPeak = 0.0f;
         for (size_t i = 0; i < inputCount; ++i)
-            inputPeak = std::max (inputPeak, std::abs (input[i]));
+            inputPeak = juce::jmax (inputPeak, std::abs (input[i]));
         if (isSuspectStemModelOutput (output, count, inputPeak))
             throw std::runtime_error ("the GPU returned silence or invalid numbers for audio that isn't silent, "
                                       "so the graphics driver was most likely reset (887A0006)");
@@ -327,7 +327,7 @@ struct StemRunMonitor
     {
         ++finishedRuns;
         lastSeconds = seconds;
-        slowestSeconds = std::max (slowestSeconds, seconds);
+        slowestSeconds = juce::jmax (slowestSeconds, seconds);
         stemLog ("segment " + juce::String (finishedRuns) + "/" + juce::String (totalRuns) + ": "
                  + juce::String (seconds, 2) + " s");
     }
