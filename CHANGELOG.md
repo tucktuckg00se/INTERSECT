@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-11-07
+
 ### Added
 - Settings now open in their own full window (**SET**), like the file browser and STEMS, with General, MIDI, Files, Presets and Stems pages. Changes apply and are saved straight away. Stem models and ONNX Runtime bundles can be downloaded and activated there with live progress, even with no sample loaded.
 - Settings → General shows when a newer INTERSECT is out, with a button that opens its release page. It asks GitHub only when you open settings, at most every 6 hours.
