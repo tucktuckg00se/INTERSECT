@@ -1,4 +1,5 @@
 #include "StemModelDownloadJob.h"
+#include "../HttpFetch.h"
 #include <juce_cryptography/juce_cryptography.h>
 
 namespace
@@ -94,30 +95,6 @@ bool downloadFileToTarget (const juce::URL& url,
     return true;
 }
 
-} // namespace
-
-namespace
-{
-// Small text fetch with a short timeout: the manifest and the releases list are a few KB, and the
-// refresh thread must stop quickly when the plugin is unloaded. Empty on any failure.
-juce::String fetchText (const juce::URL& url, juce::Thread& thread, const juce::String& extraHeaders = {})
-{
-    if (thread.threadShouldExit())
-        return {};
-
-    int statusCode = 0;
-    auto input = url.createInputStream (
-        juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inAddress)
-            .withConnectionTimeoutMs (10000)
-            .withNumRedirectsToFollow (5)
-            .withStatusCode (&statusCode)
-            .withExtraHeaders (extraHeaders));
-
-    if (input == nullptr || statusCode != 200 || thread.threadShouldExit())
-        return {};
-
-    return input->readEntireStreamAsString();
-}
 } // namespace
 
 juce::String resolveStemModelManifestUrl (juce::Thread& thread)

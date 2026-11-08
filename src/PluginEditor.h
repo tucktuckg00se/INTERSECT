@@ -1,11 +1,14 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "PluginProcessor.h"
+#include "SettingsFile.h"
 #include "ui/IntersectLookAndFeel.h"
 #include "ui/HeaderBar.h"
 #include "ui/SampleLane.h"
 #include "ui/browser/BrowserView.h"
 #include "ui/stems/StemView.h"
+#include "ui/settings/SettingsHost.h"
+#include "ui/settings/SettingsView.h"
 #include "ui/SignalChainBar.h"
 #include "ui/SliceLane.h"
 #include "ui/WaveformView.h"
@@ -14,6 +17,7 @@
 
 class IntersectEditor : public juce::AudioProcessorEditor,
                              public juce::DragAndDropContainer,
+                             public SettingsHost,
                              private juce::Timer
 {
 public:
@@ -24,14 +28,21 @@ public:
     void resized() override;
     bool keyPressed (const juce::KeyPress& key) override;
 
-    juce::StringArray getAvailableThemes();
-    void applyTheme (const juce::String& themeName);
-    void saveUserSettings (float scale, const juce::String& themeName);
-    void setMiddleCOctave (int octave);
-    int getMiddleCOctave() const { return middleCOctave; }
-    float getEffectiveUiScale() const noexcept { return lastAppliedScale; }
-    juce::File getCustomPresetsFolder() const { return browser.getCustomPresetsFolder(); }
-    void setCustomPresetsFolder (const juce::File& folder);
+    // ---- SettingsHost ----
+    juce::StringArray getAvailableThemes() override;
+    void applyTheme (const juce::String& themeName) override;
+    void setMiddleCOctave (int octave) override;
+    int getMiddleCOctave() const override { return middleCOctave; }
+    float getDesiredUiScale() const override;
+    float getEffectiveUiScale() const override { return lastAppliedScale; }
+    void adjustUiScale (float delta) override;
+    juce::File getCustomPresetsFolder() const override { return browser.getCustomPresetsFolder(); }
+    void setCustomPresetsFolder (const juce::File& folder) override;
+    Browser::DefaultFolderMode getBrowserDefaultFolderMode() const override { return browser.getDefaultFolderMode(); }
+    void setBrowserDefaultFolderMode (Browser::DefaultFolderMode mode) override;
+    juce::File getBrowserDefaultFolder() const override { return browser.getDefaultFolder(); }
+    void setBrowserDefaultFolder (const juce::File& folder) override;
+    void persistSettings() override;
 
 private:
     enum class DeleteTarget
@@ -40,12 +51,15 @@ private:
         sample,
     };
 
-    void performContextualDelete();
+    /** Deletes the selected slice, or removes the selected sample (asking first unless skipConfirm). */
+    void performContextualDelete (bool skipConfirm);
     void timerCallback() override;
     void ensureDefaultThemes();
     void loadUserSettings();
+    void saveUserSettings (float scale, const juce::String& themeName);
     void setBrowserVisible (bool shouldBeVisible);
     void setStemViewVisible (bool shouldBeVisible, int sampleId = -1);
+    void setSettingsVisible (bool shouldBeVisible);
     void setEditingBandsVisible (bool shouldBeVisible);
     void addFilesToKit (const std::vector<juce::File>& files);
     void replaceKitWithFiles (const std::vector<juce::File>& files);
@@ -58,7 +72,6 @@ private:
     void openFileDialog();
     void saveKitToLibrary();
     void exportPreset (const juce::File& preset, bool embedSamples);
-    void persistSettings();
     juce::String getDefaultPresetName() const;
     float computeEffectiveScale (float desiredScale) const;
     bool updateUiTransform();
@@ -82,6 +95,8 @@ private:
     float savedScale = -1.0f;
     bool browserVisible = false;
     bool stemViewVisible = false;
+    bool settingsVisible = false;
+    bool loadingSettings = false;    // saveUserSettings does nothing while settings are being applied
     uint32_t lastUiSnapshotVersion = 0;
     uint32_t lastPresetSaveVersion = 0;
     DeleteTarget deleteTarget = DeleteTarget::slice;
@@ -89,6 +104,7 @@ private:
     IntersectLookAndFeel lnf;
     BrowserView browser;
     StemView    stemView;
+    SettingsView settingsView;
     HeaderBar       headerBar;
     SampleLane      sampleLane;
     SignalChainBar  signalChainBar;
@@ -100,6 +116,7 @@ private:
     juce::TooltipWindow tooltipWindow { this, 500 };
     std::unique_ptr<juce::FileChooser> presetChooser;
     std::unique_ptr<juce::FileChooser> openChooser;
+    SettingsFile settingsFile;       // settings.yaml, shared with other instances (see SettingsFile)
     juce::File pendingRenamePreset;   // a SAVE whose new file should open for renaming once written
     juce::File lastExportFolder;
 

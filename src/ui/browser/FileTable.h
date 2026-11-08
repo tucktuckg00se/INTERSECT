@@ -29,8 +29,8 @@ public:
     void selectFirstRow();
 
     void setFullPathTooltips (bool shouldShow) noexcept { fullPathTooltips = shouldShow; }
-    /** Overlay text over the list (e.g. search progress). Empty hides it. A strip sits at the bottom. */
-    void setStatus (const juce::String& text, bool asBottomStrip);
+    /** Centred text over an empty list (e.g. "No matches"). Empty hides it. */
+    void setStatus (const juce::String& text);
     /** Call when FileInfoCache has new results: repaints, and re-sorts when sorting by LEN or RATE. */
     void infoUpdated();
     void grabListFocus();
@@ -42,7 +42,6 @@ public:
     bool isRenaming() const noexcept { return renaming; }
 
     void paint (juce::Graphics& g) override;
-    void paintOverChildren (juce::Graphics& g) override;
     void resized() override;
     bool keyPressed (const juce::KeyPress& key) override;
 
@@ -114,7 +113,6 @@ private:
     SortColumn sortColumn = SortColumn::name;
     bool sortAscending = true;
     bool fullPathTooltips = false;
-    bool statusAsStrip = false;
 
     // Inline rename. The editor is a permanent child that is only shown and hidden, never
     // destroyed from its own callbacks (see the TextEditor lifecycle note in CLAUDE.md).

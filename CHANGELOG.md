@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Settings now open in their own full window (**SET**), like the file browser and STEMS, with General, MIDI, Files, Presets and Stems pages. Changes apply and are saved straight away. Stem models and ONNX Runtime bundles can be downloaded and activated there with live progress, even with no sample loaded.
+- Settings → General shows when a newer INTERSECT is out, with a button that opens its release page. It asks GitHub only when you open settings, at most every 6 hours.
+- Choose where the **FILES** button opens the browser: the last folder you browsed (the default) or a folder you pick. Set it in SET → Files, or right-click any folder in the browser and choose **Set as Default Folder**.
+- The file browser has a bottom bar with **CLOSE** and a status line showing how many items are listed and selected, and search progress.
+- **OPEN SETTINGS FOLDER** in the settings window opens the folder holding settings.yaml, themes and presets.
+
+### Changed
+- Removing a sample now asks first. Hold Shift (on the **X**, the Delete key or **DEL**) to remove it without asking.
+- The last folder you browsed is shared by every open INTERSECT and remembered for your next session.
+
+### Fixed
+- With several INTERSECT instances open, closing one no longer undoes settings changed in another (bookmarks, recent folders, theme, the last folder and others).
+
 ## [0.18.2] - 2026-11-04
 
 ### Added

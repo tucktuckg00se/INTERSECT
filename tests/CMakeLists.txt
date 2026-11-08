@@ -57,3 +57,52 @@ target_link_libraries(IntersectStemTests PRIVATE
     juce::juce_recommended_warning_flags
 )
 add_test(NAME stem_separation COMMAND IntersectStemTests)
+
+juce_add_console_app(IntersectSettingsTests
+    PRODUCT_NAME "INTERSECT settings tests"
+    VERSION "${INTERSECT_VERSION}"
+)
+
+target_sources(IntersectSettingsTests PRIVATE
+    SettingsFileTests.cpp
+    ../src/SettingsFile.cpp
+)
+target_include_directories(IntersectSettingsTests PRIVATE
+    ..
+    ../src
+)
+target_compile_definitions(IntersectSettingsTests PRIVATE
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+)
+target_link_libraries(IntersectSettingsTests PRIVATE
+    juce::juce_core
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_warning_flags
+)
+add_test(NAME settings_file COMMAND IntersectSettingsTests)
+
+juce_add_console_app(IntersectUpdateTests
+    PRODUCT_NAME "INTERSECT update tests"
+    VERSION "${INTERSECT_VERSION}"
+)
+
+target_sources(IntersectUpdateTests PRIVATE
+    UpdateCheckTests.cpp
+    ../src/UpdateCheck.cpp
+    ../src/HttpFetch.cpp
+)
+target_include_directories(IntersectUpdateTests PRIVATE
+    ..
+    ../src
+)
+target_compile_definitions(IntersectUpdateTests PRIVATE
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+)
+target_link_libraries(IntersectUpdateTests PRIVATE
+    juce::juce_core
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_warning_flags
+)
+add_test(NAME update_check COMMAND IntersectUpdateTests)

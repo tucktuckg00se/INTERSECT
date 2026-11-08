@@ -12,6 +12,7 @@ enum MenuIds
     kAddBookmark = 1,
     kRemoveBookmark,
     kRemoveRecent,
+    kSetDefaultFolder,
 };
 
 juce::String folderLabel (const juce::File& dir)
@@ -323,6 +324,12 @@ void PlacesList::showMenu (const Row& row, juce::Point<int> screenPos)
     if (row.kind == Kind::recent)
         menu.addItem (kRemoveRecent, "Remove from Recent");
 
+    if (row.file.isDirectory() && onSetDefaultFolder != nullptr)
+    {
+        const bool isStart = isDefaultFolder != nullptr && isDefaultFolder (row.file);
+        menu.addItem (kSetDefaultFolder, "Set as Default Folder", ! isStart, isStart);
+    }
+
     if (menu.getNumItems() == 0)
         return;
 
@@ -339,6 +346,8 @@ void PlacesList::showMenu (const Row& row, juce::Point<int> screenPos)
                 safe->removeBookmark (file);
             else if (result == kRemoveRecent)
                 safe->removeRecentFolder (file);
+            else if (result == kSetDefaultFolder && safe->onSetDefaultFolder != nullptr)
+                safe->onSetDefaultFolder (file);
         });
 }
 

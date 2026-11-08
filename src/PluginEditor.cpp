@@ -110,13 +110,15 @@ IntersectEditor::IntersectEditor (IntersectProcessor& p)
       processor (p),
       browser(),
       stemView (p),
+      settingsView (p, *this),
       headerBar (p),
       sampleLane (p),
       signalChainBar (p),
       sliceLane (p),
       waveformView (p),
       scrollZoomBar (p),
-      actionPanel (p, waveformView)
+      actionPanel (p, waveformView),
+      settingsFile (getUserSettingsFile())
 {
     setLookAndFeel (&lnf);
 
@@ -129,13 +131,26 @@ IntersectEditor::IntersectEditor (IntersectProcessor& p)
     addAndMakeVisible (actionPanel);
     addChildComponent (browser);
     addChildComponent (stemView);
+    addChildComponent (settingsView);
 
     sliceLane.setWaveformView (&waveformView);
     sampleLane.onInteraction = [this] { deleteTarget = DeleteTarget::sample; };
     sliceLane.onInteraction = [this] { deleteTarget = DeleteTarget::slice; };
     waveformView.onInteraction = [this] { deleteTarget = DeleteTarget::slice; };
-    actionPanel.onDeleteRequested = [this] { performContextualDelete(); };
-    headerBar.onBrowserToggle = [this] { setBrowserVisible (! browserVisible); };
+    actionPanel.onDeleteRequested = [this] { performContextualDelete (juce::ModifierKeys::getCurrentModifiers().isShiftDown()); };
+    headerBar.onBrowserToggle = [this]
+    {
+        // Only the FILES button uses the default folder; SAVE and RELINK open where they need to.
+        // "Last used" is shared by every instance, so read it fresh: another may have browsed since.
+        if (! browserVisible)
+        {
+            const auto lastUsed = settingsFile.readValue ("browserLastFolder");
+            browser.applyDefaultFolder (juce::File::isAbsolutePath (lastUsed) ? juce::File (lastUsed) : juce::File());
+        }
+        setBrowserVisible (! browserVisible);
+    };
+    headerBar.onSettingsToggle = [this] { setSettingsVisible (! settingsVisible); };
+    settingsView.onCloseRequested = [this] { setSettingsVisible (false); };
     browser.onAddFiles = [this] (const std::vector<juce::File>& files) { addFilesToKit (files); };
     browser.onLoadFiles = [this] (const std::vector<juce::File>& files) { replaceKitWithFiles (files); };
     browser.onPresetChosen = [this] (const juce::File& preset) { loadPreset (preset); };
@@ -144,6 +159,7 @@ IntersectEditor::IntersectEditor (IntersectProcessor& p)
     browser.onOpenDialogRequested = [this] { openFileDialog(); };
     browser.onCloseRequested = [this] { setBrowserVisible (false); };
     browser.onPersistentStateChanged = [this] { persistSettings(); };
+    browser.onFolderChanged = [this] { persistSettings(); };   // other instances follow the last folder
     browser.onAuditionRequested = [this] (const juce::File& file) { processor.auditionFileAsync (file); };
     browser.onAuditionStopRequested = [this] { processor.stopAudition(); };
     browser.onAuditionPauseRequested = [this] { processor.pauseAudition(); };
@@ -215,6 +231,7 @@ void IntersectEditor::resized()
     // The browser covers everything below the sample lane; header and lane stay usable.
     browser.setBounds (bounds.withTrimmedTop ((int) (kHeaderH + kSampleLaneH)));
     stemView.setBounds (browser.getBounds());
+    settingsView.setBounds (browser.getBounds());
 
     juce::FlexBox shell;
     shell.flexDirection = juce::FlexBox::Direction::column;
@@ -278,12 +295,12 @@ bool IntersectEditor::keyPressed (const juce::KeyPress& key)
     // Ctrl+= / Ctrl+- - UI scale up / down
     if (mods.isCommandDown() && (code == '=' || code == '+' || code == juce::KeyPress::numberPadAdd))
     {
-        headerBar.adjustScale (0.25f);
+        adjustUiScale (0.25f);
         return true;
     }
     if (mods.isCommandDown() && (code == '-' || code == juce::KeyPress::numberPadSubtract))
     {
-        headerBar.adjustScale (-0.25f);
+        adjustUiScale (-0.25f);
         return true;
     }
 
@@ -303,12 +320,22 @@ bool IntersectEditor::keyPressed (const juce::KeyPress& key)
         return false;
     }
 
-    // Same for the stem view.
+    // Same for the stem view and settings.
     if (stemViewVisible)
     {
         if (code == juce::KeyPress::escapeKey)
         {
             setStemViewVisible (false);
+            return true;
+        }
+        return false;
+    }
+
+    if (settingsVisible)
+    {
+        if (code == juce::KeyPress::escapeKey)
+        {
+            setSettingsVisible (false);
             return true;
         }
         return false;
@@ -366,10 +393,10 @@ bool IntersectEditor::keyPressed (const juce::KeyPress& key)
         }
     }
 
-    // Delete / Backspace - Delete Slice
+    // Delete / Backspace - delete the slice, or remove the sample (Shift: without asking)
     if (code == juce::KeyPress::deleteKey || code == juce::KeyPress::backspaceKey)
     {
-        performContextualDelete();
+        performContextualDelete (mods.isShiftDown());
         return true;
     }
 
@@ -508,14 +535,14 @@ void IntersectEditor::saveMidiAs (int sampleId)
         });
 }
 
-void IntersectEditor::performContextualDelete()
+void IntersectEditor::performContextualDelete (bool skipConfirm)
 {
     if (deleteTarget == DeleteTarget::sample)
     {
         const int selectedSampleId = processor.selectedSessionSampleId.load (std::memory_order_relaxed);
         if (selectedSampleId >= 0)
         {
-            processor.deleteSessionSampleAsync (selectedSampleId);
+            sampleLane.requestRemoveSample (selectedSampleId, skipConfirm);   // asks first unless Shift
             return;
         }
     }
@@ -538,7 +565,10 @@ void IntersectEditor::setBrowserVisible (bool shouldBeVisible)
         return;
 
     if (shouldBeVisible)
+    {
         setStemViewVisible (false);
+        setSettingsVisible (false);
+    }
 
     browserVisible = shouldBeVisible;
     if (browserVisible && actionPanel.isAutoChopOpen())
@@ -569,6 +599,7 @@ void IntersectEditor::setStemViewVisible (bool shouldBeVisible, int sampleId)
     if (shouldBeVisible)
     {
         setBrowserVisible (false);
+        setSettingsVisible (false);
         stemView.openForSample (sampleId);
     }
 
@@ -590,6 +621,41 @@ void IntersectEditor::setStemViewVisible (bool shouldBeVisible, int sampleId)
     else
     {
         persistSettings();   // remembered model, stem choices and mode
+        grabKeyboardFocus();
+    }
+}
+
+void IntersectEditor::setSettingsVisible (bool shouldBeVisible)
+{
+    if (settingsVisible == shouldBeVisible)
+        return;
+
+    if (shouldBeVisible)
+    {
+        setBrowserVisible (false);
+        setStemViewVisible (false);
+    }
+
+    settingsVisible = shouldBeVisible;
+    if (settingsVisible && actionPanel.isAutoChopOpen())
+        actionPanel.toggleAutoChop();
+
+    setEditingBandsVisible (! settingsVisible);
+    headerBar.setSettingsActive (settingsVisible);
+
+    if (settingsVisible)
+    {
+        // Opening settings is the only time INTERSECT asks GitHub for a newer release (at most every 6 h).
+        processor.getUpdateChecker().checkIfStale (JucePlugin_VersionString, false);
+        settingsView.reloadActivePage();
+        settingsView.setVisible (true);
+        settingsView.toFront (false);
+        settingsView.grabKeyboardFocus();
+    }
+    else
+    {
+        settingsView.setVisible (false);
+        persistSettings();
         grabKeyboardFocus();
     }
 }
@@ -808,8 +874,31 @@ void IntersectEditor::openFileDialog()
 
 void IntersectEditor::persistSettings()
 {
-    const float scale = processor.apvts.getRawParameterValue (ParamIds::uiScale)->load();
-    saveUserSettings (scale, getTheme().name);
+    saveUserSettings (getDesiredUiScale(), getTheme().name);
+}
+
+float IntersectEditor::getDesiredUiScale() const
+{
+    return processor.apvts.getRawParameterValue (ParamIds::uiScale)->load();
+}
+
+void IntersectEditor::adjustUiScale (float delta)
+{
+    // Saved by timerCallback when it sees the parameter change.
+    if (auto* param = processor.apvts.getParameter (ParamIds::uiScale))
+        param->setValueNotifyingHost (param->convertTo0to1 (juce::jlimit (0.5f, 3.0f, getDesiredUiScale() + delta)));
+}
+
+void IntersectEditor::setBrowserDefaultFolderMode (Browser::DefaultFolderMode mode)
+{
+    browser.setDefaultFolderMode (mode);
+    persistSettings();
+}
+
+void IntersectEditor::setBrowserDefaultFolder (const juce::File& folder)
+{
+    browser.setDefaultFolder (folder);
+    persistSettings();
 }
 
 // SAVE: write the kit straight into the preset library under a unique name, then show it in
@@ -1075,6 +1164,7 @@ void IntersectEditor::applyTheme (const juce::String& themeName)
             processor.markUiSnapshotDirty();
             browser.refreshThemeColours();
             stemView.refreshThemeColours();
+            settingsView.refreshThemeColours();
             float scale = processor.apvts.getRawParameterValue (ParamIds::uiScale)->load();
             saveUserSettings (scale, themeName);
             repaint();
@@ -1093,6 +1183,7 @@ void IntersectEditor::applyTheme (const juce::String& themeName)
     processor.markUiSnapshotDirty();
     browser.refreshThemeColours();
     stemView.refreshThemeColours();
+    settingsView.refreshThemeColours();
     float scale = processor.apvts.getRawParameterValue (ParamIds::uiScale)->load();
     saveUserSettings (scale, themeName);
     repaint();
@@ -1111,187 +1202,106 @@ void IntersectEditor::setMiddleCOctave (int octave)
 
 void IntersectEditor::saveUserSettings (float scale, const juce::String& themeName)
 {
-    auto file = getUserSettingsFile();
-    if (! file.getParentDirectory().createDirectory())
-        return;  // sandboxed or read-only — skip silently
-    juce::String content;
-    content << "uiScale: " << juce::String (scale, 2) << "\n";
-    content << "theme: " << themeName << "\n";
-    content << "nrpnEnabled: "  << (processor.midiEditState.enabled.load (std::memory_order_relaxed) ? "true" : "false") << "\n";
-    content << "nrpnChannel: "  << processor.midiEditState.channel.load (std::memory_order_relaxed) << "\n";
-    content << "nrpnBlockCc: "  << (processor.midiEditState.consumeMidiEditCc.load (std::memory_order_relaxed) ? "true" : "false") << "\n";
-    content << "middleC: " << middleCOctave << "\n";
-    auto writeList = [&content] (const char* key, const juce::StringArray& paths)
+    if (loadingSettings)
+        return;   // values are only half applied; writing now would overwrite the file with defaults
+
+    auto boolText = [] (bool b) { return juce::String (b ? "true" : "false"); };
+    auto setPath = [] (SettingsValues& values, const char* key, const juce::File& path)
     {
-        if (paths.isEmpty())
-            return;
-        content << key << ":\n";
-        for (const auto& path : paths)
-            content << "  - " << path << "\n";
+        if (path != juce::File())
+            values.set (key, path.getFullPathName());
     };
-    writeList ("sampleBrowserBookmarks", browser.getBookmarks());
-    writeList ("browserRecentFolders", browser.getRecentFolders());
-    if (browser.getCurrentFolder() != juce::File())
-        content << "browserLastFolder: " << browser.getCurrentFolder().getFullPathName() << "\n";
-    content << "auditionAutoPlay: " << (browser.getAutoPlay() ? "true" : "false") << "\n";
-    content << "auditionGainDb: " << juce::String (browser.getAuditionGainDb(), 1) << "\n";
-    const auto stemFolder = processor.getStemModelFolder();
-    if (stemFolder != juce::File())
-        content << "stemModelFolder: " << stemFolder.getFullPathName() << "\n";
-    const auto presetFolder = browser.getCustomPresetsFolder();
-    if (presetFolder != juce::File())
-        content << "presetFolder: " << presetFolder.getFullPathName() << "\n";
-    content << "stemComputeDevice: " << stemComputeDeviceToString (processor.getStemComputeDevice()) << "\n";
+
+    SettingsValues values;
+    values.set ("uiScale", juce::String (scale, 2));
+    values.set ("theme", themeName);
+    values.set ("nrpnEnabled", boolText (processor.midiEditState.enabled.load (std::memory_order_relaxed)));
+    values.set ("nrpnChannel", juce::String (processor.midiEditState.channel.load (std::memory_order_relaxed)));
+    values.set ("nrpnBlockCc", boolText (processor.midiEditState.consumeMidiEditCc.load (std::memory_order_relaxed)));
+    values.set ("middleC", juce::String (middleCOctave));
+    values.setList ("sampleBrowserBookmarks", browser.getBookmarks());
+    values.setList ("browserRecentFolders", browser.getRecentFolders());
+    setPath (values, "browserLastFolder", browser.getCurrentFolder());
+    values.set ("browserDefaultFolderMode",
+                browser.getDefaultFolderMode() == Browser::DefaultFolderMode::chosenFolder ? "folder" : "last");
+    setPath (values, "browserDefaultFolder", browser.getDefaultFolder());
+    values.set ("auditionAutoPlay", boolText (browser.getAutoPlay()));
+    values.set ("auditionGainDb", juce::String (browser.getAuditionGainDb(), 1));
+    setPath (values, "stemModelFolder", processor.getStemModelFolder());
+    setPath (values, "presetFolder", browser.getCustomPresetsFolder());
+    values.set ("stemComputeDevice", stemComputeDeviceToString (processor.getStemComputeDevice()));
     if (const auto stemModel = stemView.getLastModelId(); stemModel.isNotEmpty())
-        content << "stemLastModel: " << stemModel << "\n";
-    content << "stemExportMode: " << stemExportModeToString (stemView.getExportMode()) << "\n";
-    writeList ("stemSelections", stemView.getRememberedSelections());
-    file.replaceWithText (content);
+        values.set ("stemLastModel", stemModel);
+    values.set ("stemExportMode", stemExportModeToString (stemView.getExportMode()));
+    values.setList ("stemSelections", stemView.getRememberedSelections());
+
+    // Only the keys this editor changed are written; other instances' changes are kept.
+    settingsFile.save (values);
 }
 
 void IntersectEditor::loadUserSettings()
 {
-    savedScale = -1.0f;
-    juce::String themeName = "dark";
-    juce::StringArray browserBookmarks;
-    juce::StringArray recentFolders;
-    juce::StringArray stemSelections;
-    juce::File customPresetsFolder;
-    juce::File lastFolder;
-    bool auditionAutoPlay = true;
-    float auditionGainDb = PreviewPane::kDefaultGainDb;
+    // Applying values below triggers callbacks that would save a half-loaded state.
+    const juce::ScopedValueSetter<bool> loading (loadingSettings, true);
+    const auto values = settingsFile.load();
 
-    auto file = getUserSettingsFile();
-    if (file.existsAsFile())
+    auto getBool = [&values] (const char* key, bool fallback)
     {
-        auto content = file.loadFileAsString();
-        juce::StringArray* readingList = nullptr;   // the "  - item" list currently being read
-        for (auto line : juce::StringArray::fromLines (content))
-        {
-            const auto rawLine = line;
-            line = line.trim();
+        const auto text = values.getString (key);
+        return text.isEmpty() ? fallback : text == "true";
+    };
+    auto getPath = [&values] (const char* key)
+    {
+        const auto path = values.getString (key);
+        return juce::File::isAbsolutePath (path) ? juce::File (path) : juce::File();
+    };
 
-            if (readingList != nullptr)
-            {
-                if (line.startsWith ("-"))
-                {
-                    auto path = line.fromFirstOccurrenceOf ("-", false, false).trim();
-                    if (path.isNotEmpty())
-                        readingList->addIfNotAlreadyThere (path);
-                    continue;
-                }
+    savedScale = -1.0f;
+    if (const auto scale = values.getString ("uiScale"); scale.isNotEmpty())
+        if (const float val = scale.getFloatValue(); val >= 0.5f && val <= 3.0f)
+            savedScale = val;
 
-                if (! rawLine.startsWithChar (' ') && ! rawLine.startsWithChar ('\t'))
-                    readingList = nullptr;
-            }
+    // NRPN state is also restored with the session; only override what the file actually has.
+    if (values.contains ("nrpnEnabled"))
+        processor.midiEditState.enabled.store (getBool ("nrpnEnabled", false), std::memory_order_relaxed);
+    if (const auto channel = values.getString ("nrpnChannel"); channel.isNotEmpty())
+        processor.midiEditState.channel.store (juce::jlimit (0, 16, channel.getIntValue()), std::memory_order_relaxed);
+    if (values.contains ("nrpnBlockCc"))
+        processor.midiEditState.consumeMidiEditCc.store (getBool ("nrpnBlockCc", true), std::memory_order_relaxed);
 
-            if (line.startsWith ("uiScale:"))
-            {
-                float val = line.fromFirstOccurrenceOf (":", false, false).trim().getFloatValue();
-                if (val >= 0.5f && val <= 3.0f)
-                    savedScale = val;
-            }
-            else if (line.startsWith ("theme:"))
-            {
-                themeName = line.fromFirstOccurrenceOf (":", false, false).trim();
-            }
-            else if (line.startsWith ("nrpnEnabled:"))
-            {
-                auto val = line.fromFirstOccurrenceOf (":", false, false).trim();
-                processor.midiEditState.enabled.store (val == "true", std::memory_order_relaxed);
-            }
-            else if (line.startsWith ("nrpnChannel:"))
-            {
-                int ch = line.fromFirstOccurrenceOf (":", false, false).trim().getIntValue();
-                processor.midiEditState.channel.store (juce::jlimit (0, 16, ch), std::memory_order_relaxed);
-            }
-            else if (line.startsWith ("nrpnBlockCc:"))
-            {
-                auto val = line.fromFirstOccurrenceOf (":", false, false).trim();
-                processor.midiEditState.consumeMidiEditCc.store (val == "true", std::memory_order_relaxed);
-            }
-            else if (line.startsWith ("middleC:"))
-            {
-                int val = line.fromFirstOccurrenceOf (":", false, false).trim().getIntValue();
-                if (val == 3 || val == 4 || val == 5)
-                    middleCOctave = val;
-            }
-            else if (line.startsWith ("sampleBrowserVisible:"))
-            {
-                // Retired: the full-view browser always starts closed. Still recognised so older
-                // settings files parse cleanly.
-            }
-            else if (line.startsWith ("sampleBrowserBookmarks:"))
-            {
-                readingList = &browserBookmarks;
-            }
-            else if (line.startsWith ("browserRecentFolders:"))
-            {
-                readingList = &recentFolders;
-            }
-            else if (line.startsWith ("browserLastFolder:"))
-            {
-                const auto path = line.fromFirstOccurrenceOf (":", false, false).trim();
-                if (juce::File::isAbsolutePath (path))
-                    lastFolder = juce::File (path);
-            }
-            else if (line.startsWith ("auditionAutoPlay:"))
-            {
-                auditionAutoPlay = line.fromFirstOccurrenceOf (":", false, false).trim() != "false";
-            }
-            else if (line.startsWith ("auditionGainDb:"))
-            {
-                auditionGainDb = juce::jlimit (PreviewPane::kMinGainDb, PreviewPane::kMaxGainDb,
-                                               line.fromFirstOccurrenceOf (":", false, false).trim().getFloatValue());
-            }
-            else if (line.startsWith ("presetFolder:"))
-            {
-                const auto path = line.fromFirstOccurrenceOf (":", false, false).trim();
-                if (juce::File::isAbsolutePath (path))
-                    customPresetsFolder = juce::File (path);
-            }
-            else if (line.startsWith ("stemModelFolder:"))
-            {
-                processor.setStemModelFolder (juce::File (line.fromFirstOccurrenceOf (":", false, false).trim()));
-            }
-            else if (line.startsWith ("stemComputeDevice:"))
-            {
-                processor.setStemComputeDevice (
-                    stemComputeDeviceFromString (line.fromFirstOccurrenceOf (":", false, false).trim()));
-            }
-            else if (line.startsWith ("stemLastModel:"))
-            {
-                stemView.setLastModelId (normaliseStemModelId (line.fromFirstOccurrenceOf (":", false, false)));
-            }
-            else if (line.startsWith ("stemExportMode:"))
-            {
-                stemView.setExportMode (stemExportModeFromString (line.fromFirstOccurrenceOf (":", false, false)));
-            }
-            else if (line.startsWith ("stemSelections:"))
-            {
-                readingList = &stemSelections;
-            }
-            else if (line.startsWith ("stemModelPath:"))
-            {
-                auto legacyPath = juce::File (line.fromFirstOccurrenceOf (":", false, false).trim());
-                if (legacyPath.existsAsFile())
-                    processor.setStemModelFolder (legacyPath.getParentDirectory());
-            }
-        }
-    }
-
+    if (const int octave = values.getString ("middleC").getIntValue(); octave == 3 || octave == 4 || octave == 5)
+        middleCOctave = octave;
     signalChainBar.middleCOctave = middleCOctave;
     processor.middleCOctave.store (middleCOctave, std::memory_order_relaxed);
-    browser.setBookmarks (browserBookmarks);
-    browser.setRecentFolders (recentFolders);
-    browser.setCustomPresetsFolder (customPresetsFolder);
-    browser.setAutoPlay (auditionAutoPlay);
+
+    // "sampleBrowserVisible" is retired: the full-view browser always starts closed.
+    browser.setBookmarks (values.getList ("sampleBrowserBookmarks"));
+    browser.setRecentFolders (values.getList ("browserRecentFolders"));
+    browser.setCustomPresetsFolder (getPath ("presetFolder"));
+    browser.setAutoPlay (getBool ("auditionAutoPlay", true));
+    const float auditionGainDb = values.contains ("auditionGainDb")
+        ? juce::jlimit (PreviewPane::kMinGainDb, PreviewPane::kMaxGainDb, values.getString ("auditionGainDb").getFloatValue())
+        : PreviewPane::kDefaultGainDb;
     browser.setAuditionGainDb (auditionGainDb);
     processor.setAuditionGainDb (auditionGainDb);
-    stemView.setRememberedSelections (stemSelections);
-    if (lastFolder != juce::File())
+    browser.setDefaultFolder (getPath ("browserDefaultFolder"));
+    browser.setDefaultFolderMode (values.getString ("browserDefaultFolderMode") == "folder"
+                                      ? Browser::DefaultFolderMode::chosenFolder
+                                      : Browser::DefaultFolderMode::lastUsed);
+    if (const auto lastFolder = getPath ("browserLastFolder"); lastFolder != juce::File())
         browser.setStartFolder (lastFolder);
 
-    // Apply theme
-    applyTheme (themeName);
+    if (const auto stemFolder = getPath ("stemModelFolder"); stemFolder != juce::File())
+        processor.setStemModelFolder (stemFolder);
+    else if (const auto legacyModel = getPath ("stemModelPath"); legacyModel.existsAsFile())
+        processor.setStemModelFolder (legacyModel.getParentDirectory());   // pre-folder builds stored one model file
+    if (values.contains ("stemComputeDevice"))
+        processor.setStemComputeDevice (stemComputeDeviceFromString (values.getString ("stemComputeDevice")));
+    if (values.contains ("stemLastModel"))
+        stemView.setLastModelId (normaliseStemModelId (values.getString ("stemLastModel")));
+    if (values.contains ("stemExportMode"))
+        stemView.setExportMode (stemExportModeFromString (values.getString ("stemExportMode")));
+    stemView.setRememberedSelections (values.getList ("stemSelections"));
+
+    applyTheme (values.getString ("theme", "dark"));
 }

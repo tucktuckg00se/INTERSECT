@@ -21,6 +21,13 @@ struct FileRow
     FileKind kind = FileKind::other;
 };
 
+/** Where the header FILES button opens the browser. Saved in settings.yaml. */
+enum class DefaultFolderMode
+{
+    lastUsed,       // wherever browsing left off (also across sessions)
+    chosenFolder,   // the folder the user picked, every time FILES opens
+};
+
 /** Classifies a non-directory by extension only (no disk access). */
 inline FileKind classifyByName (const juce::File& file)
 {

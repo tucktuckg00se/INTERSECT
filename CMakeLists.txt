@@ -148,6 +148,9 @@ target_sources(Intersect PRIVATE
     src/PluginProcessor.cpp
     src/PluginEditor.cpp
     src/PresetFile.cpp
+    src/SettingsFile.cpp
+    src/HttpFetch.cpp
+    src/UpdateCheck.cpp
     src/StandaloneApp.cpp
     src/audio/SampleData.cpp
     src/audio/Rex2Import.cpp
@@ -163,6 +166,7 @@ target_sources(Intersect PRIVATE
     src/midi/MidiExport.cpp
     src/ui/IntersectLookAndFeel.cpp
     src/ui/HeaderBar.cpp
+    src/ui/ConfirmCallout.cpp
     src/ui/browser/BrowserView.cpp
     src/ui/browser/Breadcrumb.cpp
     src/ui/browser/FileTable.cpp
@@ -177,6 +181,10 @@ target_sources(Intersect PRIVATE
     src/ui/ActionPanel.cpp
     src/ui/AutoChopPanel.cpp
     src/ui/stems/StemView.cpp
+    src/ui/settings/SettingsControls.cpp
+    src/ui/settings/SettingsPages.cpp
+    src/ui/settings/StemSettingsPage.cpp
+    src/ui/settings/SettingsView.cpp
     src/audio/StemSeparationJob.cpp
     src/audio/StemGpuInfo.cpp
     src/audio/StemSpectral.cpp

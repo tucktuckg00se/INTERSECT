@@ -22,16 +22,17 @@ The folder is created on first launch. `themes/`, `presets/` (your saved presets
 
 `settings.yaml` is rewritten whenever you change any of the persisted preferences from inside the plugin:
 
-- Adjust UI scale in **SET**
-- Pick a different theme in **SET → Themes**
-- Change middle-C octave in **SET**
-- Close the file browser (`FILES`) — this saves the folder you were in
+- Adjust UI scale, theme or middle-C octave in **SET → General**
+- Browse to another folder in the file browser (`FILES`) — the folder is saved straight away, so other open instances and your next session follow it
 - Change browser bookmarks, add or load from a new folder (recent folders), or change `AUTO` or the audition volume
-- Change any NRPN setting in **SET → NRPN Settings**
-- Select a stem model folder or compute device in **SET → Stem Separation**
+- Change the `FILES` default folder in **SET → Files**, or right-click a folder and choose **Set as Default Folder**
+- Change any NRPN setting in **SET → MIDI**
+- Select a stem model folder or compute device in **SET → Stems**
 - Choose or clear a custom presets folder in **SET → Presets**
 
 If the settings folder can't be created (sandboxed plugin host, read-only home), the save is skipped silently — INTERSECT still runs with the in-memory defaults.
+
+Every open INTERSECT (several instances in one project, or in different DAWs) shares this one file. Each instance only writes the settings it changed and keeps everything else as the file has it, so closing one instance never undoes a bookmark, theme or folder change made in another.
 
 ## Format
 
@@ -50,6 +51,8 @@ sampleBrowserBookmarks:
 browserRecentFolders:
   - /home/you/samples/breaks
 browserLastFolder: /home/you/samples/breaks
+browserDefaultFolderMode: folder
+browserDefaultFolder: /home/you/samples
 auditionAutoPlay: true
 auditionGainDb: -6.0
 stemModelFolder: /home/you/.config/INTERSECT/stem-models
@@ -61,7 +64,7 @@ stemComputeDevice: cuda
 
 | Key | Type | Values | Purpose |
 | --- | --- | --- | --- |
-| `uiScale` | float | 0.5 to 3.0 (in 0.25 steps) | Desired editor scale factor. Mirrors the `uiScale` APVTS parameter on load. The plugin renders at the largest scale that fully fits your display, so on small monitors the on-screen size may be smaller than this value — the `SET` menu then shows it as "fits …x". |
+| `uiScale` | float | 0.5 to 3.0 (in 0.25 steps) | Desired editor scale factor. Mirrors the `uiScale` APVTS parameter on load. The plugin renders at the largest scale that fully fits your display, so on small monitors the on-screen size may be smaller than this value — **SET → General** then notes the scale it is shown at. |
 | `theme` | string | filename stem of a theme in your `themes/` folder | Active theme. Falls back to `dark` if the named file isn't present. |
 | `nrpnEnabled` | bool | `true` / `false` | Master toggle for NRPN slice editing. |
 | `nrpnChannel` | int | 0 to 16 (0 = omni) | MIDI channel filter for NRPN editing. |
@@ -69,7 +72,9 @@ stemComputeDevice: cuda
 | `middleC` | int | 3, 4, or 5 | Which octave the note name display calls middle C. Doesn't change stored MIDI data. |
 | `sampleBrowserBookmarks` | list | YAML-style nested list of paths | Pinned folders shown under `BOOKMARKS` in the file browser. |
 | `browserRecentFolders` | list | YAML-style nested list of paths, newest first (max 8) | Folders you recently added or loaded files from, shown under `RECENT`. |
-| `browserLastFolder` | string | filesystem path | The folder the file browser opens in. Falls back to your home folder if it no longer exists. |
+| `browserLastFolder` | string | filesystem path | The folder last browsed in any INTERSECT instance; updated on every folder change. `FILES` opens here when `browserDefaultFolderMode` is `last`. Falls back to your home folder if it no longer exists. |
+| `browserDefaultFolderMode` | string | `last` / `folder` | Where the `FILES` button opens the browser: the last folder used (default), or `browserDefaultFolder` every time. |
+| `browserDefaultFolder` | string | filesystem path | The chosen default folder. If it no longer exists, `FILES` opens the last folder used instead. Omitted when none is set. |
 | `auditionAutoPlay` | bool | `true` / `false` | Whether selecting a file in the browser previews it (`AUTO`). |
 | `auditionGainDb` | float | -24.0 to 6.0 | Browser audition volume in dB (`VOL`). |
 | `stemModelFolder` | string | filesystem path | Folder INTERSECT scans for ONNX stem models. |

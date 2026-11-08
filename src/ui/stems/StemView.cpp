@@ -1,5 +1,6 @@
 #include "StemView.h"
 #include "../IntersectLookAndFeel.h"
+#include "../FullViewBar.h"
 #include "../../PluginProcessor.h"
 #include <algorithm>
 #include <cmath>
@@ -11,7 +12,7 @@ constexpr int kSectionLabelH = 18;
 constexpr int kModelRowH = 34;
 constexpr int kDetailH = 142;
 constexpr int kHeaderRowH = 20;
-constexpr int kBottomBarH = 34;
+constexpr int kBottomBarH = FullViewBar::kHeight;   // shared with FILES and SET
 constexpr int kChipH = 20;
 constexpr int kChipGap = 4;
 constexpr int kGroupHeaderH = 18;
@@ -81,9 +82,7 @@ bool isStemJobActive (StemJobState state)
 
 void styleButton (juce::TextButton& button)
 {
-    button.setColour (juce::TextButton::buttonColourId, getTheme().surface4.withAlpha (0.95f));
-    button.setColour (juce::TextButton::textColourOnId, getTheme().text2.withAlpha (0.88f));
-    button.setColour (juce::TextButton::textColourOffId, getTheme().text2.withAlpha (0.88f));
+    FullViewBar::styleButton (button);
 }
 
 void drawSectionLabel (juce::Graphics& g, const juce::String& text, juce::Rectangle<int> area)
@@ -616,7 +615,7 @@ juce::String StemView::getStartBlockReason() const
     if (! ortSupported)
         return "Stem separation is not available on this platform";
     if (! ortInstalled)
-        return "Download an ONNX Runtime bundle in SET > Stem Separation > ONNX Runtime";
+        return "Download an ONNX Runtime bundle in SET > Stems > ONNX Runtime";
 
     const auto* entry = getSelectedModel();
     if (entry == nullptr)
@@ -748,7 +747,7 @@ void StemView::paint (juce::Graphics& g)
 
     g.setColour (getTheme().surface4.withAlpha (0.85f));
     g.fillRect (kModelsW, 0, 1, getHeight() - kBottomBarH);
-    g.fillRect (0, getHeight() - kBottomBarH, getWidth(), 1);
+    FullViewBar::paintTopLine (g, getLocalBounds().removeFromBottom (kBottomBarH));
 
     drawSectionLabel (g, "Models", { 12, 4, kModelsW - 16, kSectionLabelH });
 
@@ -882,8 +881,8 @@ void StemView::resized()
     auto area = getLocalBounds();
 
     // Bottom bar
-    auto bar = area.removeFromBottom (kBottomBarH).reduced (8, 4);
-    closeButton.setBounds (bar.removeFromRight (60));
+    auto bar = FullViewBar::content (area.removeFromBottom (kBottomBarH));
+    closeButton.setBounds (bar.removeFromRight (FullViewBar::kCloseWidth));
     bar.removeFromRight (6);
     startButton.setBounds (bar.removeFromRight (70));
     bar.removeFromRight (6);

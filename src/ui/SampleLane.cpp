@@ -1,5 +1,6 @@
 #include "SampleLane.h"
 #include "IntersectLookAndFeel.h"
+#include "ConfirmCallout.h"
 #include "browser/BrowserTypes.h"
 #include "../PluginProcessor.h"
 #include <algorithm>
@@ -298,7 +299,7 @@ void SampleLane::mouseDown (const juce::MouseEvent& e)
     {
         processor.selectedSessionSampleId.store (hitId, std::memory_order_relaxed);
         processor.markUiSnapshotDirty();
-        processor.deleteSessionSampleAsync (hitId);
+        requestRemoveSample (hitId, e.mods.isShiftDown());
         repaint();
         return;
     }
@@ -439,11 +440,52 @@ juce::String SampleLane::getTooltip()
                        ? "Cancel stem separation"
                        : "Separate this sample into stems";
         if (sample.deleteBounds.contains (pos))
-            return "Remove this sample from the kit";
+            return "Remove this sample from the kit (Shift-click removes without asking)";
         if (sample.missing && sample.x1 <= pos.x && pos.x < sample.x2)
             return "File not found - click to relink it";
     }
     return {};
+}
+
+void SampleLane::requestRemoveSample (int sampleId, bool skipConfirm)
+{
+    if (sampleId < 0)
+        return;
+
+    if (skipConfirm)
+    {
+        processor.deleteSessionSampleAsync (sampleId);
+        repaint();
+        return;
+    }
+
+    // Ask at the sample's X (or its block, or the whole lane when it is too narrow to show one).
+    const auto visible = buildVisibleSamples();
+    const auto it = std::find_if (visible.begin(), visible.end(),
+                                  [sampleId] (const VisibleSample& sample) { return sample.sampleId == sampleId; });
+    auto anchor = getLocalBounds();
+    juce::String name;
+    if (it != visible.end())
+    {
+        anchor = ! it->deleteBounds.isEmpty() ? it->deleteBounds
+                                              : juce::Rectangle<int> (it->x1, 0, it->x2 - it->x1, getHeight());
+        name = it->label;
+    }
+    // Keep the question mark visible: shorten long names before they reach the two-line message.
+    if (name.length() > 44)
+        name = name.substring (0, 42).trimEnd() + "...";
+
+    showConfirmCallout (*this, anchor,
+                        name.isNotEmpty() ? "Remove \"" + name + "\" from the kit?" : juce::String ("Remove this sample from the kit?"),
+                        "REMOVE",
+                        [safe = juce::Component::SafePointer<SampleLane> (this), sampleId]
+                        {
+                            if (safe != nullptr)
+                            {
+                                safe->processor.deleteSessionSampleAsync (sampleId);
+                                safe->repaint();
+                            }
+                        });
 }
 
 void SampleLane::setShowEmptyHint (bool shouldShow)

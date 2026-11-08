@@ -6,7 +6,7 @@ description: "Configure a hardware MIDI controller to edit slice boundaries and 
 
 # MIDI controller routing (NRPN)
 
-INTERSECT supports NRPN-based slice editing from a hardware or software MIDI controller. Enable it via the **SET** button in the header bar — the popup contains an NRPN section with channel and consume options.
+INTERSECT supports NRPN-based slice editing from a hardware or software MIDI controller. Enable it on the **MIDI** page of the **SET** view in the header bar, which also has the channel and consume options.
 
 ## Controller requirements
 
@@ -21,8 +21,8 @@ Controllers that send only absolute values (CC 6 Data Entry) **will not work**, 
 
 ## How a session looks
 
-1. Enable **NRPN** in **SET → NRPN Settings**, and set the MIDI channel filter (`0` = omni).
-2. Optionally enable **CONSUME CCs** so the NRPN edit CCs don't pass through to downstream instruments.
+1. Turn on **NRPN editing** in **SET → MIDI**, and set the channel (`OMNI` = all channels).
+2. Optionally turn on **Consume NRPN CCs** so the NRPN edit CCs don't pass through to downstream instruments.
 3. Turn on `FM` (Follow MIDI) so playing a slice's MIDI note auto-selects it.
 4. Play the slice you want to edit. INTERSECT selects it; the start/end knobs now target this slice.
 5. Turn the start/end encoders to nudge slice boundaries. Each step moves `viewWidth / 16383` samples — **zoom in for finer control**.
@@ -50,17 +50,17 @@ The MPD218 has 16 endless rotary encoders organized in 4 banks of 4. A workable 
 | Knob 2 | NRPN | 64 | 2 | Nudge selected slice's start |
 | Knob 3 | NRPN | 64 | 3 | Nudge selected slice's end |
 
-Set each encoder's MIDI channel to match `nrpnChannel` in **SET** (or use `0` = omni and leave the controller on channel 1). Edit the MPD218 program in the Akai MPC software, change those three knobs from CC to NRPN, set the addresses, and store the program.
+Set each encoder's MIDI channel to match the channel in **SET → MIDI** (or use `OMNI` and leave the controller on channel 1). Edit the MPD218 program in the Akai MPC software, change those three knobs from CC to NRPN, set the addresses, and store the program.
 
 ## SET button — NRPN settings
 
-Open with the **SET** button in the header bar.
+Open the **SET** view from the header bar and choose **MIDI**.
 
 | Control | Function |
 | --- | --- |
-| `NRPN` | Enable/disable NRPN slice editing |
-| `CONSUME CCs` | Strip NRPN edit CCs from MIDI output so they don't reach downstream instruments |
-| `CH −` / `CH +` | MIDI channel filter (0 = omni) |
+| `NRPN EDITING` | Enable/disable NRPN slice editing |
+| `CONSUME NRPN CCs` | Strip NRPN edit CCs from MIDI output so they don't reach downstream instruments |
+| `CHANNEL` `−` / `+`, `OMNI` | MIDI channel filter (`OMNI` = all channels, saved as `0`) |
 
 Settings are saved to `settings.yaml` alongside theme and UI scale — see the [Settings file]({{ site.baseurl }}{% link settings-file.md %}) reference.
 
@@ -72,7 +72,7 @@ Settings are saved to `settings.yaml` alongside theme and UI scale — see the [
 
 ## If nothing happens, check…
 
-- **NRPN is enabled** in **SET → NRPN Settings**.
+- **NRPN editing is on** in **SET → MIDI**.
 - **The MIDI channel matches.** If you set a specific channel in INTERSECT and the controller sends on a different one, edits are ignored. Try `0` (omni) while debugging.
 - **`FM` is on** — without it, the boundary edits target whichever slice is selected, which may not be the one you expect.
 - **A slice is selected** — zoom works without a slice, but slice start/end don't.

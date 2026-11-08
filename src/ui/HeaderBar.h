@@ -14,17 +14,18 @@ public:
     std::function<void (int sampleId)> onRelinkRequested;
     /** SAVE: save the kit straight into the preset library. */
     std::function<void()> onSaveRequested;
+    /** SET: open or close the settings view. */
+    std::function<void()> onSettingsToggle;
     juce::String getTooltip() override;
     void paint (juce::Graphics& g) override;
     void resized() override;
     void mouseDown (const juce::MouseEvent& e) override;
-    void adjustScale (float delta);
     /** Lights the FILES button while the browser is open. */
     void setBrowserActive (bool isActive);
+    /** Lights the SET button while the settings view is open. */
+    void setSettingsActive (bool isActive);
 
 private:
-    void showSettingsPopup();
-
     IntersectProcessor& processor;
     juce::TextButton browserBtn { "FILES" };
     juce::TextButton saveBtn  { "SAVE" };
@@ -32,8 +33,6 @@ private:
     juce::TextButton redoBtn  { "REDO" };
     juce::TextButton panicBtn { "PANIC" };
     juce::TextButton settingsBtn { "SET" };
-
-    std::unique_ptr<juce::FileChooser> fileChooser;
 
     juce::Rectangle<int> sampleInfoBounds;
 };

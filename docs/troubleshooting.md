@@ -27,7 +27,7 @@ xattr -cr /Applications/INTERSECT.app
 Then relaunch the DAW (or the standalone app).
 
 ### The UI is too small or too large
-Open **SET** in the header bar and use **Scale Up / Scale Down**. The UI scales from `0.5x` to `3.0x` in `0.25` steps. The chosen scale is saved per user, not per session.
+Open **SET** in the header bar and use the `−` / `+` buttons next to **UI scale** on the **General** page (or `Ctrl/Cmd` and `+` / `-` anywhere in the window). The UI scales from `0.5x` to `3.0x` in `0.25` steps. The chosen scale is saved per user, not per session.
 
 ### Plugin loads but the editor shows missing samples
 INTERSECT stores sample file paths in the session, not the audio data itself. If a file has moved or been renamed, the editor shows a missing-sample warning. Either move the file back to its original path, or load the file again into the same session slot.
@@ -78,10 +78,10 @@ Some DAWs strip NRPN CCs from MIDI tracks routed to plugins. Try sending the sam
 ## Stem separation
 
 ### "ONNX Runtime not found" or START is disabled
-You need to download and activate an ONNX Runtime bundle. Open **SET → Stem Separation → ONNX Runtime** and pick the bundle for your platform (CPU is the simplest if you're unsure). Restart INTERSECT after the bundle installs. See [Installation → Stem separation setup]({{ site.baseurl }}{% link installation.md %}#stem-separation-setup).
+You need to download and activate an ONNX Runtime bundle. Open **SET → Stems** and press `DOWNLOAD` on the **ONNX Runtime** bundle for your platform (CPU is the simplest if you're unsure). Restart INTERSECT after the bundle installs. See [Installation → Stem separation setup]({{ site.baseurl }}{% link installation.md %}#stem-separation-setup).
 
 ### START says "No models"
-After the runtime is installed, you still need to download at least one stem model. Open **SET → Stem Separation → Download Models** and pick a BS-RoFormer model.
+After the runtime is installed, you still need to download at least one stem model. Open **SET → Stems** and press `DOWNLOAD` next to a BS-RoFormer model under **Models**.
 
 ### CUDA bundle fails to load on Linux
 Verify that `libcudart.so.12` (or `.so.13`, depending on the bundle you picked) and `libcudnn.so.9` are present and findable by the dynamic loader:
@@ -100,7 +100,7 @@ That's expected — BS-RoFormer is compute-heavy. On a modern desktop CPU, expec
 
 ## Themes
 
-### My custom theme doesn't appear in the SET → Themes list
+### My custom theme doesn't appear in the SET theme list
 - The file must end in `.intersectstyle`.
 - The file must be in the user themes folder, not a subfolder. See [Themes → Where themes live]({{ site.baseurl }}{% link themes.md %}#where-themes-live).
 - **Restart the plugin** — themes are read once at startup, not live.
@@ -123,7 +123,7 @@ This happens when the project sample rate differs from what the sample was recor
 
 [Open a GitHub issue](https://github.com/tucktuckg00se/INTERSECT/issues) with:
 
-- INTERSECT version (visible at the bottom of the **SET** popup)
+- INTERSECT version (visible in the bottom bar of the **SET** view)
 - Operating system + version
 - DAW + version (or "standalone")
 - A short description of the steps that reproduce the problem

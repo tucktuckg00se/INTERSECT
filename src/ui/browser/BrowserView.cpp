@@ -1,5 +1,6 @@
 #include "BrowserView.h"
 #include "../IntersectLookAndFeel.h"
+#include "../FullViewBar.h"
 #include "../../AppFiles.h"
 #include <algorithm>
 
@@ -24,6 +25,7 @@ enum MenuIds
     kMenuExportWithSamples,
     kMenuOpenFiles,
     kMenuOpenFolderDialog,
+    kMenuSetDefaultFolder,
 };
 
 // Kept ASCII: non-ASCII punctuation mis-renders on some toolchains.
@@ -47,6 +49,15 @@ BrowserView::BrowserView()
         addAndMakeVisible (*button);
     }
     clearSearchButton.setVisible (false);
+
+    // In the bottom bar, like CLOSE in the stem and settings views.
+    closeButton.setTooltip ("Close the browser (Esc)");
+    closeButton.onClick = [this]
+    {
+        if (onCloseRequested != nullptr)
+            onCloseRequested();
+    };
+    addAndMakeVisible (closeButton);
 
     backButton.setTooltip ("Back");
     forwardButton.setTooltip ("Forward");
@@ -95,6 +106,8 @@ BrowserView::BrowserView()
             onPersistentStateChanged();
     };
     places.onRecentFoldersChanged = places.onBookmarksChanged;
+    places.isDefaultFolder = [this] (const juce::File& dir) { return isDefaultFolder (dir); };
+    places.onSetDefaultFolder = [this] (const juce::File& dir) { useAsDefaultFolder (dir); };
 
     table.onSelectionChanged = [this] { onSelectionChanged(); };
     table.onRowActivated = [this] (const Browser::FileRow& row, bool shiftDown) { activateRow (row, shiftDown); };
@@ -164,6 +177,38 @@ void BrowserView::setStartFolder (const juce::File& dir)
     navigateTo (start);
 }
 
+void BrowserView::applyDefaultFolder (const juce::File& lastUsedFolder)
+{
+    auto target = lastUsedFolder;
+    if (defaultFolderMode == Browser::DefaultFolderMode::chosenFolder && defaultFolder != juce::File())
+    {
+        if (defaultFolder.isDirectory())
+            target = defaultFolder;
+        else
+            showTemporaryStatus ("Default folder not found: " + defaultFolder.getFullPathName());
+    }
+
+    if (target.isDirectory() && ! Browser::samePath (target, currentDirectory))
+        navigateTo (target);
+}
+
+bool BrowserView::isDefaultFolder (const juce::File& dir) const
+{
+    return defaultFolderMode == Browser::DefaultFolderMode::chosenFolder && Browser::samePath (dir, defaultFolder);
+}
+
+void BrowserView::useAsDefaultFolder (const juce::File& dir)
+{
+    if (! dir.isDirectory())
+        return;
+
+    defaultFolder = dir;
+    defaultFolderMode = Browser::DefaultFolderMode::chosenFolder;
+    showTemporaryStatus ("FILES will open in " + dir.getFullPathName());
+    if (onPersistentStateChanged != nullptr)
+        onPersistentStateChanged();
+}
+
 void BrowserView::navigateTo (const juce::File& dir)
 {
     if (! dir.isDirectory())
@@ -179,6 +224,7 @@ void BrowserView::navigateTo (const juce::File& dir)
 void BrowserView::showDirectory (const juce::File& dir)
 {
     stopAuditionIfActive();
+    const bool folderChanged = ! Browser::samePath (dir, currentDirectory);
     currentDirectory = dir;
     breadcrumb.setDirectory (dir);
     places.setCurrentDirectory (dir);
@@ -195,6 +241,9 @@ void BrowserView::showDirectory (const juce::File& dir)
 
     listCurrentDirectory();
     updateNavButtons();
+
+    if (folderChanged && onFolderChanged != nullptr)
+        onFolderChanged();
 }
 
 void BrowserView::listCurrentDirectory()
@@ -341,6 +390,7 @@ void BrowserView::onSelectionChanged()
 {
     const auto* focused = table.getFocusedRow();
     preview.setSelection (table.getSelectedRows(), focused);
+    updateStatusBar();
 
     const auto focusedFile = focused != nullptr ? focused->file : juce::File();
     if (Browser::samePath (focusedFile, lastFocusedFile))
@@ -550,6 +600,7 @@ void BrowserView::showRowMenu (const Browser::FileRow& row, juce::Point<int> scr
             menu.addItem (kMenuOpenFolder, "Open");
             if (! places.hasBookmark (row.file))
                 menu.addItem (kMenuAddBookmark, "Add Bookmark");
+            menu.addItem (kMenuSetDefaultFolder, "Set as Default Folder", ! isDefaultFolder (row.file), isDefaultFolder (row.file));
             break;
         case Browser::FileKind::other:
             return;
@@ -571,6 +622,7 @@ void BrowserView::showRowMenu (const Browser::FileRow& row, juce::Point<int> scr
                 case kMenuLoadPreset:
                 case kMenuOpenFolder: safe->activateRow (row, false); break;
                 case kMenuAddBookmark: safe->places.addBookmark (row.file); break;
+                case kMenuSetDefaultFolder: safe->useAsDefaultFolder (row.file); break;
                 case kMenuReveal:     row.file.revealToUser(); break;
                 case kMenuRename:     safe->beginRename (row.file); break;
                 case kMenuExport:
@@ -671,12 +723,45 @@ void BrowserView::renamePreset (const juce::File& preset, const juce::String& ne
 void BrowserView::showTemporaryStatus (const juce::String& text)
 {
     const int id = ++statusMessageId;
-    table.setStatus (text, true);
+    temporaryStatus = text;
+    repaint (statusArea);
     juce::Timer::callAfterDelay (3000, [safe = juce::Component::SafePointer<BrowserView> (this), id]
     {
         if (safe != nullptr && safe->statusMessageId == id)
-            safe->updateSearchStatus();
+        {
+            safe->temporaryStatus.clear();
+            safe->repaint (safe->statusArea);
+        }
     });
+}
+
+void BrowserView::updateStatusBar()
+{
+    const int count = (int) table.getRows().size();
+    const int selected = (int) table.getSelectedRows().size();
+    auto withSelection = [selected] (juce::String text)
+    {
+        if (selected > 0)
+            text << juce::String (juce::CharPointer_UTF8 ("  \xc2\xb7  ")) << selected << " selected";
+        return text;
+    };
+
+    statusIsNote = false;
+    if (searchMode && searchScanning)
+        statusText = "Searching...";
+    else if (searchMode && searchTruncated)
+    {
+        statusText = withSelection ("Showing the first " + juce::String (count) + " matches - refine your search");
+        statusIsNote = true;
+    }
+    else if (searchMode)
+        statusText = count == 0 ? juce::String ("No matches")
+                                : withSelection (juce::String (count) + (count == 1 ? " match" : " matches"));
+    else
+        statusText = count == 0 ? juce::String ("Empty folder")
+                                : withSelection (juce::String (count) + (count == 1 ? " item" : " items"));
+
+    repaint (statusArea);
 }
 
 //==============================================================================
@@ -758,17 +843,14 @@ void BrowserView::updateSearchStatus()
 {
     const bool hasRows = ! table.getRows().empty();
 
-    if (! searchMode)
-        table.setStatus ({}, false);
-    else if (searchScanning)
-        table.setStatus ("Searching...", hasRows);   // a strip while old results are still showing
-    else if (! hasRows)
-        table.setStatus ("No matches for \"" + searchQuery + "\"", false);
-    else if (searchTruncated)
-        table.setStatus ("Showing the first " + juce::String ((int) table.getRows().size())
-                             + " matches - refine your search", true);
+    // Progress and counts go to the bottom bar; the list only explains an empty result.
+    if (searchMode && ! hasRows)
+        table.setStatus (searchScanning ? juce::String ("Searching...")
+                                        : "No matches for \"" + searchQuery + "\"");
     else
-        table.setStatus ({}, false);
+        table.setStatus ({});
+
+    updateStatusBar();
 }
 
 //==============================================================================
@@ -831,6 +913,7 @@ void BrowserView::refreshThemeColours()
     searchEditor.setColour (juce::TextEditor::highlightColourId, getTheme().accent.withAlpha (0.35f));
     searchEditor.setTextToShowWhenEmpty (kSearchPlaceholder, getTheme().text0.withAlpha (0.7f));
 
+    FullViewBar::styleButton (closeButton);
     places.refreshThemeColours();
     table.refreshThemeColours();
     preview.refreshThemeColours();
@@ -843,9 +926,17 @@ void BrowserView::paint (juce::Graphics& g)
 {
     g.fillAll (getTheme().surface0);
 
+    const auto bar = getLocalBounds().removeFromBottom (FullViewBar::kHeight);
     g.setColour (getTheme().surface4.withAlpha (0.85f));
-    g.fillRect (places.getRight(), 0, 1, getHeight());
-    g.fillRect (preview.getX() - 1, 0, 1, getHeight());
+    g.fillRect (places.getRight(), 0, 1, bar.getY());
+    g.fillRect (preview.getX() - 1, 0, 1, bar.getY());
+    FullViewBar::paintTopLine (g, bar);
+
+    // Status line: item count / selection / search, or a passing note in accent.
+    const bool showingNote = temporaryStatus.isNotEmpty();
+    g.setColour (showingNote || statusIsNote ? getTheme().accent : getTheme().text1);
+    g.setFont (IntersectLookAndFeel::makeFont (9.0f, showingNote));
+    g.drawText (showingNote ? temporaryStatus : statusText, statusArea, juce::Justification::centredLeft, true);
 
     if (isRelinking() && ! relinkBannerBounds.isEmpty())
     {
@@ -862,6 +953,11 @@ void BrowserView::paint (juce::Graphics& g)
 void BrowserView::resized()
 {
     auto area = getLocalBounds();
+    auto bar = FullViewBar::content (area.removeFromBottom (FullViewBar::kHeight));
+    closeButton.setBounds (bar.removeFromRight (FullViewBar::kCloseWidth));
+    bar.removeFromRight (12);
+    statusArea = bar.withTrimmedLeft (4);
+
     places.setBounds (area.removeFromLeft (kPlacesW));
     area.removeFromLeft (1);
     preview.setBounds (area.removeFromRight (kPreviewW));

@@ -136,7 +136,7 @@ The command should print no matches.
 
 ## ONNX Runtime
 
-The build does not bundle any ONNX Runtime shared library. Only the ORT C++ headers are pulled in at configure time (via CMake `FetchContent`) so the plugin compiles against the published ORT API. The shared library itself is downloaded at runtime via **SET → Stem Separation → ONNX Runtime** — see [Stem separation setup]({{ site.baseurl }}{% link installation.md %}#stem-separation-setup). This keeps each plugin zip small and lets users pick their GPU (CPU / CUDA / MIGraphX / DirectML / CoreML) without needing a separate build.
+The build does not bundle any ONNX Runtime shared library. Only the ORT C++ headers are pulled in at configure time (via CMake `FetchContent`) so the plugin compiles against the published ORT API. The shared library itself is downloaded at runtime via **SET → Stems → ONNX Runtime** — see [Stem separation setup]({{ site.baseurl }}{% link installation.md %}#stem-separation-setup). This keeps each plugin zip small and lets users pick their GPU (CPU / CUDA / MIGraphX / DirectML / CoreML) without needing a separate build.
 
 ## Build outputs
 

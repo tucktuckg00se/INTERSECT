@@ -36,10 +36,10 @@ All four models are MIT-licensed. Each model's license and credit are shown next
 
 ## Prerequisites
 
-1. **An ONNX Runtime bundle.** Open **SET → Stem Separation → ONNX Runtime** and pick the bundle matching your platform. Restart INTERSECT after the bundle installs.
+1. **An ONNX Runtime bundle.** Open **SET → Stems** and press `DOWNLOAD` on the **ONNX Runtime** bundle matching your platform. Restart INTERSECT after the bundle installs.
 2. **A loaded sample.** Drag any audio file onto INTERSECT's waveform.
 
-Models can be downloaded from the stem view itself (or from **SET → Stem Separation → Download Models**). Downloads are checked against a published checksum before they are installed.
+Models can be downloaded from the stem view itself (or from **SET → Stems → Models**, which works without a sample loaded). Downloads are checked against a published checksum before they are installed.
 
 ## Step 1 — Open the stem view
 

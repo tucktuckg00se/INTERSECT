@@ -38,6 +38,9 @@ public:
     std::function<void (const juce::File&)> onPlaceChosen;
     std::function<void()> onBookmarksChanged;
     std::function<void()> onRecentFoldersChanged;
+    /** Right-click "Set as Default Folder"; the owner keeps the default-folder setting. */
+    std::function<void (const juce::File&)> onSetDefaultFolder;
+    std::function<bool (const juce::File&)> isDefaultFolder;
 
     static constexpr int kMaxRecentFolders = 8;
 

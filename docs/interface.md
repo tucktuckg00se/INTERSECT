@@ -15,13 +15,13 @@ description: "Tour of every visible area of the INTERSECT editor — header bar,
 | `PANIC` | Kills active voices immediately | Also stops lazy chop |
 | `FILES` | Open or close the file browser | Lit while the browser is open. See [File browser](#file-browser) |
 | `SAVE` | Save the kit to your preset library | Opens the browser on the new preset with its name ready to edit. See [Presets]({{ site.baseurl }}{% link presets.md %}) |
-| `SET` | Popup for theme, UI scale, and NRPN settings | Also shows current plugin version |
+| `SET` | Open or close the settings view | Lit while open. See [Settings](#settings) |
 
 ## Sample lane, slice lane, and waveform
 
 | Area | Function | Notes |
 | --- | --- | --- |
-| Sample lane | Compact session-sample overview above the slice lane | Reflects selection and zoom; drag to reorder samples; includes per-sample `MIDI`, `STEMS` / `CANCEL` and delete buttons |
+| Sample lane | Compact session-sample overview above the slice lane | Reflects selection and zoom; drag to reorder samples; includes per-sample `MIDI`, `STEMS` / `CANCEL` and an `X` that removes the sample (a small question pops up first: `REMOVE` or `Return` confirms, `CANCEL` / `Esc` keeps it; hold `Shift` to skip the question) |
 | Slice lane | Compact slice-region overview above the waveform | Reflects selection and zoom |
 | Waveform | Main editing surface | Drag-and-drop loading/appending, slice selection, boundary editing, move/duplicate, preview |
 | Overlay hints | Contextual help and action prompts | Used by `ADD`, `AUTO`, and other actions |
@@ -30,7 +30,7 @@ description: "Tour of every visible area of the INTERSECT editor — header bar,
 
 ## File browser
 
-Click `FILES` in the header to open the browser. It takes over everything below the sample lane, so the header and the sample lane stay visible while you browse. Click `FILES` again or press `Esc` to go back to the editor. The browser always starts closed, and it remembers the last folder you were in.
+Click `FILES` in the header to open the browser. It takes over everything below the sample lane, so the header and the sample lane stay visible while you browse. Click `FILES` again, press `CLOSE` (bottom right) or press `Esc` to go back to the editor. The bar along the bottom shows how many items are listed and selected, search progress, and short notes such as where `FILES` will open. The browser always starts closed. By default `FILES` opens it in the last folder you browsed, in this or any other open INTERSECT, and that carries over to your next session. To have it open in the same folder every time, right-click that folder (in the list or the sidebar) and choose **Set as Default Folder**, or pick it in **SET → Files**. `SAVE` and relinking a missing file still open the browser where they need to.
 
 The browser has three columns.
 
@@ -103,6 +103,20 @@ Each sample in the sample lane has a `STEMS` button that opens the stem view for
 
 For an end-to-end walkthrough — picking a model, device, and mode, then running the export — see the dedicated [Stem separation]({{ site.baseurl }}{% link stem-separation.md %}) page.
 
+## Settings
+
+Click `SET` in the header to open the settings view. Like the browser, it takes over everything below the sample lane; click `SET` again, press `CLOSE` (bottom right) or press `Esc` to go back. The bottom bar also shows the plugin version and has `OPEN SETTINGS FOLDER`, which opens the folder holding `settings.yaml`, themes and presets. Pick a category on the left (the arrow keys also step through them). Changes apply and are saved straight away.
+
+| Page | What's there |
+| --- | --- |
+| General | UI scale (`−` / `+`, with a note when the window is shown smaller to fit your display), theme, which octave is called middle C, whether a newer INTERSECT is out (`VIEW RELEASE` opens its page), and Discord / support links |
+| MIDI | NRPN editing on/off, consume NRPN CCs, and the NRPN channel (`OMNI` = all channels). See [NRPN MIDI routing]({{ site.baseurl }}{% link nrpn-midi.md %}) |
+| Files | The default folder for the `FILES` button: **Last used** or a **Chosen folder** |
+| Presets | The default presets folder and an optional custom one. See [Presets]({{ site.baseurl }}{% link presets.md %}) |
+| Stems | Model folder, the device `STEMS` starts with, ONNX Runtime bundles and model downloads, with progress. See [Stem separation]({{ site.baseurl }}{% link stem-separation.md %}) |
+
+Opening settings asks GitHub whether a newer release exists (at most every 6 hours); nothing else is sent, and INTERSECT never checks at any other time. Everything here is saved in the [settings file]({{ site.baseurl }}{% link settings-file.md %}), not in your session.
+
 ## Time / zoom bar
 
 | Area | Function | Notes |
@@ -119,7 +133,7 @@ For an end-to-end walkthrough — picking a model, device, and mode, then runnin
 | `LAZY` / `STOP` | Start/stop real-time lazy chopping | Label changes while active |
 | `AUTO` | Open/close Auto Chop panel | Requires a selected slice |
 | `COPY` | Duplicate selected slice | Equivalent to duplicate command |
-| `DEL` | Delete selected slice or selected sample | Uses the last lane you interacted with |
+| `DEL` | Delete selected slice or selected sample | Uses the last lane you interacted with. Removing a sample asks first; `Shift`-click skips the question |
 | `ZX` | Snap edits to nearest zero crossing | Toggle |
 | `FM` | Follow MIDI note selection | Auto-selects the played slice |
 | `RESEQ` | Resequence slice MIDI notes | Opens overlay with `BY POSITION` and `AS CREATED` modes; requires 2+ slices |

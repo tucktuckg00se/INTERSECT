@@ -46,10 +46,10 @@ Then re-launch your DAW (or the standalone app) and rescan plugins.
 
 ## Stem separation setup
 
-Stem separation requires two on-demand downloads performed from inside the plugin. Both live under **SET → Stem Separation** in the header bar.
+Stem separation requires two on-demand downloads performed from inside the plugin. Both are on the **Stems** page of the **SET** view in the header bar.
 
-1. **ONNX Runtime bundle** — open **SET → Stem Separation → ONNX Runtime** and pick the bundle that matches your platform and (optionally) your GPU. Only one bundle is active at a time; installing a different one switches which runtime the plugin loads. Restart INTERSECT after the install completes so the new runtime is picked up.
-2. **Stem model** — open a sample's `STEMS` view and press `DOWNLOAD` on a model (or use **SET → Stem Separation → Download Models**). See [Stem separation]({{ site.baseurl }}{% link stem-separation.md %}#models) for the available models.
+1. **ONNX Runtime bundle** — open **SET → Stems** and press `DOWNLOAD` on the **ONNX Runtime** bundle that matches your platform and (optionally) your GPU. Only one bundle is active at a time; installing a different one switches which runtime the plugin loads, and `ACTIVATE` switches back to one you already have. Restart INTERSECT after the install completes so the new runtime is picked up.
+2. **Stem model** — open a sample's `STEMS` view and press `DOWNLOAD` on a model (or press `DOWNLOAD` next to it under **SET → Stems → Models**, which works without a sample loaded). See [Stem separation]({{ site.baseurl }}{% link stem-separation.md %}#models) for the available models.
 
 After both are installed, open a sample's `STEMS` view to separate it.
 
@@ -91,11 +91,11 @@ If a GPU runtime is missing or fails to load at export time, INTERSECT shows the
 1. Open your DAW and rescan plugins. INTERSECT should appear as an instrument plugin from "INTERSECT".
 2. Add it to a track and confirm the editor opens.
 3. Drag any short audio file onto the waveform — it should load and display.
-4. The plugin version is shown at the bottom of the **SET** popup; use it when filing issues.
+4. The plugin version is shown in the bottom bar of the **SET** view; use it when filing issues.
 
 ## Updating
 
-To update to a newer release, download the latest zip and overwrite the existing files in the install paths above, then restart your DAW. Your themes, settings, and saved sessions persist across updates — they live in the per-user settings folder, not in the plugin bundle.
+**SET → General** shows when a newer release is out; `VIEW RELEASE` opens its download page. To update to a newer release, download the latest zip and overwrite the existing files in the install paths above, then restart your DAW. Your themes, settings, and saved sessions persist across updates — they live in the per-user settings folder, not in the plugin bundle.
 
 ## Uninstall
 

@@ -16,7 +16,7 @@ INTERSECT loads custom `.intersectstyle` theme files from a per-user themes fold
 | macOS | `~/Library/Application Support/INTERSECT/themes/` |
 | Linux | `~/.config/INTERSECT/themes/` |
 
-INTERSECT creates this folder automatically on first launch. Themes you save here appear in **SET → Themes** in the header bar.
+INTERSECT creates this folder automatically on first launch. Themes you save here appear under **Theme** on the **General** page of **SET** in the header bar.
 
 ## Quick start
 
@@ -24,7 +24,7 @@ INTERSECT creates this folder automatically on first launch. Themes you save her
 2. Copy `dark.intersectstyle` (or any other file in the folder) and rename it, for example `mytheme.intersectstyle`.
 3. Open it in a text editor, change the `name:` value, and edit the colour values.
 4. **Restart the plugin.** Themes are read once at startup.
-5. Pick your theme from **SET → Themes**.
+5. Pick your theme in **SET → General → Theme**.
 
 ## File format
 

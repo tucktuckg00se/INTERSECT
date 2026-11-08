@@ -40,6 +40,17 @@ public:
     void setStartFolder (const juce::File& dir);
     juce::File getCurrentFolder() const noexcept { return currentDirectory; }
 
+    // ---- FILES default folder (persisted by the editor) ----
+    void setDefaultFolderMode (Browser::DefaultFolderMode mode) noexcept { defaultFolderMode = mode; }
+    Browser::DefaultFolderMode getDefaultFolderMode() const noexcept     { return defaultFolderMode; }
+    void setDefaultFolder (const juce::File& dir)                         { defaultFolder = dir; }
+    juce::File getDefaultFolder() const                                   { return defaultFolder; }
+    /** The header FILES button is opening the browser. Goes to the chosen default folder, or in
+        last-used mode to lastUsedFolder (the most recent folder browsed in any instance). It is
+        pushed onto the history, so Back returns to where this browser was. A missing chosen
+        folder falls back to lastUsedFolder, with a note. */
+    void applyDefaultFolder (const juce::File& lastUsedFolder);
+
     /** Navigates to the file's folder and selects it without starting a preview. */
     void revealFile (const juce::File& file);
 
@@ -73,8 +84,10 @@ public:
     std::function<void (const juce::File& preset, bool embedSamples)> onExportRequested;
     std::function<void()> onCloseRequested;
     std::function<void (int sampleId, const juce::File& file)> onRelinkFile;
-    /** Bookmarks, recent folders, AUTO or volume changed and should be saved. */
+    /** Bookmarks, recent folders, default folder, AUTO or volume changed and should be saved. */
     std::function<void()> onPersistentStateChanged;
+    /** The folder being browsed changed (saved straight away so other instances can follow). */
+    std::function<void()> onFolderChanged;
     std::function<void (const juce::File&)> onAuditionRequested;
     std::function<void()> onAuditionStopRequested;
     std::function<void()> onAuditionPauseRequested;
@@ -107,8 +120,14 @@ private:
     void openFolderDialog();
     bool canRenamePreset (const juce::File& preset, const juce::String& newName);
     void renamePreset (const juce::File& preset, const juce::String& newName);
+    /** A passing note in the bottom bar (accent, 3 s), e.g. "Default folder not found". */
     void showTemporaryStatus (const juce::String& text);
+    /** Item count / selection / search state for the bottom bar. */
+    void updateStatusBar();
     void relinkWith (const std::vector<juce::File>& files);
+    bool isDefaultFolder (const juce::File& dir) const;
+    /** Right-click "Set as Default Folder": FILES opens here from now on. */
+    void useAsDefaultFolder (const juce::File& dir);
 
     void onSearchTextChanged();
     void launchSearch();
@@ -127,14 +146,22 @@ private:
     juce::TextButton upButton { juce::String::charToString (0x2191) };      // up arrow
     juce::TextButton refreshButton { juce::String::charToString (0x21BB) }; // clockwise arrow
     IconButton openButton { "open", BrowserIcons::Icon::folderOpen };
+    juce::TextButton closeButton { "CLOSE" };
     std::unique_ptr<juce::FileChooser> folderChooser;
     int statusMessageId = 0;
+    juce::String statusText;        // bottom bar summary
+    bool statusIsNote = false;      // summary drawn in accent (truncated search)
+    juce::String temporaryStatus;   // overrides the summary while set
+    juce::Rectangle<int> statusArea;
     juce::TextButton clearSearchButton { juce::String::charToString (0x00D7) }; // multiplication sign
     juce::TextEditor searchEditor;
 
     juce::File currentDirectory;
     juce::Array<juce::File> history;
     int historyIndex = -1;
+
+    Browser::DefaultFolderMode defaultFolderMode = Browser::DefaultFolderMode::lastUsed;
+    juce::File defaultFolder;
 
     juce::File lastFocusedFile;
 

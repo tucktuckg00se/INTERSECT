@@ -26,6 +26,9 @@ public:
 
     /** While browsing, an empty lane explains how to add files. */
     void setShowEmptyHint (bool shouldShow);
+    /** Removes a session sample from the kit. Asks first with a small menu at the sample's X
+        unless skipConfirm (Shift held). Every remove path (X, Delete key, DEL) comes through here. */
+    void requestRemoveSample (int sampleId, bool skipConfirm);
 
     bool isInterestedInDragSource (const SourceDetails& details) override;
     void itemDragEnter (const SourceDetails& details) override;

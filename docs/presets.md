@@ -18,9 +18,9 @@ A preset does **not** change your personal preferences. UI scale, theme, NRPN se
 | macOS | `~/Library/Application Support/INTERSECT/presets/` |
 | Linux | `~/.config/INTERSECT/presets/` |
 
-The folder sits next to `themes/` and is created the first time you open it or save into it. To install a preset someone sent you, drop the file into this folder (or any folder you browse to). **SET → Presets → Open Presets Folder** opens it in your file manager, which is handy because it's a hidden folder on macOS and Linux.
+The folder sits next to `themes/` and is created the first time you open it or save into it. To install a preset someone sent you, drop the file into this folder (or any folder you browse to). `OPEN` next to **Default folder** in **SET → Presets** opens it in your file manager, which is handy because it's a hidden folder on macOS and Linux.
 
-You can also add a **custom presets folder**, for example one inside a synced drive, from **SET → Presets → Choose Custom Folder...**. It works alongside the default folder: both appear in the browser. **Clear Custom Folder** removes it from INTERSECT without touching the files, and **Open Custom Presets Folder** shows it in your file manager.
+You can also add a **custom presets folder**, for example one inside a synced drive, from **SET → Presets** (`CHOOSE...` next to **Custom folder**). It works alongside the default folder: both appear in the browser. `CLEAR` removes it from INTERSECT without touching the files, and `OPEN` shows it in your file manager.
 
 ## Saving
 
@@ -43,7 +43,7 @@ Right-click a preset in the browser:
 - **Export...** saves a copy anywhere you like, exactly as it is.
 - **Export with Samples...** saves a copy with the audio *inside* the preset, so the single file carries the whole kit. Use this when sending a kit to someone else. If a sample can't be found, the header tells you and that sample is left out.
 
-You can also copy preset files straight out of the presets folder (**SET → Presets → Open Presets Folder**).
+You can also copy preset files straight out of the presets folder (**SET → Presets**, `OPEN` next to **Default folder**).
 
 ## Loading
 

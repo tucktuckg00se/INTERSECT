@@ -1,7 +1,5 @@
 #include "HeaderBar.h"
 #include "IntersectLookAndFeel.h"
-#include "../AppFiles.h"
-#include "../PluginEditor.h"
 #include "../PluginProcessor.h"
 
 namespace
@@ -14,59 +12,11 @@ juce::String firstMissingSampleName (const IntersectProcessor::UiSliceSnapshot& 
     return {};
 }
 
-enum SettingsMenuItemId
-{
-    kMenuScaleStatus = 1000,
-    kMenuScaleDown,
-    kMenuScaleUp,
-    kMenuNrpnEnabled,
-    kMenuConsumeCc,
-    kMenuMidiStatus,
-    kMenuSetMidiOmni,
-    kMenuMidiPrev,
-    kMenuMidiNext,
-    kMenuSponsor,
-    kMenuDiscord,
-    kMenuThemeBase = 2000,
-    kMenuMiddleCBase = 3000,  // +0=C3, +1=C4, +2=C5
-    kMenuStemFolder = 4000,
-    kMenuStemUseDefaultFolder,
-    kMenuStemComputeCpu,
-    kMenuStemComputeGpu,
-    kMenuStemDownloadMissing,
-    kMenuStemCancelDownloads,
-    kMenuStemDownloadBase = 4100,
-    kMenuOrtCancelDownload = 4200,
-    kMenuOrtBundleDownloadBase = 4300,  // + index into getOrtBundlesForCurrentPlatform()
-    kMenuOrtBundleActivateBase = 4400,  // + index into getOrtBundlesForCurrentPlatform()
-    kMenuPresetDefaultFolder = 5000,
-    kMenuPresetCustomFolder,
-    kMenuPresetClearCustomFolder,
-    kMenuPresetOpenDefaultFolder,
-    kMenuPresetOpenCustomFolder,
-};
-
 float measureTextWidth (const juce::Font& font, const juce::String& text)
 {
     juce::GlyphArrangement glyphs;
     glyphs.addLineOfText (font, text, 0.0f, 0.0f);
     return glyphs.getBoundingBox (0, -1, true).getWidth();
-}
-
-juce::String formatScaleStatus (float desired, float effective)
-{
-    auto text = "UI Scale  " + juce::String (desired, 2) + "x";
-    if (effective < desired - 0.005f)
-        text << "  (fits " << juce::String (effective, 2) << "x)";
-    return text;
-}
-
-juce::String formatNrpnStatus (int channel)
-{
-    if (channel == 0)
-        return "NRPN Settings  OMNI";
-
-    return "NRPN Settings  CH " + juce::String (channel);
 }
 }
 
@@ -122,7 +72,11 @@ HeaderBar::HeaderBar (IntersectProcessor& p) : processor (p)
         processor.pushCommand (cmd);
     };
 
-    settingsBtn.onClick = [this] { showSettingsPopup(); };
+    settingsBtn.onClick = [this]
+    {
+        if (onSettingsToggle != nullptr)
+            onSettingsToggle();
+    };
 }
 
 juce::String HeaderBar::getTooltip()
@@ -253,352 +207,6 @@ void HeaderBar::mouseDown (const juce::MouseEvent& e)
     }
 }
 
-void HeaderBar::adjustScale (float delta)
-{
-    if (auto* p = processor.apvts.getParameter (ParamIds::uiScale))
-    {
-        float current = processor.apvts.getRawParameterValue (ParamIds::uiScale)->load();
-        float newScale = juce::jlimit (0.5f, 3.0f, current + delta);
-        p->setValueNotifyingHost (p->convertTo0to1 (newScale));
-    }
-}
-
-void HeaderBar::showSettingsPopup()
-{
-    auto* editor = dynamic_cast<IntersectEditor*> (getParentComponent());
-    if (editor == nullptr)
-        return;
-
-    auto themes = editor->getAvailableThemes();
-    themes.sortNatural();
-    auto currentName = getTheme().name;
-
-    const bool nrpnEnabled = processor.midiEditState.enabled.load (std::memory_order_relaxed);
-    const bool blockCc     = processor.midiEditState.consumeMidiEditCc.load (std::memory_order_relaxed);
-    const int  nrpnCh      = processor.midiEditState.channel.load (std::memory_order_relaxed);
-    const float currentScale = processor.apvts.getRawParameterValue (ParamIds::uiScale)->load();
-    const float effectiveScale = editor->getEffectiveUiScale();
-    const int currentMiddleC = editor->getMiddleCOctave();
-
-    juce::PopupMenu middleCMenu;
-    middleCMenu.setLookAndFeel (&getLookAndFeel());
-    for (int octave : { 3, 4, 5 })
-        middleCMenu.addItem (kMenuMiddleCBase + (octave - 3), "C" + juce::String (octave),
-                             true, currentMiddleC == octave);
-
-    juce::PopupMenu nrpnMenu;
-    nrpnMenu.setLookAndFeel (&getLookAndFeel());
-    nrpnMenu.addSectionHeader ("NRPN Settings");
-    nrpnMenu.addItem (kMenuNrpnEnabled, "Enable NRPN Editing", true, nrpnEnabled);
-    nrpnMenu.addItem (kMenuConsumeCc, "Consume NRPN CCs", true, blockCc);
-    nrpnMenu.addSeparator();
-    nrpnMenu.addItem (kMenuMidiStatus, nrpnCh == 0 ? "Current Channel  OMNI"
-                                                    : "Current Channel  CH " + juce::String (nrpnCh),
-                      false, false);
-    nrpnMenu.addItem (kMenuSetMidiOmni, "Set MIDI Channel to OMNI", nrpnCh != 0);
-    nrpnMenu.addItem (kMenuMidiPrev, "Previous MIDI Channel", nrpnCh > 0);
-    nrpnMenu.addItem (kMenuMidiNext, "Next MIDI Channel", nrpnCh < 16);
-
-    juce::PopupMenu themesMenu;
-    themesMenu.setLookAndFeel (&getLookAndFeel());
-    themesMenu.addSectionHeader ("Themes");
-    for (int i = 0; i < themes.size(); ++i)
-        themesMenu.addItem (kMenuThemeBase + i, themes[i], true, themes[i] == currentName);
-
-    juce::PopupMenu menu;
-    menu.setLookAndFeel (&getLookAndFeel());
-    menu.addSectionHeader ("INTERSECT  v" + juce::String (JucePlugin_VersionString));
-    menu.addItem (kMenuScaleStatus, formatScaleStatus (currentScale, effectiveScale), false, false);
-    menu.addItem (kMenuScaleUp, "Scale Up", currentScale < 3.0f);
-    menu.addItem (kMenuScaleDown, "Scale Down", currentScale > 0.5f);
-    menu.addSeparator();
-    menu.addSubMenu ("Middle C  C" + juce::String (currentMiddleC), middleCMenu);
-    menu.addSubMenu (formatNrpnStatus (nrpnCh), nrpnMenu);
-    menu.addSubMenu ("Themes  " + currentName, themesMenu);
-
-    const auto customPresetsFolder = editor->getCustomPresetsFolder();
-    juce::PopupMenu presetsMenu;
-    presetsMenu.setLookAndFeel (&getLookAndFeel());
-    presetsMenu.addSectionHeader ("Presets");
-    presetsMenu.addItem (kMenuPresetDefaultFolder,
-                         "Default Folder: " + AppFiles::getPresetsDir().getFullPathName(), false, false);
-    presetsMenu.addItem (kMenuPresetCustomFolder,
-                         customPresetsFolder != juce::File()
-                             ? "Custom Folder: " + customPresetsFolder.getFullPathName()
-                             : juce::String ("Choose Custom Folder..."));
-    presetsMenu.addItem (kMenuPresetClearCustomFolder, "Clear Custom Folder", customPresetsFolder != juce::File());
-    presetsMenu.addSeparator();
-    presetsMenu.addItem (kMenuPresetOpenDefaultFolder, "Open Presets Folder");
-    if (customPresetsFolder != juce::File())
-        presetsMenu.addItem (kMenuPresetOpenCustomFolder, "Open Custom Presets Folder", customPresetsFolder.isDirectory());
-    menu.addSubMenu ("Presets", presetsMenu);
-
-    const auto stemFolder = processor.getResolvedStemModelFolder();
-    const auto customStemFolder = processor.getStemModelFolder();
-    const auto installedModels = processor.getInstalledStemModels();
-    const auto modelUpdates = processor.getStemModelUpdates();
-    const auto stemCatalog = getEffectiveStemModelCatalog (stemFolder);
-    const bool downloadActive = processor.getUiSliceSnapshot().stemDownloadState == StemModelDownloadState::downloading;
-
-    juce::PopupMenu stemComputeMenu;
-    stemComputeMenu.setLookAndFeel (&getLookAndFeel());
-    const auto computeDevice = processor.getStemComputeDevice();
-    stemComputeMenu.addItem (kMenuStemComputeCpu, "CPU", true, computeDevice == StemComputeDevice::cpu);
-    stemComputeMenu.addItem (kMenuStemComputeGpu, "GPU", true, computeDevice == StemComputeDevice::gpu);
-
-    juce::PopupMenu stemDownloadMenu;
-    stemDownloadMenu.setLookAndFeel (&getLookAndFeel());
-    stemDownloadMenu.addSectionHeader ("Download Models");
-    stemDownloadMenu.addItem (kMenuStemDownloadMissing, modelUpdates.empty() ? "Download Missing" : "Download Missing and Updates");
-    stemDownloadMenu.addSeparator();
-    for (size_t i = 0; i < stemCatalog.size(); ++i)
-    {
-        const auto& entry = stemCatalog[i];
-        const bool installed = std::find (installedModels.begin(), installedModels.end(), entry.id)
-                                   != installedModels.end();
-        const bool update = std::find (modelUpdates.begin(), modelUpdates.end(), entry.id) != modelUpdates.end();
-        auto label = juce::String (entry.menuLabel);
-        if (update)
-            label << "  (update)";
-        else if (installed)
-            label << "  (installed)";
-        stemDownloadMenu.addItem (kMenuStemDownloadBase + (int) i, label, ! installed || update);
-    }
-    if (downloadActive)
-    {
-        stemDownloadMenu.addSeparator();
-        stemDownloadMenu.addItem (kMenuStemCancelDownloads, "Cancel Active Download");
-    }
-
-    // ── ONNX Runtime bundle submenu ───────────────────────────────────
-    const auto platformBundles = getOrtBundlesForCurrentPlatform();
-    const auto installedBundles = processor.getInstalledOrtBundles();
-    const auto activeBundleDir = processor.getActiveOrtBundleDirectoryName();
-    const bool ortDownloadActive = processor.getOrtBundleDownloadJob().getState()
-                                        == StemModelDownloadState::downloading;
-
-    juce::PopupMenu ortMenu;
-    ortMenu.setLookAndFeel (&getLookAndFeel());
-    if (! platformBundles.empty())
-    {
-        juce::String activeLabel = "Active: (none)";
-        for (const auto& entry : platformBundles)
-            if (entry.directoryName == activeBundleDir)
-                activeLabel = "Active: " + entry.menuLabel;
-        ortMenu.addItem (0x4ffd, activeLabel, false, false);
-        ortMenu.addSeparator();
-    }
-
-    for (size_t i = 0; i < platformBundles.size(); ++i)
-    {
-        const auto& entry = platformBundles[i];
-        const bool installed = std::find (installedBundles.begin(), installedBundles.end(), entry.id)
-                                   != installedBundles.end();
-        const bool isActive = entry.directoryName == activeBundleDir;
-
-        juce::String label = entry.menuLabel;
-        if (installed && isActive)
-            label << "  (active)";
-        else if (installed)
-            label << "  (installed — click to activate)";
-        else
-            label << "  (download)";
-
-        const int baseId = installed ? kMenuOrtBundleActivateBase : kMenuOrtBundleDownloadBase;
-        ortMenu.addItem (baseId + (int) i, label, ! isActive);
-    }
-
-    if (ortDownloadActive)
-    {
-        ortMenu.addSeparator();
-        ortMenu.addItem (kMenuOrtCancelDownload, "Cancel Active Download");
-    }
-
-    juce::PopupMenu stemMenu;
-    stemMenu.setLookAndFeel (&getLookAndFeel());
-    stemMenu.addSectionHeader ("Stem Separation");
-    stemMenu.addItem (kMenuStemFolder, "Model Folder: " + stemFolder.getFullPathName());
-    stemMenu.addItem (kMenuStemUseDefaultFolder, "Use Default Folder", customStemFolder != juce::File());
-    stemMenu.addSubMenu ("Compute  " + stemComputeDeviceToString (computeDevice), stemComputeMenu);
-    stemMenu.addSubMenu ("Download Models", stemDownloadMenu);
-    if (! platformBundles.empty())
-        stemMenu.addSubMenu ("ONNX Runtime", ortMenu);
-    stemMenu.addItem (0x4fff, "Installed Models  " + juce::String ((int) installedModels.size()), false, false);
-    menu.addSubMenu ("Stem Separation", stemMenu);
-
-    menu.addSeparator();
-    menu.addSectionHeader ("Support");
-    menu.addItem (kMenuDiscord, "Join the Discord");
-    menu.addItem (kMenuSponsor, juce::CharPointer_UTF8 ("\xe2\x98\x95  Buy Me a Coffee"));
-
-    auto options = IntersectLookAndFeel::makeEditorMenuOptions (*this, 220, 24)
-                       .withTargetComponent (&settingsBtn);
-
-    menu.showMenuAsync (options,
-        [this, editor, themes, stemCatalog, modelUpdates] (int result)
-        {
-            float scale = processor.apvts.getRawParameterValue (ParamIds::uiScale)->load();
-
-            if (result == kMenuScaleDown)
-                adjustScale (-0.25f);
-            else if (result == kMenuScaleUp)
-                adjustScale (0.25f);
-            else if (result == kMenuNrpnEnabled)
-            {
-                const bool current = processor.midiEditState.enabled.load (std::memory_order_relaxed);
-                processor.midiEditState.enabled.store (! current, std::memory_order_release);
-                editor->saveUserSettings (scale, getTheme().name);
-            }
-            else if (result == kMenuConsumeCc)
-            {
-                const bool current = processor.midiEditState.consumeMidiEditCc.load (std::memory_order_relaxed);
-                processor.midiEditState.consumeMidiEditCc.store (! current, std::memory_order_relaxed);
-                editor->saveUserSettings (scale, getTheme().name);
-            }
-            else if (result == kMenuSetMidiOmni)
-            {
-                processor.midiEditState.channel.store (0, std::memory_order_relaxed);
-                editor->saveUserSettings (scale, getTheme().name);
-            }
-            else if (result == kMenuMidiPrev)
-            {
-                const int ch = processor.midiEditState.channel.load (std::memory_order_relaxed);
-                processor.midiEditState.channel.store (juce::jlimit (0, 16, ch - 1), std::memory_order_relaxed);
-                editor->saveUserSettings (scale, getTheme().name);
-            }
-            else if (result == kMenuMidiNext)
-            {
-                const int ch = processor.midiEditState.channel.load (std::memory_order_relaxed);
-                processor.midiEditState.channel.store (juce::jlimit (0, 16, ch + 1), std::memory_order_relaxed);
-                editor->saveUserSettings (scale, getTheme().name);
-            }
-            else if (result == kMenuSponsor)
-            {
-                juce::URL ("https://buymeacoffee.com/tucktuckgoose").launchInDefaultBrowser();
-            }
-            else if (result == kMenuDiscord)
-            {
-                juce::URL ("https://discord.gg/yhNReDnQvE").launchInDefaultBrowser();
-            }
-            else if (result >= kMenuMiddleCBase && result <= kMenuMiddleCBase + 2)
-            {
-                editor->setMiddleCOctave (3 + (result - kMenuMiddleCBase));
-            }
-            else if (result >= kMenuThemeBase && result < kMenuThemeBase + themes.size())
-            {
-                editor->applyTheme (themes[result - kMenuThemeBase]);
-            }
-            else if (result == kMenuStemFolder)
-            {
-                fileChooser = std::make_unique<juce::FileChooser> (
-                    "Select Stem Model Folder", processor.getResolvedStemModelFolder());
-                fileChooser->launchAsync (juce::FileBrowserComponent::openMode
-                                              | juce::FileBrowserComponent::canSelectDirectories,
-                    [this, editor, scale] (const juce::FileChooser& fc)
-                    {
-                        auto chosenFolder = fc.getResult();
-                        if (chosenFolder.isDirectory())
-                        {
-                            processor.setStemModelFolder (chosenFolder);
-                            editor->saveUserSettings (scale, getTheme().name);
-                        }
-                    });
-            }
-            else if (result == kMenuPresetCustomFolder)
-            {
-                const auto current = editor->getCustomPresetsFolder();
-                fileChooser = std::make_unique<juce::FileChooser> (
-                    "Select Custom Presets Folder",
-                    current.isDirectory() ? current
-                                          : juce::File::getSpecialLocation (juce::File::userDocumentsDirectory));
-                fileChooser->launchAsync (juce::FileBrowserComponent::openMode
-                                              | juce::FileBrowserComponent::canSelectDirectories,
-                    [editor] (const juce::FileChooser& fc)
-                    {
-                        auto chosenFolder = fc.getResult();
-                        if (chosenFolder.isDirectory())
-                            editor->setCustomPresetsFolder (chosenFolder);
-                    });
-            }
-            else if (result == kMenuPresetOpenDefaultFolder)
-            {
-                // Opens in the system file manager (Explorer / Finder / xdg-open); created on first use.
-                const auto dir = AppFiles::getPresetsDir();
-                if (dir.createDirectory().wasOk())
-                    dir.startAsProcess();
-                else
-                    processor.showTransientStatusMessage ("Couldn't create " + dir.getFullPathName(), true);
-            }
-            else if (result == kMenuPresetOpenCustomFolder)
-            {
-                const auto dir = editor->getCustomPresetsFolder();
-                if (dir.isDirectory())
-                    dir.startAsProcess();
-            }
-            else if (result == kMenuPresetClearCustomFolder)
-            {
-                editor->setCustomPresetsFolder ({});
-            }
-            else if (result == kMenuStemUseDefaultFolder)
-            {
-                processor.setStemModelFolder ({});
-                editor->saveUserSettings (scale, getTheme().name);
-            }
-            else if (result == kMenuStemComputeCpu)
-            {
-                processor.setStemComputeDevice (StemComputeDevice::cpu);
-                editor->saveUserSettings (scale, getTheme().name);
-            }
-            else if (result == kMenuStemComputeGpu)
-            {
-                processor.setStemComputeDevice (StemComputeDevice::gpu);
-                editor->saveUserSettings (scale, getTheme().name);
-            }
-            else if (result == kMenuStemDownloadMissing)
-            {
-                std::vector<StemModelId> missingModels = modelUpdates;
-                for (const auto& entry : stemCatalog)
-                    if (! processor.isStemModelInstalled (entry.id))
-                        missingModels.push_back (entry.id);
-
-                if (missingModels.empty())
-                    processor.showTransientStatusMessage ("All stem models are already installed", false);
-                else
-                    processor.startStemModelDownload (missingModels);
-            }
-            else if (result == kMenuStemCancelDownloads)
-            {
-                processor.cancelStemModelDownload();
-            }
-            else if (result >= kMenuStemDownloadBase
-                     && result < kMenuStemDownloadBase + (int) stemCatalog.size())
-            {
-                const auto& entry = stemCatalog[(size_t) (result - kMenuStemDownloadBase)];
-                processor.startStemModelDownload ({ entry.id });
-            }
-            else if (result == kMenuOrtCancelDownload)
-            {
-                processor.cancelOrtBundleDownload();
-            }
-            else if (result >= kMenuOrtBundleDownloadBase
-                     && result < kMenuOrtBundleDownloadBase + 100)
-            {
-                const auto bundles = getOrtBundlesForCurrentPlatform();
-                const int idx = result - kMenuOrtBundleDownloadBase;
-                if (idx >= 0 && idx < (int) bundles.size())
-                    processor.startOrtBundleDownload (bundles[(size_t) idx].id);
-            }
-            else if (result >= kMenuOrtBundleActivateBase
-                     && result < kMenuOrtBundleActivateBase + 100)
-            {
-                const auto bundles = getOrtBundlesForCurrentPlatform();
-                const int idx = result - kMenuOrtBundleActivateBase;
-                if (idx >= 0 && idx < (int) bundles.size())
-                    processor.setActiveOrtBundle (bundles[(size_t) idx].id);
-            }
-        });
-}
-
 void HeaderBar::setBrowserActive (bool isActive)
 {
     browserBtn.setToggleState (isActive, juce::dontSendNotification);
@@ -606,3 +214,9 @@ void HeaderBar::setBrowserActive (bool isActive)
     repaint();
 }
 
+void HeaderBar::setSettingsActive (bool isActive)
+{
+    settingsBtn.setToggleState (isActive, juce::dontSendNotification);
+    settingsBtn.setTooltip (isActive ? "Close settings (Esc)" : "Settings");
+    repaint();
+}

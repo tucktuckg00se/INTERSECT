@@ -15,7 +15,7 @@ description: "Every button, parameter, gesture, and keyboard shortcut in the INT
 | `PANIC` | Kill active voices immediately | Also stops lazy chop |
 | `FILES` | Open or close the file browser | See [File browser]({{ site.baseurl }}{% link interface.md %}#file-browser) |
 | `SAVE` | Save the kit to your preset library | See [Presets]({{ site.baseurl }}{% link presets.md %}) |
-| `SET` | Theme, scale, NRPN, middle-C, and stem-separation popup | See [NRPN MIDI routing]({{ site.baseurl }}{% link nrpn-midi.md %}#set-button--nrpn-settings) and the [Settings file]({{ site.baseurl }}{% link settings-file.md %}) reference for what gets persisted |
+| `SET` | Opens the settings view: General (scale, theme, middle C, version and support links), MIDI (NRPN), Files (default folder), Presets, Stems (models, ONNX Runtime) | See [NRPN MIDI routing]({{ site.baseurl }}{% link nrpn-midi.md %}#set-button--nrpn-settings) and the [Settings file]({{ site.baseurl }}{% link settings-file.md %}) reference for what gets persisted |
 
 ## Signal chain bar
 
@@ -107,7 +107,7 @@ These apply to the whole plugin, not to one sample, and are exposed as APVTS par
 | Parameter | Function | Range / values |
 | --- | --- | --- |
 | `maxVoices` | Active voice limit (same as `VOICES` above) | `1` to `31` |
-| `uiScale` | Editor scaling factor | `0.5` to `3.0`, step `0.25`. Edit via **SET → Scale Up / Scale Down**. |
+| `uiScale` | Editor scaling factor | `0.5` to `3.0`, step `0.25`. Edit via **SET → General → UI scale** (`−` / `+`). |
 
 ## Action bar
 
@@ -117,7 +117,7 @@ These apply to the whole plugin, not to one sample, and are exposed as APVTS par
 | `LAZY` / `STOP` | Start/stop real-time lazy chopping |
 | `AUTO` | Open Auto Chop panel for the selected slice (prompts you to select a slice first if none is selected) |
 | `COPY` | Duplicate selected slice |
-| `DEL` | Delete the selected slice, or the selected sample when the sample lane was the last thing clicked |
+| `DEL` | Delete the selected slice, or the selected sample when the sample lane was the last thing clicked (asks first; `Shift`-click skips the question) |
 | `ZX` | Snap edits to nearest zero crossing |
 | `FM` | Follow MIDI (auto-select played slice) |
 | `RESEQ` | Resequence MIDI note assignments (opens overlay with `BY POSITION` or `AS CREATED`) |
@@ -172,7 +172,7 @@ All three parameter cells support drag-to-edit (drag up/down) and double-click t
 | `Shift + Z` | Toggle `LAZY` / `STOP` |
 | `Shift + C` | Toggle Auto Chop panel |
 | `Shift + D` | Duplicate selected slice |
-| `Delete` / `Backspace` | Delete selected slice, or selected sample when the sample lane was the last thing clicked |
+| `Delete` / `Backspace` | Delete selected slice, or selected sample when the sample lane was the last thing clicked (asks first; add `Shift` to skip the question) |
 | `Shift + X` | Toggle `ZX` |
 | `Shift + F` | Toggle `FM` |
 | `Right Arrow` or `Tab` | Select next slice |

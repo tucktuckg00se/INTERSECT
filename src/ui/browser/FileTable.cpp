@@ -116,9 +116,8 @@ void FileTable::selectFirstRow()
         list.selectRow (0);
 }
 
-void FileTable::setStatus (const juce::String& text, bool asBottomStrip)
+void FileTable::setStatus (const juce::String& text)
 {
-    statusAsStrip = asBottomStrip;
     statusLabel.setText (text, juce::dontSendNotification);
     statusLabel.setVisible (text.isNotEmpty());
     refreshThemeColours();
@@ -223,14 +222,9 @@ void FileTable::refreshThemeColours()
     renameEditor.setColour (juce::TextEditor::textColourId, getTheme().text2);
     renameEditor.setColour (juce::TextEditor::highlightColourId, getTheme().accent.withAlpha (0.35f));
 
-    // The bottom strip (searching / truncated results) is accent-tinted so it reads as status,
-    // not as another file row; the full-area "no matches" text stays plain.
-    statusLabel.setFont (IntersectLookAndFeel::makeFont (10.0f, statusAsStrip));
-    statusLabel.setColour (juce::Label::textColourId,
-                           statusAsStrip ? getTheme().accent : getTheme().text0.withAlpha (0.7f));
-    statusLabel.setColour (juce::Label::backgroundColourId,
-                           statusAsStrip ? getTheme().surface2.overlaidWith (getTheme().accent.withAlpha (0.16f))
-                                         : juce::Colours::transparentBlack);
+    // The centred empty-result text; running status lives in the browser's bottom bar.
+    statusLabel.setColour (juce::Label::textColourId, getTheme().text0.withAlpha (0.7f));
+    statusLabel.setColour (juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     header.repaint();
     list.repaint();
     repaint();
@@ -241,23 +235,13 @@ void FileTable::paint (juce::Graphics& g)
     g.fillAll (getTheme().surface0);
 }
 
-void FileTable::paintOverChildren (juce::Graphics& g)
-{
-    if (statusAsStrip && statusLabel.isVisible())
-    {
-        g.setColour (getTheme().accent);
-        g.fillRect (statusLabel.getBounds().withHeight (1));
-    }
-}
-
 void FileTable::resized()
 {
     auto area = getLocalBounds();
     header.setBounds (area.removeFromTop (kHeaderH));
     list.setBounds (area);
 
-    auto statusArea = list.getBounds();
-    statusLabel.setBounds (statusAsStrip ? statusArea.removeFromBottom (22) : statusArea);
+    statusLabel.setBounds (list.getBounds());
 }
 
 bool FileTable::keyPressed (const juce::KeyPress& key)

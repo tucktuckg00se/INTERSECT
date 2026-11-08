@@ -13,6 +13,7 @@
 #include "audio/LazyChopEngine.h"
 #include "audio/StemModelDownloadJob.h"
 #include "audio/OrtBundleDownloadJob.h"
+#include "UpdateCheck.h"
 #include "audio/StemSeparationJob.h"
 #include "audio/AuditionPlayer.h"
 #include "UndoManager.h"
@@ -198,6 +199,8 @@ public:
     void startOrtBundleDownload (OrtBundleId bundleId);
     void cancelOrtBundleDownload();
     OrtBundleDownloadJob& getOrtBundleDownloadJob() { return ortBundleDownloadJob; }
+    // Newer-release check shown in Settings > General; one checker shared by all instances.
+    UpdateChecker& getUpdateChecker() { return *updateChecker; }
     void showTransientStatusMessage (const juce::String& text, bool isWarning)
     {
         setUiStatusMessage (text, isWarning);
@@ -555,6 +558,7 @@ private:
     std::atomic<int> stemManifestGeneration { 0 };
     StemManifestRefreshJob stemManifestRefreshJob;   // after stemManifestGeneration: its callback uses it
     OrtBundleDownloadJob ortBundleDownloadJob;
+    juce::SharedResourcePointer<UpdateChecker> updateChecker;
     // Audio thread writes, message thread reads: lets a load say why it can't finish (no audio device).
     std::atomic<juce::uint32> lastProcessBlockMs { 0 };
     const juce::uint32 createdMs = juce::Time::getMillisecondCounter();

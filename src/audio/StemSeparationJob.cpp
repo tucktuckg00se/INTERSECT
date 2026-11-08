@@ -144,7 +144,7 @@ bool loadOrtSharedLibrary (const juce::File& libraryFile, juce::String& errorMes
     if (libraryFile == juce::File() || ! libraryFile.existsAsFile())
     {
         errorMessage = "No ONNX Runtime bundle installed. "
-                       "Download one in SET → Stem Separation → ONNX Runtime.";
+                       "Download one in SET → Stems → ONNX Runtime.";
         return false;
     }
 
