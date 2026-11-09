@@ -315,7 +315,17 @@ void FileTable::paintListBoxItem (int rowIndex, juce::Graphics& g, int width, in
     g.drawText (name, cols.name, juce::Justification::centredLeft, true);
 
     if (row.kind == Browser::FileKind::directory)
+    {
+        // During a search a folder shows how many matches are inside it, across LEN and RATE.
+        if (row.searchMatches > 0)
+        {
+            g.setFont (IntersectLookAndFeel::makeFont (8.8f));
+            g.setColour (getTheme().accent.withAlpha (selected ? 1.0f : 0.85f));
+            g.drawText (juce::String (row.searchMatches) + (row.searchMatches == 1 ? " match" : " matches"),
+                        cols.length.getUnion (cols.rate), juce::Justification::centredRight, true);
+        }
         return;
+    }
 
     const auto* fileInfo = info.find (row.file);
     if (fileInfo == nullptr)

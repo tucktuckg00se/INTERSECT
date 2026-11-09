@@ -17,7 +17,7 @@
     recent request is served first so the visible rows fill in quickly while scrolling.
     Results are cached for the life of the browser; clear() forgets them (e.g. on refresh).
 
-    Kept header-only to match DirectorySearch.h.
+    Kept header-only.
 */
 class FileInfoCache : private juce::Thread,
                       private juce::AsyncUpdater

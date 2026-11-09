@@ -130,9 +130,12 @@ private:
     void useAsDefaultFolder (const juce::File& dir);
 
     void onSearchTextChanged();
-    void launchSearch();
+    /** rebuildIndex: re-read the folder tree instead of filtering the search index (refresh). */
+    void launchSearch (bool rebuildIndex = false);
     void applySearchResults (const DirectorySearch::Result& result);
     void clearSearch();
+    /** Turns the search off without listing anything (callers decide what to show next). */
+    void endSearch();
     void updateSearchStatus();
 
     FileInfoCache infoCache;
@@ -175,7 +178,8 @@ private:
     juce::String searchQuery;
     bool searchMode = false;
     bool searchScanning = false;
-    bool searchTruncated = false;
+    bool searchIncomplete = false;   // the tree was too big to index completely
+    int searchTotalMatches = 0;
     int searchDebounceId = 0;
 
     // Declared last so its worker thread stops before anything it calls back into is destroyed.

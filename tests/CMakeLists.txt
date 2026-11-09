@@ -106,3 +106,28 @@ target_link_libraries(IntersectUpdateTests PRIVATE
     juce::juce_recommended_warning_flags
 )
 add_test(NAME update_check COMMAND IntersectUpdateTests)
+
+juce_add_console_app(IntersectBrowserTests
+    PRODUCT_NAME "INTERSECT browser tests"
+    VERSION "${INTERSECT_VERSION}"
+)
+
+target_sources(IntersectBrowserTests PRIVATE
+    BrowserSearchTests.cpp
+    ../src/ui/browser/SearchIndex.cpp
+    ../src/ui/browser/DirectoryListing.cpp
+)
+target_include_directories(IntersectBrowserTests PRIVATE
+    ..
+    ../src
+)
+target_compile_definitions(IntersectBrowserTests PRIVATE
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+)
+target_link_libraries(IntersectBrowserTests PRIVATE
+    juce::juce_core
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_warning_flags
+)
+add_test(NAME browser_search COMMAND IntersectBrowserTests)

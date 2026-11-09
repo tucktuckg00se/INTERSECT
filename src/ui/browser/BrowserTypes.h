@@ -19,6 +19,7 @@ struct FileRow
 {
     juce::File file;
     FileKind kind = FileKind::other;
+    int searchMatches = -1;   // folders in a search: matched files inside (shown in the LEN / RATE columns)
 };
 
 /** Where the header FILES button opens the browser. Saved in settings.yaml. */

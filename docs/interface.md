@@ -51,7 +51,7 @@ The browser has three columns.
 | `←` / `→` / `↑` / `↻` | Back, forward, up one folder, refresh | Refresh also re-reads file details |
 | Path | Click a folder name to jump to it | Click the empty space (or double-click) to type a path |
 | Folder button (right of the path) | **Open Files...** picks audio or presets with the system dialog; **Open Folder...** browses to a folder you pick | Audio you open is added to the kit; a preset is loaded |
-| Search | Finds files and folders in this folder and every subfolder | Partial, case-insensitive. `/` or `Ctrl/Cmd + F` jumps here; `Esc` clears it |
+| Search | Filters the browser down to what matches, in this folder and every subfolder | The search stays on while you browse: each folder shows its matching files plus the subfolders that lead to a match, with a count ("214 matches"), so you click down to them. Folders with no matching sounds inside (empty, or only artwork and documents) are hidden. Linked folders (shortcuts / symlinks) are searched too. A folder whose name matches counts for everything inside it, so `kick` also finds "BD 01.wav" inside "Kicks". Going up past where you started searches from there. Every word must appear, in any order (`808 kick` finds "Kick 808 Hard.wav"); quotes match an exact phrase (`"808 kick"`). `/` or `Ctrl/Cmd + F` jumps here; `Esc` or `×` clears it |
 | `NAME` / `LEN` / `RATE` | Click a column header to sort by it; click again to reverse | Folders always stay on top |
 
 Presets show a kit icon and their sample count instead of a length. Right-click a preset to **Load**, **Rename** (or press `F2`), **Export...**, or **Export with Samples...**.

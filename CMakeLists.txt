@@ -168,6 +168,9 @@ target_sources(Intersect PRIVATE
     src/ui/HeaderBar.cpp
     src/ui/ConfirmCallout.cpp
     src/ui/browser/BrowserView.cpp
+    src/ui/browser/DirectoryListing.cpp
+    src/ui/browser/SearchIndex.cpp
+    src/ui/DirectorySearch.cpp
     src/ui/browser/Breadcrumb.cpp
     src/ui/browser/FileTable.cpp
     src/ui/browser/PlacesList.cpp

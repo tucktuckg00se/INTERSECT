@@ -1,6 +1,7 @@
 #include "BrowserView.h"
 #include "../IntersectLookAndFeel.h"
 #include "../FullViewBar.h"
+#include "DirectoryListing.h"
 #include "../../AppFiles.h"
 #include <algorithm>
 
@@ -10,7 +11,7 @@ constexpr int kPlacesW = 168;
 constexpr int kPreviewW = 226;
 constexpr int kToolbarRowH = 20;
 constexpr int kAuditionDelayMs = 150;
-constexpr int kSearchDelayMs = 180;
+constexpr int kSearchDelayMs = 100;   // refining filters the in-memory index, so this can be short
 
 enum MenuIds
 {
@@ -179,6 +180,12 @@ void BrowserView::setStartFolder (const juce::File& dir)
 
 void BrowserView::applyDefaultFolder (const juce::File& lastUsedFolder)
 {
+    if (searchMode)
+    {
+        endSearch();   // FILES opens on a plain folder
+        listCurrentDirectory();
+    }
+
     auto target = lastUsedFolder;
     if (defaultFolderMode == Browser::DefaultFolderMode::chosenFolder && defaultFolder != juce::File())
     {
@@ -228,19 +235,18 @@ void BrowserView::showDirectory (const juce::File& dir)
     currentDirectory = dir;
     breadcrumb.setDirectory (dir);
     places.setCurrentDirectory (dir);
-
-    if (searchEditor.getText().isNotEmpty())
-        searchEditor.setText ({}, juce::dontSendNotification);
-    searchQuery.clear();
-    searchMode = false;
-    searchScanning = false;
-    searchTruncated = false;
-    searcher.cancel();
-    clearSearchButton.setVisible (false);
-    resized();
-
-    listCurrentDirectory();
     updateNavButtons();
+
+    // A search stays on while browsing: this folder shows what matches inside it.
+    if (searchMode)
+    {
+        table.setRows ({});   // the previous folder's matches don't belong here
+        launchSearch();
+    }
+    else
+    {
+        listCurrentDirectory();
+    }
 
     if (folderChanged && onFolderChanged != nullptr)
         onFolderChanged();
@@ -251,13 +257,17 @@ void BrowserView::listCurrentDirectory()
     std::vector<Browser::FileRow> rows;
     if (currentDirectory.isDirectory())
     {
-        for (const auto& child : currentDirectory.findChildFiles (juce::File::findFilesAndDirectories, false, "*",
-                                                                  juce::File::FollowSymlinks::no))
+        // Typed from the directory listing itself: no per-file disk lookups (see DirectoryListing).
+        const auto folder = currentDirectory.getFullPathName();
+        const auto prefix = folder.endsWith (juce::File::getSeparatorString()) ? folder
+                                                                                : folder + juce::File::getSeparatorString();
+        for (const auto& entry : Browser::listDirectory (currentDirectory))
         {
-            if (child.getFileName().startsWithChar ('.'))
+            if (entry.name.startsWithChar ('.'))
                 continue;   // hidden files and folders
 
-            const auto kind = Browser::classify (child);
+            const auto child = juce::File::createFileWithoutCheckingPath (prefix + entry.name);
+            const auto kind = entry.isDirectory ? Browser::FileKind::directory : Browser::classifyByName (child);
             if (kind != Browser::FileKind::other)
                 rows.push_back ({ child, kind });
         }
@@ -300,7 +310,7 @@ void BrowserView::refresh()
 {
     infoCache.clear();
     if (searchMode)
-        launchSearch();
+        launchSearch (true);   // re-read the disk, not just the search index
     else
         listCurrentDirectory();
 }
@@ -318,7 +328,10 @@ void BrowserView::revealFile (const juce::File& file)
     if (! dir.isDirectory())
         return;
 
-    if (Browser::samePath (dir, currentDirectory) && ! searchMode)
+    if (searchMode)
+        endSearch();   // the file must be visible, whether it matches or not
+
+    if (Browser::samePath (dir, currentDirectory))
         listCurrentDirectory();
     else
         navigateTo (dir);
@@ -329,6 +342,12 @@ void BrowserView::revealFile (const juce::File& file)
 
 void BrowserView::beginRelink (int sampleId, const juce::String& fileName, const juce::File& originalFile)
 {
+    if (searchMode)
+    {
+        endSearch();
+        listCurrentDirectory();
+    }
+
     relinkSampleId = sampleId;
     relinkFileName = fileName;
     preview.setRelinkMode (true);
@@ -746,20 +765,35 @@ void BrowserView::updateStatusBar()
         return text;
     };
 
+    // "10,752" reads better than "10752".
+    auto formatCount = [] (int value)
+    {
+        auto digits = juce::String (value);
+        for (int i = digits.length() - 3; i > 0; i -= 3)
+            digits = digits.substring (0, i) + "," + digits.substring (i);
+        return digits;
+    };
+    const auto items = formatCount (count) + (count == 1 ? " item" : " items");
+
     statusIsNote = false;
     if (searchMode && searchScanning)
         statusText = "Searching...";
-    else if (searchMode && searchTruncated)
-    {
-        statusText = withSelection ("Showing the first " + juce::String (count) + " matches - refine your search");
-        statusIsNote = true;
-    }
     else if (searchMode)
+    {
         statusText = count == 0 ? juce::String ("No matches")
-                                : withSelection (juce::String (count) + (count == 1 ? " match" : " matches"));
+                                : withSelection (searchTotalMatches > 0
+                                                     ? items + juce::String (juce::CharPointer_UTF8 ("  \xc2\xb7  "))
+                                                           + formatCount (searchTotalMatches)
+                                                           + (searchTotalMatches == 1 ? " match" : " matches")
+                                                     : items);
+        if (searchIncomplete)
+        {
+            statusText << " - this folder is too big to search completely, try a narrower one";
+            statusIsNote = true;
+        }
+    }
     else
-        statusText = count == 0 ? juce::String ("Empty folder")
-                                : withSelection (juce::String (count) + (count == 1 ? " item" : " items"));
+        statusText = count == 0 ? juce::String ("Empty folder") : withSelection (items);
 
     repaint (statusArea);
 }
@@ -775,13 +809,10 @@ void BrowserView::onSearchTextChanged()
 
     if (searchQuery.isEmpty())
     {
-        searcher.cancel();
         if (searchMode)
         {
-            searchMode = false;
-            searchScanning = false;
-            searchTruncated = false;
-            listCurrentDirectory();
+            endSearch();
+            listCurrentDirectory();   // the folder you're in now, not where the search started
         }
         return;
     }
@@ -798,38 +829,56 @@ void BrowserView::onSearchTextChanged()
     });
 }
 
-void BrowserView::launchSearch()
+void BrowserView::launchSearch (bool rebuildIndex)
 {
     if (! searchMode || searchQuery.isEmpty())
         return;
 
     searchScanning = true;
     updateSearchStatus();
-    searcher.search (currentDirectory, searchQuery);
+    searcher.search (currentDirectory, searchQuery, rebuildIndex);
 }
 
 void BrowserView::applySearchResults (const DirectorySearch::Result& result)
 {
-    // Ignore stale deliveries: search closed, or a newer query is already in the box.
-    if (! searchMode || result.query != searchQuery)
+    // Ignore stale deliveries: search closed, a newer query in the box, or you've moved on to
+    // another folder (its own view is on the way).
+    if (! searchMode || result.query != searchQuery || ! Browser::samePath (result.folder, currentDirectory))
         return;
 
     searchScanning = false;
-    searchTruncated = result.truncated;
+    searchTotalMatches = result.totalMatches;
+    searchIncomplete = result.incomplete;
 
     std::vector<Browser::FileRow> rows;
-    rows.reserve (result.matches.size());
-    for (const auto& match : result.matches)
-        rows.push_back ({ match.file, match.directory ? Browser::FileKind::directory
-                                                      : Browser::classifyByName (match.file) });
+    rows.reserve (result.rows.size());
+    for (const auto& row : result.rows)
+        rows.push_back ({ row.file, row.directory ? Browser::FileKind::directory : Browser::classifyByName (row.file),
+                          row.directory ? row.matches : -1 });
 
     stopAuditionIfActive();
     infoCache.cancelPending();
     lastFocusedFile = juce::File();
-    table.setFullPathTooltips (true);
+    table.setFullPathTooltips (false);   // every row is in this folder
     table.setRows (std::move (rows));
     updateSearchStatus();
     onSelectionChanged();
+}
+
+void BrowserView::endSearch()
+{
+    if (searchEditor.getText().isNotEmpty())
+        searchEditor.setText ({}, juce::dontSendNotification);
+    searchQuery.clear();
+    searchMode = false;
+    searchScanning = false;
+    searchIncomplete = false;
+    searchTotalMatches = 0;
+    ++searchDebounceId;   // a queued launch must not restart it
+    searcher.cancel();    // also frees the index
+    clearSearchButton.setVisible (false);
+    table.setStatus ({});
+    resized();
 }
 
 void BrowserView::clearSearch()
@@ -846,7 +895,7 @@ void BrowserView::updateSearchStatus()
     // Progress and counts go to the bottom bar; the list only explains an empty result.
     if (searchMode && ! hasRows)
         table.setStatus (searchScanning ? juce::String ("Searching...")
-                                        : "No matches for \"" + searchQuery + "\"");
+                                        : "No matches for \"" + searchQuery + "\" in this folder");
     else
         table.setStatus ({});
 

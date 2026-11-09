@@ -2,215 +2,82 @@
 
 #include <juce_core/juce_core.h>
 #include <juce_events/juce_events.h>
-#include <algorithm>
+#include "browser/SearchIndex.h"
 #include <functional>
 #include <vector>
 
 /**
-    Background recursive file/folder searcher for the sample browser.
+    Background search for the sample browser, working as a folder filter.
 
-    Scans a root directory and all of its subfolders on a worker thread, matching file and
-    folder names against a case-insensitive partial query. Results are delivered on the message
-    thread via onComplete. Only the newest search() request is honoured: older in-flight scans
-    are abandoned as soon as a newer request arrives, so rapid typing never floods the UI.
+    The first request reads the folder tree under the folder being viewed once (Browser::buildIndex,
+    directory listings only) and keeps it in memory. After that, each request answers "what in this
+    folder matches?": the folder's matching items plus the subfolders that contain matches, with
+    counts. Opening subfolders or typing more only filters memory. A folder the index doesn't hold
+    (going above where the search started, jumping elsewhere, or one the walk didn't enter) reads
+    that folder's tree instead.
 
-    Kept header-only to match the AudioAnalysis.h / AdsrEnvelope.h precedent.
+    Results arrive on the message thread via onComplete; only the newest request is answered.
+    cancel() (search cleared) drops the index, so the next search sees files added since.
 */
 class DirectorySearch : private juce::Thread,
                         private juce::AsyncUpdater
 {
 public:
-    struct Match
-    {
-        juce::File file;
-        bool directory = false;
-    };
+    using Row = Browser::FolderViewRow;
 
     struct Result
     {
         juce::String query;               // query this result was produced for
-        std::vector<Match> matches;
-        bool truncated = false;           // hit kMaxResults / kMaxDirs before finishing
+        juce::File folder;                // folder whose view this is
+        std::vector<Row> rows;            // matching items and subfolders with matches inside
+        int totalMatches = 0;             // matched files anywhere inside the folder
+        bool incomplete = false;          // the tree was too big to read completely
     };
 
     /** Predicate deciding whether a non-directory file can appear in the results (audio, presets).
-        Injected by the owner so the searcher stays decoupled from the file-type policy. */
+        Injected by the owner so the searcher stays decoupled from the file-type policy. Set before
+        the first search. */
     std::function<bool (const juce::File&)> isListedFile;
 
-    /** Invoked on the message thread when a scan for the newest request completes. */
+    /** Invoked on the message thread when the newest request has been answered. */
     std::function<void (Result)> onComplete;
 
-    DirectorySearch() : juce::Thread ("intersect-browser-search")
-    {
-        startThread();
-    }
+    DirectorySearch();
+    ~DirectorySearch() override;
 
-    ~DirectorySearch() override
-    {
-        signalThreadShouldExit();
-        notify();                 // wake the wait(-1) in run() (signalThreadShouldExit does not)
-        stopThread (2000);
-        cancelPendingUpdate();
-    }
+    /** Queue "what in folder matches query?". rebuildIndex re-reads the disk even when folder is
+        already indexed (the browser's refresh). An empty query is ignored. */
+    void search (const juce::File& folder, const juce::String& query, bool rebuildIndex = false);
 
-    /** Queue a recursive search of root for query. An empty query cancels any pending scan. */
-    void search (const juce::File& root, const juce::String& query)
-    {
-        {
-            const juce::ScopedLock sl (lock);
-            pendingRoot = root;
-            pendingQuery = query;
-            ++requestGeneration;
-            hasPending = true;
-        }
-        notify();
-    }
-
-    /** Cancel any in-flight/pending search without delivering results. */
-    void cancel()
-    {
-        search ({}, {});
-    }
+    /** Cancel any pending request without delivering results, and free the index. */
+    void cancel();
 
 private:
-    void run() override
+    struct Request
     {
-        while (! threadShouldExit())
-        {
-            wait (-1.0);
+        juce::File folder;
+        juce::String query;
+        bool rebuild = false;
+        bool dropIndex = false;
+    };
 
-            for (;;)
-            {
-                if (threadShouldExit())
-                    return;
+    void run() override;
+    void handleAsyncUpdate() override;
+    /** True when folder is the indexed root or inside it. */
+    static bool isInside (const juce::File& folder, const juce::File& root);
+    /** While indexing root: stop if the newest request needs a different tree (or none). */
+    bool indexingSuperseded (const juce::File& root) const;
 
-                juce::File root;
-                juce::String query;
-                int generation = 0;
-                {
-                    const juce::ScopedLock sl (lock);
-                    if (! hasPending)
-                        break;
-                    hasPending = false;
-                    root = pendingRoot;
-                    query = pendingQuery;
-                    generation = requestGeneration;
-                }
-
-                if (query.isEmpty() || ! root.isDirectory())
-                    continue;   // nothing to deliver for an empty/invalid request
-
-                Result result;
-                result.query = query;
-                if (! scan (root, query, generation, result))
-                    continue;   // superseded or asked to exit — pick up the newest request
-
-                {
-                    const juce::ScopedLock sl (lock);
-                    pendingResult = std::move (result);
-                    hasPendingResult = true;
-                }
-                triggerAsyncUpdate();
-            }
-        }
-    }
-
-    /** Returns false if the scan was cancelled (superseded / exiting), true if it finished. */
-    bool scan (const juce::File& root, const juce::String& query, int generation, Result& result)
-    {
-        const auto needle = query.toLowerCase();
-
-        std::vector<juce::File> stack;
-        stack.push_back (root);
-
-        int dirsVisited = 0;
-
-        while (! stack.empty())
-        {
-            if (threadShouldExit() || generationChanged (generation))
-                return false;
-
-            const auto dir = stack.back();
-            stack.pop_back();
-
-            if (++dirsVisited > kMaxDirs)
-            {
-                result.truncated = true;
-                break;
-            }
-
-            const auto children = dir.findChildFiles (juce::File::findFilesAndDirectories,
-                                                      false,
-                                                      "*",
-                                                      juce::File::FollowSymlinks::no);
-
-            for (const auto& child : children)
-            {
-                const bool isDir = child.isDirectory();
-                const bool isListed = (! isDir) && isListedFile != nullptr && isListedFile (child);
-
-                // Descend into subfolders, but skip hidden/system trees (.git, .Trash, …).
-                if (isDir && ! child.getFileName().startsWithChar ('.'))
-                    stack.push_back (child);
-
-                if (! isDir && ! isListed)
-                    continue;   // unlisted file — never a result and nothing to descend
-
-                if (child.getFileName().toLowerCase().contains (needle))
-                {
-                    result.matches.push_back ({ child, isDir });
-                    if ((int) result.matches.size() >= kMaxResults)
-                    {
-                        result.truncated = true;
-                        stack.clear();
-                        break;
-                    }
-                }
-            }
-        }
-
-        // Directories first, then file name case-insensitive (matches the name shown in each row).
-        std::sort (result.matches.begin(), result.matches.end(), [] (const Match& a, const Match& b)
-        {
-            if (a.directory != b.directory)
-                return a.directory;
-            return a.file.getFileName().compareIgnoreCase (b.file.getFileName()) < 0;
-        });
-
-        return true;
-    }
-
-    bool generationChanged (int generation) const
-    {
-        const juce::ScopedLock sl (lock);
-        return requestGeneration != generation;
-    }
-
-    void handleAsyncUpdate() override
-    {
-        Result result;
-        {
-            const juce::ScopedLock sl (lock);
-            if (! hasPendingResult)
-                return;
-            result = std::move (pendingResult);
-            pendingResult = {};
-            hasPendingResult = false;
-        }
-
-        if (onComplete != nullptr)
-            onComplete (std::move (result));
-    }
-
-    static constexpr int kMaxResults = 500;
-    static constexpr int kMaxDirs = 20000;
+    // Worker thread only.
+    Browser::SearchIndex index;
+    bool indexReady = false;
+    juce::String filterQuery;            // query `filter` was computed for
+    Browser::SearchFilter filter;
 
     juce::CriticalSection lock;
-    juce::File pendingRoot;
-    juce::String pendingQuery;
-    Result pendingResult;
-    int requestGeneration = 0;
+    Request pending;
     bool hasPending = false;
+    Result pendingResult;
     bool hasPendingResult = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DirectorySearch)
