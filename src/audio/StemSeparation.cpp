@@ -16,7 +16,7 @@ constexpr auto kStemModelReleaseBaseUrl = "https://github.com/tucktuckg00se/inte
 constexpr auto kStemModelReleasesApiUrl = "https://api.github.com/repos/tucktuckg00se/intersect-stem-models/releases?per_page=100";
 
 constexpr auto kOrtBundleManifestFileName    = "intersect_ort_bundles_manifest.json";
-constexpr auto kOrtBundleManifestDownloadUrl = "https://github.com/tucktuckg00se/intersect-ort-providers/releases/latest/download/intersect_ort_bundles_manifest.json";
+constexpr auto kOrtBundleManifestDownloadUrl = "https://github.com/tucktuckg00se/intersect-tools/releases/latest/download/intersect_ort_bundles_manifest.json";
 
 constexpr auto kDefaultStemModelId = "bs-roformer-sw-6stem";
 
@@ -796,7 +796,7 @@ static const std::vector<OrtBundleCatalogEntry>& buildOrtBundleCatalog()
     // produced by the official ORT 1.24.x packages (Linux ships a versioned
     // SONAME; macOS ships an unversioned symlink; Windows is just .dll).
     // Archive files are .zip across platforms so the plugin can use juce::ZipFile
-    // for extraction (no reliance on system tar). The intersect-ort-providers
+    // for extraction (no reliance on system tar). The intersect-tools
     // builder repo repackages upstream tarballs into these zips.
     static const std::vector<OrtBundleCatalogEntry> catalog =
     {

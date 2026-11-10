@@ -22,7 +22,7 @@ juce::String channelToString (Channel channel);
 Channel channelFromString (const juce::String& text);   // anything unknown is stable
 
 constexpr const char* kMediaManifestAssetName = "intersect_media_tools_manifest.json";
-constexpr const char* kToolsReleasesApiUrl = "https://api.github.com/repos/tucktuckg00se/intersect-ort-providers/releases?per_page=30";
+constexpr const char* kToolsReleasesApiUrl = "https://api.github.com/repos/tucktuckg00se/intersect-tools/releases?per_page=30";
 /** Test hook: a URL (https:// or file://) to read the media manifest from instead of the newest
     media-* release. Lets a build be tried with locally built tools before anything is published. */
 constexpr const char* kTestManifestEnvVar = "INTERSECT_MEDIA_TOOLS_MANIFEST";

@@ -160,7 +160,7 @@ Pushing a tag matching `v*` triggers the GitHub Actions release workflow, which 
 
 The workflow can also be started by hand (**Actions → Release → Run workflow**) to build every platform from a branch without publishing a release. To build ARM64 on Windows yourself, configure with `cmake -B build -A ARM64` from a Visual Studio install that has the ARM64 build tools.
 
-ONNX Runtime bundles are published separately from the [intersect-ort-providers](https://github.com/tucktuckg00se/intersect-ort-providers) repo and downloaded on demand from the plugin.
+ONNX Runtime bundles (stem separation) and the ffmpeg + QuickJS tools (Import from URL) are published separately from the [intersect-tools](https://github.com/tucktuckg00se/intersect-tools) repo and downloaded on demand from the plugin. yt-dlp comes straight from its official releases.
 
 ## Dependencies
 
