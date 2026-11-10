@@ -98,6 +98,26 @@ ONNX Runtime 1.24 dropped x86_64 macOS support, so stem separation isn't availab
 ### Stem export is slow on CPU
 That's expected — BS-RoFormer is compute-heavy. On a modern desktop CPU, expect minutes per minute of audio. A supported GPU bundle is dramatically faster; see [Installation → Stem separation setup]({{ site.baseurl }}{% link installation.md %}#stem-separation-setup).
 
+## Import from URL
+
+### "The site wants to confirm you're not a bot"
+YouTube asks for this mostly from VPNs, data centres and busy shared networks. Try without the VPN, wait a while, or switch **SET → URL Import → Updates** to **NIGHTLY**, which gets workarounds sooner. INTERSECT doesn't sign in to sites, so it can't answer the check itself.
+
+### "This needs a signed-in account"
+The video is age-restricted, members-only or private. INTERSECT doesn't use your accounts, so these can't be imported.
+
+### "The site changed and yt-dlp can't read it yet"
+Sites change often and yt-dlp catches up quickly. INTERSECT already checked for a newer yt-dlp and retried once. Switch **SET → URL Import → Updates** to **NIGHTLY** and press `UPDATE NOW`, or try again in a day or two.
+
+### "Couldn't set up URL import"
+The first import downloads yt-dlp from GitHub and INTERSECT's audio tools. Check your internet connection (and any firewall that blocks `github.com`), then press `TRY AGAIN`. If it keeps failing, **SET → URL Import → REMOVE** and import again for a clean install.
+
+### Windows Security blocked yt-dlp
+yt-dlp is a Python program packaged as an `.exe`, which antivirus tools occasionally flag by mistake. INTERSECT only runs the copy from yt-dlp's official releases, checked against its published checksum. If Windows Security quarantined it, restore it (or allow `yt-dlp.exe` in INTERSECT's `url-import` folder) and press `UPDATE NOW`.
+
+### Import from URL doesn't work in GarageBand or Logic
+Some macOS hosts run plugins in a sandbox that can't start helper programs. Use the INTERSECT standalone app to import, then load the WAV in your project. URL import also needs macOS 10.15 or later.
+
 ## Themes
 
 ### My custom theme doesn't appear in the SET theme list

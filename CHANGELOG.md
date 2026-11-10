@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Import from URL**: paste a link from YouTube, SoundCloud, Bandcamp or another site yt-dlp supports, and INTERSECT downloads the audio, saves it as a WAV and adds it to your kit (one undo step). Use **Import from URL...** in the file browser's open menu, type or paste the link into the browser's path bar, or press Ctrl/Cmd+V anywhere in INTERSECT with a link copied.
+- The first import downloads the tools it needs: yt-dlp from its official releases, plus ffmpeg and QuickJS from INTERSECT's tools repository. yt-dlp keeps itself up to date (checked at most every 6 hours, when you import), and every download is checked against its published checksum before it is used.
+- **SET → URL Import**: save imports to a folder (Music/INTERSECT Downloads by default) or choose where each time, follow yt-dlp's stable or nightly builds, see what's installed, and update or remove the tools.
+- Imports longer than an hour ask before downloading, live streams are refused, and a failed import says what happened (a sign-in or bot check, not available in your country, a site that changed) with **COPY DETAILS** for asking for help.
+
 ### Changed
 - Searching in the file browser is much faster. On a large library the first search in a folder takes well under a second instead of many seconds, and typing more narrows the results instantly. Opening big folders is faster too.
 - Search now works as a filter while you browse: each folder shows its matching sounds plus the subfolders that lead to them, with a count, so you click down to what you need. Going up searches from the higher folder, and × or Esc turns the search off.

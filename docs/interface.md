@@ -93,6 +93,26 @@ Files longer than two minutes preview their first two minutes. The audition stop
 
 On a folder or preset with nothing playing, `Space` isn't used by the browser, so it still reaches your DAW (usually its transport).
 
+### Import from URL
+
+Paste a link from YouTube, SoundCloud, Bandcamp or any other site [yt-dlp](https://github.com/yt-dlp/yt-dlp) supports, and INTERSECT downloads the audio, saves it as a WAV and adds it to your kit, as one step you can undo. There are three ways in:
+
+- **Import from URL...** in the browser's open menu (the folder button next to the path).
+- Type or paste the link into the **path bar** and press `Return`. A real folder path still opens the folder; a link starts the import straight away. Links work without `https://` too (`youtu.be/...`).
+- Press `Ctrl/Cmd + V` anywhere in INTERSECT with a link copied. (Your DAW may keep this shortcut for itself; the menu always works.)
+
+A small panel at the top shows the download and the conversion. It doesn't block INTERSECT: `HIDE` puts it away while the import keeps running (open Import from URL again to see it), and `CANCEL IMPORT` stops it. When the import finishes, the panel closes and the header says what was added.
+
+Where the WAV goes is set in **SET → URL Import**: a folder (`Music/INTERSECT Downloads` by default), or a save dialog after each download. The file is named after the video or track.
+
+The first import downloads the tools it needs: yt-dlp (about 25–55 MB) from its official GitHub releases, and ffmpeg and QuickJS (about 5 MB) from INTERSECT's tools repository. Each download is checked against its published SHA-256 before it is used. After that, INTERSECT checks for a newer yt-dlp at most every 6 hours, only when you import, and right away when a site seems to have changed. Nothing is downloaded until you import something.
+
+- Imports **longer than an hour** ask first, because a sample is held in memory (about 23 MB per minute at 48 kHz). `IMPORT ANYWAY` goes ahead.
+- **Live streams** are refused; import the video once the stream has ended.
+- When an import **fails**, the panel says what happened (for example a sign-in or bot check, or not available in your country). `TRY AGAIN` retries, and `COPY DETAILS` copies yt-dlp's output for a bug report. See [Troubleshooting]({{ site.baseurl }}{% link troubleshooting.md %}#import-from-url).
+
+Only import audio you have the rights to use.
+
 ## MIDI export
 
 Each sample in the sample lane has a `MIDI` button (`M` when the sample is narrow). Drag it into your DAW to drop a MIDI clip of that sample's slices, or click it to save a `.mid` file. Each slice becomes one note on its MIDI key, timed from its position in the sample at the sample's BPM, so playing the clip back through INTERSECT replays the original pattern. REX2 (`.rx2`) loops keep their original groove even though their slices carry extra tails.
@@ -114,8 +134,9 @@ Click `SET` in the header to open the settings view. Like the browser, it takes 
 | Files | The default folder for the `FILES` button: **Last used** or a **Chosen folder** |
 | Presets | The default presets folder and an optional custom one. See [Presets]({{ site.baseurl }}{% link presets.md %}) |
 | Stems | Model folder, the device `STEMS` starts with, ONNX Runtime bundles and model downloads, with progress. See [Stem separation]({{ site.baseurl }}{% link stem-separation.md %}) |
+| URL Import | Save imports **To the folder** or **Ask each time**, the folder, yt-dlp **Stable** or **Nightly** builds, the installed tool versions, `UPDATE NOW` and `REMOVE`. See [Import from URL](#import-from-url) |
 
-Opening settings asks GitHub whether a newer release exists (at most every 6 hours); nothing else is sent, and INTERSECT never checks at any other time. Everything here is saved in the [settings file]({{ site.baseurl }}{% link settings-file.md %}), not in your session.
+Opening settings asks GitHub whether a newer release exists (at most every 6 hours). Otherwise INTERSECT only goes online when you download stem models or runtimes, or import from a URL. Everything here is saved in the [settings file]({{ site.baseurl }}{% link settings-file.md %}), not in your session.
 
 ## Time / zoom bar
 

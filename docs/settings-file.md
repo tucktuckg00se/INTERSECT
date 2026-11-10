@@ -6,7 +6,7 @@ description: "Where INTERSECT writes user settings and what each key does — th
 
 # Settings file
 
-INTERSECT persists user-wide preferences (the ones that aren't part of a saved session) to a single file: `settings.yaml`. This includes the active theme, UI scale, NRPN settings, file-browser bookmarks, recent and last-used folders, audition settings, the custom presets folder, and the stem separation model folder.
+INTERSECT persists user-wide preferences (the ones that aren't part of a saved session) to a single file: `settings.yaml`. This includes the active theme, UI scale, NRPN settings, file-browser bookmarks, recent and last-used folders, audition settings, the custom presets folder, the stem separation model folder, and the Import from URL save folder and update channel.
 
 ## Where it lives
 
@@ -16,7 +16,7 @@ INTERSECT persists user-wide preferences (the ones that aren't part of a saved s
 | macOS | `~/Library/Application Support/INTERSECT/settings.yaml` |
 | Linux | `~/.config/INTERSECT/settings.yaml` |
 
-The folder is created on first launch. `themes/`, `presets/` (your saved presets), `preset-samples/` (audio unpacked from presets exported with samples), downloaded ONNX Runtime bundles, and downloaded stem models also live alongside it.
+The folder is created on first launch. `themes/`, `presets/` (your saved presets), `preset-samples/` (audio unpacked from presets exported with samples), downloaded ONNX Runtime bundles, downloaded stem models, and the Import from URL tools (`url-import/`: yt-dlp, ffmpeg and QuickJS) also live alongside it. On Linux, ONNX Runtime bundles and `url-import/` live in `~/.local/share/INTERSECT/` instead. **SET → URL Import → REMOVE** deletes `url-import/`.
 
 ## When it's written
 
@@ -29,6 +29,7 @@ The folder is created on first launch. `themes/`, `presets/` (your saved presets
 - Change any NRPN setting in **SET → MIDI**
 - Select a stem model folder or compute device in **SET → Stems**
 - Choose or clear a custom presets folder in **SET → Presets**
+- Change how imports are saved, the import folder or the yt-dlp builds in **SET → URL Import**
 
 If the settings folder can't be created (sandboxed plugin host, read-only home), the save is skipped silently — INTERSECT still runs with the in-memory defaults.
 
@@ -58,6 +59,9 @@ auditionGainDb: -6.0
 stemModelFolder: /home/you/.config/INTERSECT/stem-models
 presetFolder: /home/you/Sync/intersect-presets
 stemComputeDevice: cuda
+urlImportSaveMode: folder
+urlImportFolder: /home/you/samples/imports
+urlImportChannel: stable
 ```
 
 ## Key reference
@@ -80,6 +84,9 @@ stemComputeDevice: cuda
 | `stemModelFolder` | string | filesystem path | Folder INTERSECT scans for ONNX stem models. |
 | `presetFolder` | string | filesystem path | Custom presets folder, listed in the browser alongside the default `presets/` folder. Omitted when none is set. |
 | `stemComputeDevice` | string | `cpu`, `cuda`, `migraphx`, `directml`, `coreml` (depends on platform) | Active stem-separation device. |
+| `urlImportSaveMode` | string | `folder` / `ask` | Import from URL: save every import to `urlImportFolder` (default), or open a save dialog after each download. |
+| `urlImportFolder` | string | filesystem path | Where imports are saved. Omitted when it's the default, `Music/INTERSECT Downloads` (created on the first import). |
+| `urlImportChannel` | string | `stable` / `nightly` | Which yt-dlp builds to follow: tested releases (default) or nightly builds, which get site fixes sooner. |
 
 ## Legacy keys
 
