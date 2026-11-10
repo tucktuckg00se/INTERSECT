@@ -11,6 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Search now works as a filter while you browse: each folder shows its matching sounds plus the subfolders that lead to them, with a count, so you click down to what you need. Going up searches from the higher folder, and × or Esc turns the search off.
 - Search matches every word in any order, so `808 kick` finds "Kick 808 Hard.wav". Put words in quotes to match an exact phrase.
 - Sounds inside a folder whose name matches are found too, so searching "kick" also finds "BD 01.wav" in a "Kicks" folder. Folders that hold no matching sounds are hidden, and linked folders (shortcuts / symlinks) are searched as well.
+- The README now opens with what INTERSECT does best and lists its features in collapsible sections, each linking to the matching page in the documentation.
 
 ### Fixed
 - Search no longer lists the hidden "._" files macOS leaves on NTFS and exFAT drives.
