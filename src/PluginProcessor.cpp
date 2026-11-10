@@ -353,6 +353,7 @@ IntersectProcessor::IntersectProcessor()
     // stemJob's use of AsyncUpdater; handleAsyncUpdate drains all three.
     stemModelDownloadJob.onTerminalState = [this] { triggerAsyncUpdate(); };
     ortBundleDownloadJob.onTerminalState = [this] { triggerAsyncUpdate(); };
+    urlImportJob.onTerminalState = [this] { triggerAsyncUpdate(); };
     stemManifestRefreshJob.onManifestChanged = [this] { stemManifestGeneration.fetch_add (1, std::memory_order_acq_rel); };
 
 	    publishUiSliceSnapshot();
@@ -449,8 +450,154 @@ void IntersectProcessor::handleAsyncUpdate()
 {
     handleStemJobCompletionOnMessageThread();
     handleDownloadCompletionsOnMessageThread();
+    handleUrlImportCompletionOnMessageThread();
     handlePresetJobCompletionOnMessageThread();
     handleAuditionCompletionOnMessageThread();
+}
+
+//==============================================================================
+// Import from URL
+
+juce::File IntersectProcessor::getDefaultUrlImportFolder()
+{
+    return juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("INTERSECT Downloads");
+}
+
+juce::File IntersectProcessor::getResolvedUrlImportFolder() const
+{
+    return urlImportSettings.folder != juce::File() ? urlImportSettings.folder : getDefaultUrlImportFolder();
+}
+
+void IntersectProcessor::startUrlImport (const juce::String& url, bool allowLong)
+{
+    if (urlImportJob.isBusy())
+    {
+        setUiStatusMessage ("A URL import is already running", true);
+        return;
+    }
+
+    UrlImport::ImportRequest request;
+    request.url = url.trim();
+    request.channel = urlImportSettings.channel;
+    request.allowLong = allowLong;
+    if (! urlImportSettings.askEachTime)
+        request.destinationFolder = getResolvedUrlImportFolder();
+
+    if (! urlImportJob.startImport (request))
+    {
+        setUiStatusMessage ("Couldn't start the URL import", true);
+        return;
+    }
+    setUiStatusMessage ("Importing from URL...", false);
+}
+
+void IntersectProcessor::startUrlToolsUpdate()
+{
+    if (! urlImportJob.startUpdate (urlImportSettings.channel))
+        setUiStatusMessage ("Wait for the current URL import to finish", true);
+}
+
+void IntersectProcessor::startUrlToolsRemoval()
+{
+    if (! urlImportJob.startRemove())
+        setUiStatusMessage ("Wait for the current URL import to finish", true);
+}
+
+std::optional<UrlImport::JobResult> IntersectProcessor::takePendingUrlImportSave()
+{
+    auto pending = std::move (pendingUrlImportSave);
+    pendingUrlImportSave.reset();
+    return pending;
+}
+
+void IntersectProcessor::placeUrlImport (const juce::File& source, const juce::File& destination,
+                                         const juce::File& workFolder, const juce::String& title)
+{
+    if (! urlImportJob.startPlace (source, destination, workFolder, title))
+        setUiStatusMessage ("Couldn't save the import while another URL task runs", true);
+}
+
+void IntersectProcessor::discardUrlImport (const juce::File& workFolder)
+{
+    if (workFolder != juce::File())
+        workFolder.deleteRecursively();
+    setUiStatusMessage ("Import discarded", false);
+}
+
+void IntersectProcessor::handleUrlImportCompletionOnMessageThread()
+{
+    auto finished = urlImportJob.consumeResult();
+    if (! finished.has_value())
+        return;
+
+    using Status = UrlImport::JobResult::Status;
+    using Mode = UrlImport::JobResult::Mode;
+    auto& result = *finished;
+
+    if (result.mode == Mode::update || result.mode == Mode::remove)
+    {
+        setUiStatusMessage (result.message, result.status != Status::completed || result.warning.isNotEmpty());
+        return;
+    }
+
+    // "Ask each time": the WAV waits in staging until the editor's save dialog places it. With no
+    // editor open there is no one to ask, so it goes to the folder instead.
+    if (result.mode == Mode::import && result.status == Status::completed && result.workFolder != juce::File())
+    {
+        if (getActiveEditor() != nullptr)
+        {
+            pendingUrlImportSave = std::move (result);
+            return;
+        }
+        const auto destination = UrlImport::uniqueFileIn (getResolvedUrlImportFolder(),
+                                                          UrlImport::makeOutputFileName (result.title, {}));
+        urlImportJob.startPlace (result.file, destination, result.workFolder, result.title);
+        return;
+    }
+
+    lastUrlImportOutcome.status = result.status;
+    lastUrlImportOutcome.url = result.request.url;
+    lastUrlImportOutcome.message = result.message;
+    lastUrlImportOutcome.details = result.details;
+    ++lastUrlImportOutcome.serial;
+
+    switch (result.status)
+    {
+        case Status::completed:
+            addFilesToKit ({ result.file });
+            setUiStatusMessage (result.warning.isNotEmpty() ? result.message + ". " + result.warning : result.message,
+                                result.warning.isNotEmpty());
+            break;
+        case Status::cancelled:
+            setUiStatusMessage (result.message, false);
+            break;
+        case Status::failed:
+            setUiStatusMessage (result.message, true);
+            break;
+        case Status::needsLongConfirm:
+        case Status::liveRefused:
+            break;   // the import panel asks or explains
+    }
+}
+
+void IntersectProcessor::addFilesToKit (const std::vector<juce::File>& files)
+{
+    std::vector<juce::File> audio;
+    for (const auto& file : files)
+        if (file.existsAsFile() && AppFiles::isSupportedAudioFile (file))
+            audio.push_back (file);
+    if (audio.empty())
+        return;
+
+    stopAudition();
+    enqueueUiUndoSnapshot();
+    const bool append = sampleData.isLoaded();
+    loadFilesAsync (audio, append);
+    if (! append)
+    {
+        zoom.store (1.0f);
+        scroll.store (0.0f);
+    }
 }
 
 void IntersectProcessor::handleDownloadCompletionsOnMessageThread()

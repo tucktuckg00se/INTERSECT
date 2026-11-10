@@ -162,12 +162,17 @@ target_sources(Intersect PRIVATE
     src/audio/StemSeparation.cpp
     src/audio/StemModelDownloadJob.cpp
     src/audio/OrtBundleDownloadJob.cpp
+    src/urlimport/UrlImportLogic.cpp
+    src/urlimport/ToolProcess.cpp
+    src/urlimport/ToolInstall.cpp
+    src/urlimport/UrlImportJob.cpp
     src/params/ParamLayout.cpp
     src/params/SampleParams.cpp
     src/midi/MidiExport.cpp
     src/ui/IntersectLookAndFeel.cpp
     src/ui/HeaderBar.cpp
     src/ui/ConfirmCallout.cpp
+    src/ui/UrlImportPanel.cpp
     src/ui/browser/BrowserView.cpp
     src/ui/browser/DirectoryListing.cpp
     src/ui/browser/SearchIndex.cpp
@@ -188,6 +193,7 @@ target_sources(Intersect PRIVATE
     src/ui/settings/SettingsControls.cpp
     src/ui/settings/SettingsPages.cpp
     src/ui/settings/StemSettingsPage.cpp
+    src/ui/settings/UrlImportSettingsPage.cpp
     src/ui/settings/SettingsView.cpp
     src/audio/StemSeparationJob.cpp
     src/audio/StemGpuInfo.cpp

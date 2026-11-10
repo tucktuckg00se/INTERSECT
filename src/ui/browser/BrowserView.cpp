@@ -27,6 +27,7 @@ enum MenuIds
     kMenuOpenFiles,
     kMenuOpenFolderDialog,
     kMenuSetDefaultFolder,
+    kMenuImportUrl,
 };
 
 // Kept ASCII: non-ASCII punctuation mis-renders on some toolchains.
@@ -661,6 +662,8 @@ void BrowserView::showOpenMenu()
     menu.setLookAndFeel (&getLookAndFeel());
     menu.addItem (kMenuOpenFiles, "Open Files...");
     menu.addItem (kMenuOpenFolderDialog, "Open Folder...");
+    menu.addSeparator();
+    menu.addItem (kMenuImportUrl, "Import from URL...");
 
     menu.showMenuAsync (IntersectLookAndFeel::makeEditorMenuOptions (*this).withTargetComponent (&openButton),
         [safe = juce::Component::SafePointer<BrowserView> (this)] (int result)
@@ -672,6 +675,8 @@ void BrowserView::showOpenMenu()
                 safe->onOpenDialogRequested();
             else if (result == kMenuOpenFolderDialog)
                 safe->openFolderDialog();
+            else if (result == kMenuImportUrl && safe->onImportUrlRequested != nullptr)
+                safe->onImportUrlRequested();
         });
 }
 

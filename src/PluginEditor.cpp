@@ -118,6 +118,7 @@ IntersectEditor::IntersectEditor (IntersectProcessor& p)
       waveformView (p),
       scrollZoomBar (p),
       actionPanel (p, waveformView),
+      urlImportPanel (p),
       settingsFile (getUserSettingsFile())
 {
     setLookAndFeel (&lnf);
@@ -132,6 +133,8 @@ IntersectEditor::IntersectEditor (IntersectProcessor& p)
     addChildComponent (browser);
     addChildComponent (stemView);
     addChildComponent (settingsView);
+    addChildComponent (urlImportPanel);   // over the full views, under popovers and menus
+    urlImportPanel.onLayoutChanged = [this] { positionUrlImportPanel(); };
 
     sliceLane.setWaveformView (&waveformView);
     sampleLane.onInteraction = [this] { deleteTarget = DeleteTarget::sample; };
@@ -157,6 +160,7 @@ IntersectEditor::IntersectEditor (IntersectProcessor& p)
     browser.onExportRequested = [this] (const juce::File& preset, bool embedSamples) { exportPreset (preset, embedSamples); };
     headerBar.onSaveRequested = [this] { saveKitToLibrary(); };
     browser.onOpenDialogRequested = [this] { openFileDialog(); };
+    browser.onImportUrlRequested = [this] { showUrlImport ({}); };
     browser.onCloseRequested = [this] { setBrowserVisible (false); };
     browser.onPersistentStateChanged = [this] { persistSettings(); };
     browser.onFolderChanged = [this] { persistSettings(); };   // other instances follow the last folder
@@ -267,6 +271,7 @@ void IntersectEditor::resized()
                          .withHeight (signalChainH));
 
     shell.performLayout (bounds.toFloat());
+    positionUrlImportPanel();
 }
 
 bool IntersectEditor::keyPressed (const juce::KeyPress& key)
@@ -301,6 +306,17 @@ bool IntersectEditor::keyPressed (const juce::KeyPress& key)
     if (mods.isCommandDown() && (code == '-' || code == juce::KeyPress::numberPadSubtract))
     {
         adjustUiScale (-0.25f);
+        return true;
+    }
+
+    // Cmd/Ctrl+V with a link on the clipboard opens Import from URL with it. A focused text field
+    // gets the paste first, so this only sees pastes nothing else wanted.
+    if (code == 'V' && mods.isCommandDown() && ! mods.isShiftDown() && ! mods.isAltDown())
+    {
+        const auto clipboard = juce::SystemClipboard::getTextFromClipboard().trim();
+        if (! UrlImport::isWebUrl (clipboard))
+            return false;
+        showUrlImport (clipboard);
         return true;
     }
 
@@ -729,19 +745,7 @@ std::vector<juce::File> existingAudioFiles (const std::vector<juce::File>& files
 // ADD: append to the session (or load into an empty one). Undoable.
 void IntersectEditor::addFilesToKit (const std::vector<juce::File>& files)
 {
-    const auto audio = existingAudioFiles (files);
-    if (audio.empty())
-        return;
-
-    processor.stopAudition();
-    processor.enqueueUiUndoSnapshot();
-    const bool append = processor.sampleData.isLoaded();
-    processor.loadFilesAsync (audio, append);
-    if (! append)
-    {
-        processor.zoom.store (1.0f);
-        processor.scroll.store (0.0f);
-    }
+    processor.addFilesToKit (files);
 }
 
 // LOAD: replace the kit (samples and slices) and return to the editor. Undoable.
@@ -872,6 +876,45 @@ void IntersectEditor::openFileDialog()
         });
 }
 
+void IntersectEditor::showUrlImport (const juce::String& prefillUrl)
+{
+    positionUrlImportPanel();
+    urlImportPanel.open (prefillUrl);
+}
+
+void IntersectEditor::positionUrlImportPanel()
+{
+    // Centred just under the sample lane, over whatever is shown there (editor, browser, settings).
+    const int width = juce::jmin (UrlImportPanel::kWidth, getWidth() - 16);
+    urlImportPanel.setBounds ((getWidth() - width) / 2, (int) (kHeaderH + kSampleLaneH) + 6,
+                              width, urlImportPanel.getPreferredHeight());
+}
+
+void IntersectEditor::askWhereToSaveImport (const UrlImport::JobResult& result)
+{
+    auto folder = lastUrlImportSaveFolder.isDirectory() ? lastUrlImportSaveFolder : processor.getResolvedUrlImportFolder();
+    folder.createDirectory();
+    const auto suggested = folder.getChildFile (UrlImport::makeOutputFileName (result.title, {}));
+
+    urlImportChooser = std::make_unique<juce::FileChooser> ("Save Imported Audio", suggested, "*.wav");
+    urlImportChooser->launchAsync (juce::FileBrowserComponent::saveMode
+                                       | juce::FileBrowserComponent::canSelectFiles
+                                       | juce::FileBrowserComponent::warnAboutOverwriting,
+        [this, result] (const juce::FileChooser& chooser)
+        {
+            auto destination = chooser.getResult();
+            if (destination == juce::File())
+            {
+                processor.discardUrlImport (result.workFolder);
+                return;
+            }
+            if (! destination.hasFileExtension ("wav"))
+                destination = destination.withFileExtension ("wav");
+            lastUrlImportSaveFolder = destination.getParentDirectory();
+            processor.placeUrlImport (result.file, destination, result.workFolder, result.title);
+        });
+}
+
 void IntersectEditor::persistSettings()
 {
     saveUserSettings (getDesiredUiScale(), getTheme().name);
@@ -992,6 +1035,10 @@ void IntersectEditor::timerCallback()
 
     if (browserVisible)
         browser.setAuditionStatus (processor.pollAuditionStatus());
+
+    urlImportPanel.tick();
+    if (auto pending = processor.takePendingUrlImportSave())
+        askWhereToSaveImport (*pending);
 
     bool uiChanged = false;
     bool viewportChanged = false;
@@ -1165,6 +1212,7 @@ void IntersectEditor::applyTheme (const juce::String& themeName)
             browser.refreshThemeColours();
             stemView.refreshThemeColours();
             settingsView.refreshThemeColours();
+            urlImportPanel.refreshThemeColours();
             float scale = processor.apvts.getRawParameterValue (ParamIds::uiScale)->load();
             saveUserSettings (scale, themeName);
             repaint();
@@ -1184,6 +1232,7 @@ void IntersectEditor::applyTheme (const juce::String& themeName)
     browser.refreshThemeColours();
     stemView.refreshThemeColours();
     settingsView.refreshThemeColours();
+    urlImportPanel.refreshThemeColours();
     float scale = processor.apvts.getRawParameterValue (ParamIds::uiScale)->load();
     saveUserSettings (scale, themeName);
     repaint();
@@ -1234,6 +1283,10 @@ void IntersectEditor::saveUserSettings (float scale, const juce::String& themeNa
         values.set ("stemLastModel", stemModel);
     values.set ("stemExportMode", stemExportModeToString (stemView.getExportMode()));
     values.setList ("stemSelections", stemView.getRememberedSelections());
+    const auto& urlImport = processor.getUrlImportSettings();
+    values.set ("urlImportSaveMode", urlImport.askEachTime ? "ask" : "folder");
+    setPath (values, "urlImportFolder", urlImport.folder);
+    values.set ("urlImportChannel", UrlImport::channelToString (urlImport.channel));
 
     // Only the keys this editor changed are written; other instances' changes are kept.
     settingsFile.save (values);
@@ -1302,6 +1355,12 @@ void IntersectEditor::loadUserSettings()
     if (values.contains ("stemExportMode"))
         stemView.setExportMode (stemExportModeFromString (values.getString ("stemExportMode")));
     stemView.setRememberedSelections (values.getList ("stemSelections"));
+
+    IntersectProcessor::UrlImportSettings urlImport;
+    urlImport.askEachTime = values.getString ("urlImportSaveMode") == "ask";
+    urlImport.folder = getPath ("urlImportFolder");
+    urlImport.channel = UrlImport::channelFromString (values.getString ("urlImportChannel"));
+    processor.setUrlImportSettings (urlImport);
 
     applyTheme (values.getString ("theme", "dark"));
 }

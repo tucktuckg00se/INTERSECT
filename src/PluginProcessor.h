@@ -13,6 +13,7 @@
 #include "audio/LazyChopEngine.h"
 #include "audio/StemModelDownloadJob.h"
 #include "audio/OrtBundleDownloadJob.h"
+#include "urlimport/UrlImportJob.h"
 #include "UpdateCheck.h"
 #include "audio/StemSeparationJob.h"
 #include "audio/AuditionPlayer.h"
@@ -160,6 +161,10 @@ public:
 
     void loadFileAsync (const juce::File& file);
     void loadFilesAsync (const std::vector<juce::File>& files, bool append);
+    // ADD: appends existing audio files to the session (or loads them into an empty one) as one
+    // undo step. Message thread. Here rather than in the editor so a URL import that finishes
+    // while the editor is closed still lands in the kit.
+    void addFilesToKit (const std::vector<juce::File>& files);
     // Points session samples at new files (sampleId -> file) and reloads the kit with the same
     // ids, so params, stem metadata and slices are kept. Message thread; takes one undo step.
     void relinkSessionSamplesAsync (const std::vector<std::pair<int, juce::File>>& relinks);
@@ -201,6 +206,39 @@ public:
     OrtBundleDownloadJob& getOrtBundleDownloadJob() { return ortBundleDownloadJob; }
     // Newer-release check shown in Settings > General; one checker shared by all instances.
     UpdateChecker& getUpdateChecker() { return *updateChecker; }
+
+    // Import from URL (yt-dlp; see urlimport/UrlImportLogic.h). Message thread.
+    struct UrlImportSettings
+    {
+        bool askEachTime = false;   // a save dialog after each import instead of the folder
+        juce::File folder;          // empty: getDefaultUrlImportFolder()
+        UrlImport::Channel channel = UrlImport::Channel::stable;
+    };
+    const UrlImportSettings& getUrlImportSettings() const noexcept { return urlImportSettings; }
+    void setUrlImportSettings (const UrlImportSettings& settings) { urlImportSettings = settings; }
+    /** ~/Music/INTERSECT Downloads. */
+    static juce::File getDefaultUrlImportFolder();
+    juce::File getResolvedUrlImportFolder() const;
+    void startUrlImport (const juce::String& url, bool allowLong = false);
+    void cancelUrlImport() { urlImportJob.cancel(); }
+    void startUrlToolsUpdate();
+    void startUrlToolsRemoval();
+    UrlImport::UrlImportJob& getUrlImportJob() { return urlImportJob; }
+    /** How the last import ended; serial changes with every import that ends. */
+    struct UrlImportOutcome
+    {
+        UrlImport::JobResult::Status status = UrlImport::JobResult::Status::completed;
+        juce::String url;
+        juce::String message;
+        juce::String details;
+        int serial = 0;
+    };
+    const UrlImportOutcome& getLastUrlImportOutcome() const noexcept { return lastUrlImportOutcome; }
+    /** An import finished in "ask each time" mode: the editor asks where to save it (once). */
+    std::optional<UrlImport::JobResult> takePendingUrlImportSave();
+    void placeUrlImport (const juce::File& source, const juce::File& destination,
+                         const juce::File& workFolder, const juce::String& title);
+    void discardUrlImport (const juce::File& workFolder);
     void showTransientStatusMessage (const juce::String& text, bool isWarning)
     {
         setUiStatusMessage (text, isWarning);
@@ -479,6 +517,7 @@ private:
     void handleAsyncUpdate() override;
     void handleStemJobCompletionOnMessageThread();
     void handleDownloadCompletionsOnMessageThread();
+    void handleUrlImportCompletionOnMessageThread();
     void updateSampleMissingState();
     void deselectParkedSlice();
     bool isPlaceholderSample (int sampleId) const;
@@ -559,6 +598,10 @@ private:
     StemManifestRefreshJob stemManifestRefreshJob;   // after stemManifestGeneration: its callback uses it
     OrtBundleDownloadJob ortBundleDownloadJob;
     juce::SharedResourcePointer<UpdateChecker> updateChecker;
+    UrlImport::UrlImportJob urlImportJob;
+    UrlImportSettings urlImportSettings;                            // message thread
+    UrlImportOutcome lastUrlImportOutcome;                          // message thread
+    std::optional<UrlImport::JobResult> pendingUrlImportSave;       // message thread
     // Audio thread writes, message thread reads: lets a load say why it can't finish (no audio device).
     std::atomic<juce::uint32> lastProcessBlockMs { 0 };
     const juce::uint32 createdMs = juce::Time::getMillisecondCounter();

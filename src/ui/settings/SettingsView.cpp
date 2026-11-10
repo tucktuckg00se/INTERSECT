@@ -1,5 +1,6 @@
 #include "SettingsView.h"
 #include "StemSettingsPage.h"
+#include "UrlImportSettingsPage.h"
 #include "../IntersectLookAndFeel.h"
 #include "../FullViewBar.h"
 #include "../../AppFiles.h"
@@ -26,6 +27,7 @@ SettingsView::SettingsView (IntersectProcessor& p, SettingsHost& host)
     add ("General", std::make_unique<GeneralSettingsPage> (p, host));
     add ("MIDI",    std::make_unique<MidiSettingsPage> (p, host));
     add ("Files",   std::make_unique<FilesSettingsPage> (p, host));
+    add ("URL Import", std::make_unique<UrlImportSettingsPage> (p, host));
     add ("Presets", std::make_unique<PresetsSettingsPage> (p, host));
     add ("Stems",   std::make_unique<StemSettingsPage> (p, host));
 

@@ -14,6 +14,7 @@
 #include "ui/WaveformView.h"
 #include "ui/ScrollZoomBar.h"
 #include "ui/ActionPanel.h"
+#include "ui/UrlImportPanel.h"
 
 class IntersectEditor : public juce::AudioProcessorEditor,
                              public juce::DragAndDropContainer,
@@ -70,6 +71,11 @@ private:
     /** Points a missing sample at file; other missing samples found by name next to it follow. */
     void relinkSample (int sampleId, const juce::File& file);
     void openFileDialog();
+    /** Import from URL: shows the panel, the link field prefilled (paste, browser menu). */
+    void showUrlImport (const juce::String& prefillUrl);
+    void positionUrlImportPanel();
+    /** "Ask each time": a save dialog for an import waiting in staging. */
+    void askWhereToSaveImport (const UrlImport::JobResult& result);
     void saveKitToLibrary();
     void exportPreset (const juce::File& preset, bool embedSamples);
     juce::String getDefaultPresetName() const;
@@ -112,10 +118,13 @@ private:
     WaveformView    waveformView;
     ScrollZoomBar   scrollZoomBar;
     ActionPanel     actionPanel;
+    UrlImportPanel  urlImportPanel;
 
     juce::TooltipWindow tooltipWindow { this, 500 };
     std::unique_ptr<juce::FileChooser> presetChooser;
     std::unique_ptr<juce::FileChooser> openChooser;
+    std::unique_ptr<juce::FileChooser> urlImportChooser;
+    juce::File lastUrlImportSaveFolder;
     SettingsFile settingsFile;       // settings.yaml, shared with other instances (see SettingsFile)
     juce::File pendingRenamePreset;   // a SAVE whose new file should open for renaming once written
     juce::File lastExportFolder;

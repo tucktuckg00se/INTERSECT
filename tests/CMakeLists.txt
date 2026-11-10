@@ -131,3 +131,63 @@ target_link_libraries(IntersectBrowserTests PRIVATE
     juce::juce_recommended_warning_flags
 )
 add_test(NAME browser_search COMMAND IntersectBrowserTests)
+
+juce_add_console_app(IntersectUrlImportTests
+    PRODUCT_NAME "INTERSECT URL import tests"
+    VERSION "${INTERSECT_VERSION}"
+)
+
+target_sources(IntersectUrlImportTests PRIVATE
+    UrlImportTests.cpp
+    ../src/urlimport/UrlImportLogic.cpp
+    ../src/urlimport/ToolProcess.cpp
+)
+target_include_directories(IntersectUrlImportTests PRIVATE
+    ..
+    ../src
+)
+target_compile_definitions(IntersectUrlImportTests PRIVATE
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+)
+target_link_libraries(IntersectUrlImportTests PRIVATE
+    juce::juce_core
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_warning_flags
+)
+add_test(NAME url_import COMMAND IntersectUrlImportTests)
+
+# Opt-in end-to-end run against a real site (needs the network, so it isn't an add_test):
+#   INTERSECT_MEDIA_TOOLS_MANIFEST=file:///.../intersect_media_tools_manifest.json \
+#     IntersectUrlImportE2E <url> <fresh tools folder> <output folder>
+juce_add_console_app(IntersectUrlImportE2E
+    PRODUCT_NAME "INTERSECT URL import end-to-end"
+    VERSION "${INTERSECT_VERSION}"
+    NEEDS_CURL TRUE
+)
+
+target_sources(IntersectUrlImportE2E PRIVATE
+    UrlImportEndToEnd.cpp
+    ../src/urlimport/UrlImportLogic.cpp
+    ../src/urlimport/ToolProcess.cpp
+    ../src/urlimport/ToolInstall.cpp
+    ../src/urlimport/UrlImportJob.cpp
+    ../src/Download.cpp
+    ../src/HttpFetch.cpp
+    ../src/audio/StemSeparation.cpp
+    ../src/audio/StemSpectral.cpp
+)
+target_include_directories(IntersectUrlImportE2E PRIVATE
+    ..
+    ../src
+)
+target_compile_definitions(IntersectUrlImportE2E PRIVATE
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=1
+)
+target_link_libraries(IntersectUrlImportE2E PRIVATE
+    juce::juce_audio_basics
+    juce::juce_cryptography
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_warning_flags
+)

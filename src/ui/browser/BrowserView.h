@@ -80,6 +80,8 @@ public:
     std::function<void (const juce::File&)> onPresetChosen;
     /** "Open Files..." from the open button: pick audio / presets with the system dialog. */
     std::function<void()> onOpenDialogRequested;
+    /** "Import from URL..." in the open menu. */
+    std::function<void()> onImportUrlRequested;
     /** Right-click Export... / Export with Samples... on a preset. */
     std::function<void (const juce::File& preset, bool embedSamples)> onExportRequested;
     std::function<void()> onCloseRequested;
