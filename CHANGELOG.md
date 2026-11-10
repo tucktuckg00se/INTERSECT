@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.19.1] - 2026-11-09
+
 ### Added
 - **Import from URL**: paste a link from YouTube, SoundCloud, Bandcamp or another site yt-dlp supports, and INTERSECT downloads the audio, saves it as a WAV and adds it to your kit (one undo step). Use **Import from URL...** in the file browser's open menu, type or paste the link into the browser's path bar, or press Ctrl/Cmd+V anywhere in INTERSECT with a link copied.
 - The first import downloads the tools it needs: yt-dlp from its official releases, plus ffmpeg and QuickJS from INTERSECT's tools repository. yt-dlp keeps itself up to date (checked at most every 6 hours, when you import), and every download is checked against its published checksum before it is used.
