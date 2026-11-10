@@ -160,7 +160,19 @@ IntersectEditor::IntersectEditor (IntersectProcessor& p)
     browser.onExportRequested = [this] (const juce::File& preset, bool embedSamples) { exportPreset (preset, embedSamples); };
     headerBar.onSaveRequested = [this] { saveKitToLibrary(); };
     browser.onOpenDialogRequested = [this] { openFileDialog(); };
-    browser.onImportUrlRequested = [this] { showUrlImport ({}); };
+    browser.onImportUrlRequested = [this] (const juce::String& url)
+    {
+        // A link entered in the path bar starts right away (Enter means go); the menu asks for one.
+        if (url.isNotEmpty())
+        {
+            positionUrlImportPanel();
+            urlImportPanel.startWithUrl (url);
+        }
+        else
+        {
+            showUrlImport ({});
+        }
+    };
     browser.onCloseRequested = [this] { setBrowserVisible (false); };
     browser.onPersistentStateChanged = [this] { persistSettings(); };
     browser.onFolderChanged = [this] { persistSettings(); };   // other instances follow the last folder

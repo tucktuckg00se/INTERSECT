@@ -6,12 +6,14 @@
 /**
     Clickable path for the browser toolbar: "Home > Samples > Breaks". Clicking a segment
     navigates there; clicking the empty space (or double-clicking) turns it into a text field
-    for typing a path. When the path doesn't fit, leading segments collapse into "...".
+    for typing a path. When the path doesn't fit, leading segments collapse into "...". A web link
+    typed or pasted there instead of a path goes to onUrlEntered (Import from URL).
 
     The TextEditor is a permanent child that is only shown and hidden, never destroyed from
     inside its own callbacks (see the TextEditor lifecycle note in CLAUDE.md).
 */
-class Breadcrumb : public juce::Component
+class Breadcrumb : public juce::Component,
+                   public juce::SettableTooltipClient
 {
 public:
     Breadcrumb();
@@ -28,6 +30,8 @@ public:
     void mouseExit (const juce::MouseEvent& e) override;
 
     std::function<void (const juce::File&)> onNavigate;
+    /** A link was entered instead of a folder (already normalised to http(s)://). */
+    std::function<void (const juce::String& url)> onUrlEntered;
 
 private:
     struct Segment

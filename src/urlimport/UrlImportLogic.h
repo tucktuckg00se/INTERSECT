@@ -68,6 +68,11 @@ MediaToolsEntry parseMediaToolsManifest (const juce::String& json, const juce::S
 
 /** A pasted or typed link worth handing to yt-dlp: http(s), a host, no spaces, sane length. */
 bool isWebUrl (const juce::String& text);
+/** A link as people type it into an address bar: the text itself when isWebUrl accepts it, or
+    "https://" + text for scheme-less links ("youtu.be/abc", "www.youtube.com/watch?v=..."): a host
+    with a dot followed by a path, or a "www." host. Empty for anything else, so file names
+    ("kick.wav"), paths and plain words never count. */
+juce::String normaliseTypedUrl (const juce::String& text);
 
 struct YtDlpPaths
 {

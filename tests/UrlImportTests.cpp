@@ -132,6 +132,25 @@ void webUrlsAreRecognised()
     require (! isWebUrl ("https://example.com/" + juce::String::repeatedString ("a", 3000)), "too long");
 }
 
+void typedLinksAreNormalised()
+{
+    requireEqual (normaliseTypedUrl ("https://youtu.be/zsdtyIff2PQ"), "https://youtu.be/zsdtyIff2PQ", "full link unchanged");
+    requireEqual (normaliseTypedUrl ("  youtu.be/zsdtyIff2PQ  "), "https://youtu.be/zsdtyIff2PQ", "scheme added");
+    requireEqual (normaliseTypedUrl ("www.youtube.com/watch?v=abc"), "https://www.youtube.com/watch?v=abc", "www link");
+    requireEqual (normaliseTypedUrl ("www.example.com"), "https://www.example.com", "bare www host");
+    requireEqual (normaliseTypedUrl ("soundcloud.com/artist/track"), "https://soundcloud.com/artist/track", "host + path");
+    requireEqual (normaliseTypedUrl ("\"youtu.be/x1\""), "https://youtu.be/x1", "quotes from a paste");
+    requireEqual (normaliseTypedUrl ("kick.wav"), {}, "a file name is not a link");
+    requireEqual (normaliseTypedUrl ("example.com"), {}, "no path, no www");
+    requireEqual (normaliseTypedUrl ("/home/me/Samples"), {}, "absolute path");
+    requireEqual (normaliseTypedUrl ("C:\\Samples\\Breaks"), {}, "Windows path");
+    requireEqual (normaliseTypedUrl ("my folder/x"), {}, "spaces");
+    requireEqual (normaliseTypedUrl ("../Samples/x"), {}, "relative path");
+    requireEqual (normaliseTypedUrl ("~/Music/x.wav"), {}, "home path");
+    requireEqual (normaliseTypedUrl ("file:///etc/passwd"), {}, "other schemes");
+    requireEqual (normaliseTypedUrl ({}), {}, "empty");
+}
+
 void ytDlpArgumentsAreSafe()
 {
     YtDlpPaths paths;
@@ -362,6 +381,7 @@ int main()
     run ("newest media release is picked", mediaReleaseIsPicked);
     run ("media manifest parsing and validation", manifestParses);
     run ("web links are recognised", webUrlsAreRecognised);
+    run ("typed links are normalised", typedLinksAreNormalised);
     run ("yt-dlp arguments", ytDlpArgumentsAreSafe);
     run ("yt-dlp output lines", outputLinesParse);
     run ("failures are classified", failuresAreClassified);

@@ -100,6 +100,11 @@ BrowserView::BrowserView()
     addAndMakeVisible (searchEditor);
 
     breadcrumb.onNavigate = [this] (const juce::File& dir) { navigateTo (dir); };
+    breadcrumb.onUrlEntered = [this] (const juce::String& url)
+    {
+        if (onImportUrlRequested != nullptr)
+            onImportUrlRequested (url);
+    };
 
     places.onPlaceChosen = [this] (const juce::File& dir) { navigateTo (dir); };
     places.onBookmarksChanged = [this]
@@ -676,7 +681,7 @@ void BrowserView::showOpenMenu()
             else if (result == kMenuOpenFolderDialog)
                 safe->openFolderDialog();
             else if (result == kMenuImportUrl && safe->onImportUrlRequested != nullptr)
-                safe->onImportUrlRequested();
+                safe->onImportUrlRequested ({});
         });
 }
 

@@ -174,6 +174,26 @@ bool isWebUrl (const juce::String& text)
     return host.contains (".") && ! host.startsWithChar ('.') && ! host.endsWithChar ('.');
 }
 
+juce::String normaliseTypedUrl (const juce::String& text)
+{
+    const auto typed = text.trim().unquoted().trim();
+    if (isWebUrl (typed))
+        return typed;
+    if (typed.isEmpty() || typed.containsAnyOf (" \t\r\n\\") || typed.contains ("://")
+        || typed.startsWithChar ('-') || juce::File::isAbsolutePath (typed))
+        return {};
+
+    const auto host = typed.upToFirstOccurrenceOf ("/", false, false);
+    const bool hostLooksReal = host.contains (".") && ! host.startsWithChar ('.') && ! host.endsWithChar ('.')
+                            && host.containsOnly ("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-:");
+    const bool hasPath = typed.containsChar ('/') && typed.fromFirstOccurrenceOf ("/", false, false).isNotEmpty();
+    if (! hostLooksReal || ! (hasPath || host.startsWithIgnoreCase ("www.")))
+        return {};
+
+    const auto url = "https://" + typed;
+    return isWebUrl (url) ? url : juce::String();
+}
+
 juce::StringArray buildYtDlpArgs (const YtDlpPaths& paths, const juce::String& url, bool allowLong)
 {
     juce::StringArray args {

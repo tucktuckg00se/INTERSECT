@@ -24,6 +24,8 @@ public:
 
     /** Shows the link field (prefilled) or, while an import runs, its progress. */
     void open (const juce::String& prefillUrl);
+    /** Starts importing url straight away and shows its progress (a link typed into the path bar). */
+    void startWithUrl (const juce::String& url);
     void close();
     /** Editor timer: follows the job; opens itself when an import needs an answer. */
     void tick();

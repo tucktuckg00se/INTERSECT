@@ -102,16 +102,13 @@ void UrlImportPanel::open (const juce::String& prefillUrl)
         previousFocus = (focused != nullptr && ! isParentOf (focused)) ? focused : nullptr;
     }
 
+    if (prefillUrl.isNotEmpty())
+        urlField.setText (prefillUrl.trim(), false);   // kept for later if an import is running now
+
     if (isImporting (processor.getUrlImportJob()))
-    {
         showView (View::running);
-    }
     else
-    {
-        if (prefillUrl.isNotEmpty())
-            urlField.setText (prefillUrl.trim(), false);
         showView (View::entry);
-    }
 
     setVisible (true);
     toFront (false);
@@ -119,12 +116,21 @@ void UrlImportPanel::open (const juce::String& prefillUrl)
     if (view == View::entry)
         juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<UrlImportPanel> (this)]
         {
-            if (safe != nullptr && safe->isShowing())
+            if (safe != nullptr && safe->isShowing() && safe->view == View::entry)
             {
                 safe->urlField.grabKeyboardFocus();
                 safe->urlField.selectAll();
             }
         });
+}
+
+void UrlImportPanel::startWithUrl (const juce::String& url)
+{
+    open (url);
+    if (view == View::entry)
+        startImport (false);
+    else
+        processor.showTransientStatusMessage ("Another URL import is running; the new link is in Import from URL when it finishes", true);
 }
 
 void UrlImportPanel::close()
@@ -194,7 +200,7 @@ void UrlImportPanel::tick()
 
 void UrlImportPanel::startImport (bool allowLong)
 {
-    const auto url = view == View::entry ? urlField.getText().trim() : outcomeUrl;
+    const auto url = view == View::entry ? UrlImport::normaliseTypedUrl (urlField.getText()) : outcomeUrl;
     if (! UrlImport::isWebUrl (url))
     {
         if (view != View::entry)

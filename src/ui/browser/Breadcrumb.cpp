@@ -1,4 +1,5 @@
 #include "Breadcrumb.h"
+#include "../../urlimport/UrlImportLogic.h"
 #include "BrowserIcons.h"
 #include "../IntersectLookAndFeel.h"
 #include "../../AppFiles.h"
@@ -34,6 +35,7 @@ Breadcrumb::Breadcrumb()
             endEdit();
     };
     addChildComponent (editor);
+    setTooltip ("Click empty space to type a path, or paste a link to import it");
     refreshThemeColours();
 }
 
@@ -242,6 +244,19 @@ void Breadcrumb::commitEdit()
         endEdit();
         if (onNavigate != nullptr)
             onNavigate (dir);
+        return;
+    }
+
+    // A link instead of a folder: import it. Deferred so nothing heavier runs inside the
+    // TextEditor's own return-key callback.
+    if (const auto url = UrlImport::normaliseTypedUrl (text); url.isNotEmpty() && onUrlEntered != nullptr)
+    {
+        endEdit();
+        juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<Breadcrumb> (this), url]
+        {
+            if (safe != nullptr && safe->onUrlEntered != nullptr)
+                safe->onUrlEntered (url);
+        });
         return;
     }
 
