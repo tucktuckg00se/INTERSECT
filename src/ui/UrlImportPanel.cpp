@@ -182,7 +182,7 @@ void UrlImportPanel::tick()
             const auto newStage = job.getStage();
             const auto newProgress = job.getProgress();
             indeterminatePhase = std::fmod (indeterminatePhase + 0.012f, 1.0f);
-            if (newStage != stage || newProgress != progress || newProgress < 0.0f)
+            if (newStage != stage || std::abs (newProgress - progress) > 0.0005f || newProgress < 0.0f)
             {
                 stage = newStage;
                 progress = newProgress;
