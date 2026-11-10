@@ -36,6 +36,18 @@ inline juce::File getSettingsDir()
                .getChildFile ("INTERSECT");
 }
 
+/** Per-user folder for downloaded tools: ~/.local/share/INTERSECT on Linux (like the ONNX Runtime
+    bundles), the settings folder elsewhere. */
+inline juce::File getDataDir()
+{
+   #if JUCE_LINUX
+    return juce::File::getSpecialLocation (juce::File::userHomeDirectory)
+               .getChildFile (".local").getChildFile ("share").getChildFile ("INTERSECT");
+   #else
+    return getSettingsDir();
+   #endif
+}
+
 inline juce::File getPresetsDir()
 {
     return getSettingsDir().getChildFile ("presets");

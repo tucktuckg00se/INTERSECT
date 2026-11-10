@@ -150,6 +150,7 @@ target_sources(Intersect PRIVATE
     src/PresetFile.cpp
     src/SettingsFile.cpp
     src/HttpFetch.cpp
+    src/Download.cpp
     src/UpdateCheck.cpp
     src/StandaloneApp.cpp
     src/audio/SampleData.cpp

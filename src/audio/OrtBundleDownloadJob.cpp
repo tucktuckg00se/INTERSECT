@@ -1,105 +1,5 @@
 #include "OrtBundleDownloadJob.h"
-
-namespace
-{
-
-bool downloadFileToTarget (const juce::URL& url,
-                           const juce::File& targetFile,
-                           std::atomic<bool>& shouldCancel,
-                           juce::Thread& thread,
-                           std::atomic<float>* progress,
-                           juce::int64 expectedBytes,
-                           juce::String& errorMessage)
-{
-    juce::TemporaryFile tempFile (targetFile);
-    int statusCode = 0;
-    juce::StringPairArray responseHeaders;
-    auto input = url.createInputStream (
-        juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inAddress)
-            .withConnectionTimeoutMs (30000)
-            .withNumRedirectsToFollow (5)
-            .withStatusCode (&statusCode)
-            .withResponseHeaders (&responseHeaders));
-
-    if (input == nullptr || statusCode >= 400)
-    {
-        errorMessage = statusCode > 0
-                         ? "HTTP " + juce::String (statusCode)
-                         : "network connection failed";
-        return false;
-    }
-
-    const juce::int64 totalBytes = expectedBytes > 0
-                                     ? expectedBytes
-                                     : input->getTotalLength();
-
-    auto output = tempFile.getFile().createOutputStream();
-    if (output == nullptr)
-    {
-        errorMessage = "write failed";
-        return false;
-    }
-
-    juce::HeapBlock<char> buffer (64 * 1024);
-    juce::int64 bytesReceived = 0;
-    for (;;)
-    {
-        if (thread.threadShouldExit() || shouldCancel.load (std::memory_order_acquire))
-        {
-            output.reset();
-            tempFile.deleteTemporaryFile();
-            errorMessage = "cancelled";
-            return false;
-        }
-
-        const int bytesRead = input->read (buffer.getData(), 64 * 1024);
-        if (bytesRead <= 0)
-            break;
-
-        output->write (buffer.getData(), (size_t) bytesRead);
-        bytesReceived += bytesRead;
-
-        if (progress != nullptr && totalBytes > 0)
-            progress->store (juce::jlimit (0.0f, 0.95f,
-                                           (float) ((double) bytesReceived / (double) totalBytes) * 0.95f),
-                             std::memory_order_release);
-    }
-
-    output->flush();
-    output.reset();
-
-    if (! tempFile.overwriteTargetFileWithTemporary())
-    {
-        tempFile.deleteTemporaryFile();
-        errorMessage = "install failed";
-        return false;
-    }
-
-    return true;
-}
-
-bool extractZipToFolder (const juce::File& archive,
-                         const juce::File& destination,
-                         juce::String& errorMessage)
-{
-    juce::ZipFile zip (archive);
-    if (zip.getNumEntries() <= 0)
-    {
-        errorMessage = "archive is empty or not a valid zip";
-        return false;
-    }
-
-    auto result = zip.uncompressTo (destination, true);
-    if (result.failed())
-    {
-        errorMessage = "extraction failed: " + result.getErrorMessage();
-        return false;
-    }
-
-    return true;
-}
-
-} // namespace
+#include "../Download.h"
 
 OrtBundleDownloadJob::OrtBundleDownloadJob()
     : juce::Thread ("OrtBundleDownload")
@@ -182,8 +82,7 @@ void OrtBundleDownloadJob::run()
         juce::String downloadError;
         const auto manifestUrl = juce::URL (getOrtBundleManifestDownloadUrl());
         const auto manifestFile = getOrtBundleManifestFile (rootFolder);
-        (void) downloadFileToTarget (manifestUrl, manifestFile, shouldCancel, *this,
-                                     nullptr, 0, downloadError);
+        (void) Download::downloadFileToTarget (manifestUrl, manifestFile, shouldCancel, *this, downloadError);
         // Manifest is best-effort; continue on failure using whatever is on disk.
     }
 
@@ -222,8 +121,17 @@ void OrtBundleDownloadJob::run()
 
     const auto archiveFile = bundleFolder.getChildFile (entry.archiveFileName);
     juce::String downloadError;
-    if (! downloadFileToTarget (juce::URL (entry.downloadUrl), archiveFile, shouldCancel, *this,
-                                &progress, entry.downloadBytes, downloadError))
+    // Downloading fills the bar to 95%; extracting and activating take it the rest of the way.
+    const auto onBytes = [this, expectedBytes = entry.downloadBytes] (juce::int64 received, juce::int64 total)
+    {
+        if (expectedBytes > 0)
+            total = expectedBytes;
+        if (total > 0)
+            progress.store (juce::jlimit (0.0f, 0.95f, (float) ((double) received / (double) total) * 0.95f),
+                            std::memory_order_release);
+    };
+    if (! Download::downloadFileToTarget (juce::URL (entry.downloadUrl), archiveFile, shouldCancel, *this,
+                                          downloadError, {}, onBytes))
     {
         const juce::ScopedLock sl (lock);
         if (downloadError == "cancelled")
@@ -246,7 +154,7 @@ void OrtBundleDownloadJob::run()
     }
 
     juce::String extractError;
-    if (! extractZipToFolder (archiveFile, bundleFolder, extractError))
+    if (! Download::extractZipToFolder (archiveFile, bundleFolder, extractError))
     {
         archiveFile.deleteFile();
         const juce::ScopedLock sl (lock);

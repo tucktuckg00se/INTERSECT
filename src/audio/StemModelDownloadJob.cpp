@@ -1,101 +1,6 @@
 #include "StemModelDownloadJob.h"
 #include "../HttpFetch.h"
-#include <juce_cryptography/juce_cryptography.h>
-
-namespace
-{
-
-// onBytes (received, total) reports progress; total is -1 when the server doesn't say.
-// When expectedSha256 is set, the file is only installed if its hash matches.
-bool downloadFileToTarget (const juce::URL& url,
-                           const juce::File& targetFile,
-                           std::atomic<bool>& shouldCancel,
-                           juce::Thread& thread,
-                           juce::String& errorMessage,
-                           const juce::String& expectedSha256 = {},
-                           const std::function<void (juce::int64, juce::int64)>& onBytes = {})
-{
-    juce::TemporaryFile tempFile (targetFile);
-    int statusCode = 0;
-    juce::StringPairArray responseHeaders;
-    auto input = url.createInputStream (
-        juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inAddress)
-            .withConnectionTimeoutMs (30000)
-            .withNumRedirectsToFollow (5)
-            .withStatusCode (&statusCode)
-            .withResponseHeaders (&responseHeaders));
-
-    if (input == nullptr || statusCode >= 400)
-    {
-        errorMessage = statusCode > 0
-                         ? "HTTP " + juce::String (statusCode)
-                         : "network connection failed";
-        return false;
-    }
-
-    auto output = tempFile.getFile().createOutputStream();
-    if (output == nullptr)
-    {
-        errorMessage = "write failed";
-        return false;
-    }
-
-    const auto totalBytes = input->getTotalLength();
-    juce::int64 receivedBytes = 0;
-    juce::HeapBlock<char> buffer (64 * 1024);
-    for (;;)
-    {
-        if (thread.threadShouldExit() || shouldCancel.load (std::memory_order_acquire))
-        {
-            output.reset();
-            tempFile.deleteTemporaryFile();
-            errorMessage = "cancelled";
-            return false;
-        }
-
-        const int bytesRead = input->read (buffer.getData(), 64 * 1024);
-        if (bytesRead <= 0)
-            break;
-
-        if (! output->write (buffer.getData(), (size_t) bytesRead))
-        {
-            output.reset();
-            tempFile.deleteTemporaryFile();
-            errorMessage = "write failed";
-            return false;
-        }
-
-        receivedBytes += bytesRead;
-        if (onBytes)
-            onBytes (receivedBytes, totalBytes);
-    }
-
-    output->flush();
-    output.reset();
-
-    if (expectedSha256.isNotEmpty())
-    {
-        juce::FileInputStream hashInput (tempFile.getFile());
-        const auto actual = hashInput.openedOk() ? juce::SHA256 (hashInput).toHexString() : juce::String();
-        if (! actual.equalsIgnoreCase (expectedSha256))
-        {
-            tempFile.deleteTemporaryFile();
-            errorMessage = "checksum mismatch";
-            return false;
-        }
-    }
-
-    if (! tempFile.overwriteTargetFileWithTemporary())
-    {
-        tempFile.deleteTemporaryFile();
-        errorMessage = "install failed";
-        return false;
-    }
-
-    return true;
-}
-
-} // namespace
+#include "../Download.h"
 
 juce::String resolveStemModelManifestUrl (juce::Thread& thread)
 {
@@ -326,8 +231,8 @@ void StemModelDownloadJob::run()
             progress.store (((float) i + fileFraction) / numModels, std::memory_order_release);
         };
 
-        if (! downloadFileToTarget (juce::URL (entry.downloadUrl), targetFile, shouldCancel, *this,
-                                    downloadError, entry.sha256, onBytes))
+        if (! Download::downloadFileToTarget (juce::URL (entry.downloadUrl), targetFile, shouldCancel, *this,
+                                              downloadError, entry.sha256, onBytes))
         {
             const juce::ScopedLock sl (lock);
             if (downloadError == "cancelled")
