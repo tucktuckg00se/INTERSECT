@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Import from URL** can save FLAC as well as WAV. In SET → URL Import → **Output**, choose WAV 32-bit float (the default), WAV 24-bit or 16-bit, or FLAC 24-bit or 16-bit (lossless, about half the size of WAV), and a sample rate: the original, 44.1, 48 or 96 kHz, or any rate you type from 8000 to 192000 Hz.
+- An **AUDIO** button on each sample in the sample lane, next to MIDI: drag it into your DAW or a folder to drop the sample's audio file, or click it to save a copy. REX2 loops come out as a WAV.
+- **REPORT AN ISSUE** in SET → General opens a bug report on GitHub with your INTERSECT version, OS, plugin format and DAW already filled in. Nothing is sent until you submit it.
+
+### Changed
+- **SET BPM** opens a small box like the remove prompt: pick the length from a dropdown, see the BPM it gives, then press **SET** (or Return). **CANCEL**, Esc or a click outside leaves everything as it was.
+
+### Fixed
+- Ctrl+Z (undo), Ctrl+V (paste a link) and Ctrl+F (search the file browser) did nothing on Linux.
+
 ## [0.19.1] - 2026-11-09
 
 ### Added
