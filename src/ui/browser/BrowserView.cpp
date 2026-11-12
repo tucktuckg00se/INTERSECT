@@ -946,7 +946,9 @@ bool BrowserView::keyPressed (const juce::KeyPress& key)
         return false;
     }
 
-    if (key.getTextCharacter() == '/' || (key.getModifiers().isCommandDown() && key.getKeyCode() == 'F'))
+    // 'f' too: on Linux, X11 reports Ctrl+F as the lower-case letter.
+    const auto keyCode = key.getKeyCode();
+    if (key.getTextCharacter() == '/' || (key.getModifiers().isCommandDown() && (keyCode == 'F' || keyCode == 'f')))
     {
         searchEditor.grabKeyboardFocus();
         return true;

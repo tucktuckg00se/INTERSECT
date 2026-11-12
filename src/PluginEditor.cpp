@@ -292,6 +292,10 @@ bool IntersectEditor::keyPressed (const juce::KeyPress& key)
 {
     auto mods = key.getModifiers();
     int code = key.getKeyCode();
+    // Letters are compared in upper case. On Linux, X11 reports Ctrl+letter as the lower-case
+    // letter (Ctrl+Z arrives as 'z'), while Shift+letter arrives in upper case.
+    if (code >= 'a' && code <= 'z')
+        code -= 'a' - 'A';
 
     // Ctrl+Shift+Z - Redo
     if (code == 'Z' && mods.isCommandDown() && mods.isShiftDown())
