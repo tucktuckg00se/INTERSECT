@@ -9,7 +9,8 @@ struct ImportRequest
     juce::String url;
     Channel channel = Channel::stable;
     bool allowLong = false;          // the user confirmed an import over an hour
-    juce::File destinationFolder;    // empty: leave the WAV in staging for a save dialog
+    juce::File destinationFolder;    // empty: leave the file in staging for a save dialog
+    OutputFormat format;             // what ffmpeg writes (WAV / FLAC, bit depth, rate)
 };
 
 struct JobResult
@@ -20,7 +21,7 @@ struct JobResult
     Mode mode = Mode::import;
     Status status = Status::failed;
     ImportRequest request;
-    juce::File file;          // completed import / place: the WAV
+    juce::File file;          // completed import / place: the audio file
     juce::File workFolder;    // import without a destination: delete once the file is placed
     juce::String title;
     double duration = -1.0;

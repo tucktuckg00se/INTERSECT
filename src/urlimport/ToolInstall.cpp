@@ -410,6 +410,10 @@ ToolInstall::Outcome ToolInstall::ensure (const InstallContext& context, Channel
             }
             keepInstalled ("Couldn't update the audio tools (" + error + "), so the installed ones were used.");
         }
+        else
+        {
+            out.mediaChanged = true;
+        }
     }
 
     if (! checkFailed)

@@ -213,6 +213,7 @@ public:
         bool askEachTime = false;   // a save dialog after each import instead of the folder
         juce::File folder;          // empty: getDefaultUrlImportFolder()
         UrlImport::Channel channel = UrlImport::Channel::stable;
+        UrlImport::OutputFormat format;   // WAV 32-bit float at the source's rate unless changed
     };
     const UrlImportSettings& getUrlImportSettings() const noexcept { return urlImportSettings; }
     void setUrlImportSettings (const UrlImportSettings& settings) { urlImportSettings = settings; }

@@ -194,7 +194,74 @@ juce::String normaliseTypedUrl (const juce::String& text)
     return isWebUrl (url) ? url : juce::String();
 }
 
-juce::StringArray buildYtDlpArgs (const YtDlpPaths& paths, const juce::String& url, bool allowLong)
+//==============================================================================
+
+bool isValidSampleRate (int hz)
+{
+    return hz >= kMinSampleRate && hz <= kMaxSampleRate;
+}
+
+juce::String formatToString (const OutputFormat& format)
+{
+    if (format.codec == OutputFormat::Codec::flac)
+        return format.bitDepth == 16 ? "flac-16" : "flac-24";
+    if (format.bitDepth == 16)
+        return "wav-16";
+    if (format.bitDepth == 24)
+        return "wav-24";
+    return "wav-f32";
+}
+
+OutputFormat formatFromString (const juce::String& text)
+{
+    const auto value = text.trim().toLowerCase();
+    OutputFormat format;
+    if (value == "wav-24")        format.bitDepth = 24;
+    else if (value == "wav-16")   format.bitDepth = 16;
+    else if (value == "flac-24")  { format.codec = OutputFormat::Codec::flac; format.bitDepth = 24; }
+    else if (value == "flac-16")  { format.codec = OutputFormat::Codec::flac; format.bitDepth = 16; }
+    return format;
+}
+
+juce::String fileExtension (const OutputFormat& format)
+{
+    return format.codec == OutputFormat::Codec::flac ? "flac" : "wav";
+}
+
+juce::String codecName (const OutputFormat& format)
+{
+    return format.codec == OutputFormat::Codec::flac ? "FLAC" : "WAV";
+}
+
+juce::String ffmpegOutputArgs (const OutputFormat& format)
+{
+    const bool flac = format.codec == OutputFormat::Codec::flac;
+    const bool sixteen = format.bitDepth == 16;
+
+    juce::String args;
+    if (flac)
+        args = sixteen ? "-c:a flac -sample_fmt s16" : "-c:a flac -sample_fmt s32 -bits_per_raw_sample 24";
+    else
+        args = sixteen ? "-c:a pcm_s16le" : format.bitDepth == 24 ? "-c:a pcm_s24le" : "-c:a pcm_f32le";
+
+    const bool resample = isValidSampleRate (format.sampleRate);
+    if (sixteen)
+    {
+        // Down to 16 bits with triangular dither rather than plain rounding; the resampler does both.
+        args << " -af aresample=" << (resample ? "osr=" + juce::String (format.sampleRate) + ":" : juce::String())
+             << "osf=s16:dither_method=triangular";
+    }
+    else if (resample)
+    {
+        args << " -ar " << format.sampleRate;
+    }
+    return args;
+}
+
+//==============================================================================
+
+juce::StringArray buildYtDlpArgs (const YtDlpPaths& paths, const juce::String& url, bool allowLong,
+                                  const OutputFormat& format)
 {
     juce::StringArray args {
         // Only what we pass counts: no user config files, no plugins, no other JS runtime
@@ -207,8 +274,8 @@ juce::StringArray buildYtDlpArgs (const YtDlpPaths& paths, const juce::String& u
         "--cache-dir", paths.cacheDir.getFullPathName(),
         "--socket-timeout", "30",
         "-f", "bestaudio/best",
-        "-x", "--audio-format", "wav",
-        "--ppa", "ExtractAudio+ffmpeg_o:-c:a pcm_f32le",
+        "-x", "--audio-format", fileExtension (format),
+        "--ppa", "ExtractAudio+ffmpeg_o:" + ffmpegOutputArgs (format),
         // The executable itself: a folder makes yt-dlp look for files named exactly ffmpeg/ffprobe.
         "--ffmpeg-location", paths.ffmpeg.getFullPathName(),
         "--fixup", "never",
@@ -313,6 +380,9 @@ FailureKind classifyFailure (const juce::StringArray& outputTail)
 
     // Order matters: the bot check also suggests --cookies, like the account cases, and our own
     // tools failing ("ffmpeg not found", "Postprocessing: ...") must not read as a missing video.
+    // An ffmpeg without the chosen encoder (FLAC before the tools added it) wants a tools update.
+    if (containsAny (errors, { "unknown encoder", "encoder not found" }))
+        return FailureKind::toolsOutdated;
     if (containsAny (errors, { "ffmpeg not found", "ffprobe and ffmpeg", "postprocessing:" }))
         return FailureKind::other;
     if (errors.contains ("unsupported url"))
@@ -357,6 +427,7 @@ juce::String describeFailure (FailureKind kind, const juce::String& rawError)
         case FailureKind::noAudio:        return "No audio could be found at that link.";
         case FailureKind::network:        return "Couldn't reach the site. Check your internet connection and try again.";
         case FailureKind::ytDlpOutdated:  return "The site changed and yt-dlp can't read it yet. A fix usually arrives within days; switching URL Import to Nightly in Settings often helps sooner.";
+        case FailureKind::toolsOutdated:  return "The installed audio tools can't write this format yet. Try UPDATE NOW in Settings > URL Import, or choose WAV there.";
         case FailureKind::other:          break;
     }
     return rawError.isNotEmpty() ? "yt-dlp: " + rawError : "The import failed. COPY DETAILS has yt-dlp's output.";
@@ -364,12 +435,12 @@ juce::String describeFailure (FailureKind kind, const juce::String& rawError)
 
 bool failureSuggestsUpdate (FailureKind kind)
 {
-    return kind == FailureKind::ytDlpOutdated || kind == FailureKind::other;
+    return kind == FailureKind::ytDlpOutdated || kind == FailureKind::toolsOutdated || kind == FailureKind::other;
 }
 
 //==============================================================================
 
-juce::String makeOutputFileName (const juce::String& title, const juce::String& id)
+juce::String makeOutputFileName (const juce::String& title, const juce::String& id, const juce::String& extension)
 {
     auto base = juce::File::createLegalFileName (title.trim());
     if (base.trim().isEmpty())
@@ -377,7 +448,7 @@ juce::String makeOutputFileName (const juce::String& title, const juce::String& 
     if (base.trim().isEmpty())
         base = "Imported audio";
 
-    // Keep room for " (12).wav" and deep folders; cut on a character, not a byte.
+    // Keep room for " (12).flac" and deep folders; cut on a character, not a byte.
     constexpr int kMaxChars = 120;
     if (base.length() > kMaxChars)
         base = base.substring (0, kMaxChars);
@@ -395,7 +466,8 @@ juce::String makeOutputFileName (const juce::String& title, const juce::String& 
     if (reserved.contains (base.upToFirstOccurrenceOf (".", false, false).trim(), true))
         base = "_" + base;
 
-    return base + ".wav";
+    const auto ext = extension.trimCharactersAtStart (".").trim();
+    return base + "." + (ext.isNotEmpty() ? ext : juce::String ("wav"));
 }
 
 juce::File uniqueFileIn (const juce::File& folder, const juce::String& fileName)

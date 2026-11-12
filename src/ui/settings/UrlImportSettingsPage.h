@@ -1,7 +1,9 @@
 #pragma once
 #include "SettingsPages.h"
+#include "../../urlimport/UrlImportLogic.h"
 
-/** Import from URL: where imports are saved, which yt-dlp builds to follow, and the installed tools. */
+/** Import from URL: where imports are saved, what they are saved as, which yt-dlp builds to
+    follow, and the installed tools. */
 class UrlImportSettingsPage final : public SettingsPage
 {
 public:
@@ -16,12 +18,20 @@ protected:
 private:
     void chooseFolder();
     void openFolder();
+    void setOutputFormat (const UrlImport::OutputFormat& format);
+    /** The custom rate field's text, applied if it is a valid rate. */
+    void commitCustomRate();
 
     SegmentedControl saveModeChips;
     PathField folderField;
     juce::TextButton chooseButton { "CHOOSE..." };
     juce::TextButton defaultButton { "DEFAULT" };
     juce::TextButton openButton { "OPEN" };
+    DropdownField formatDropdown;
+    SegmentedControl rateChips;
+    juce::TextEditor customRateField;
+    bool customRateSelected = false;   // CUSTOM chosen, even before a valid rate is typed
+    bool customRateInvalid = false;
     SegmentedControl channelChips;
     juce::TextButton updateButton { "UPDATE NOW" };
     juce::TextButton removeButton { "REMOVE" };

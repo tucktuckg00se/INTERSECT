@@ -6,7 +6,7 @@
 
     yt-dlp does the downloading. It is never built or shipped by INTERSECT: it comes from yt-dlp's
     own GitHub releases (the onedir zips, which run as a single process and start fast) and is
-    checked against the release's SHA2-256SUMS. ffmpeg (audio to WAV) and qjs (the JavaScript
+    checked against the release's SHA2-256SUMS. ffmpeg (audio to WAV or FLAC) and qjs (the JavaScript
     runtime yt-dlp needs for YouTube) come from INTERSECT's tools repo, pinned by a manifest with
     a sha256 per platform.
 */
@@ -64,6 +64,43 @@ juce::String pickMediaManifestUrl (const juce::var& releases);
 MediaToolsEntry parseMediaToolsManifest (const juce::String& json, const juce::String& platformTag, juce::String& error);
 
 //==============================================================================
+// Output format
+
+/** What an import is saved as. The codec and bit depth are one setting (formatToString), the
+    sample rate another. ffmpeg does the conversion, in the same step yt-dlp always runs. */
+struct OutputFormat
+{
+    enum class Codec { wav, flac };
+
+    Codec codec = Codec::wav;
+    int bitDepth = 32;    // WAV: 16, 24 or 32 (float). FLAC: 16 or 24.
+    int sampleRate = 0;   // Hz; 0 keeps the source's rate
+
+    bool operator== (const OutputFormat& other) const
+    {
+        return codec == other.codec && bitDepth == other.bitDepth && sampleRate == other.sampleRate;
+    }
+};
+
+/** A custom sample rate must be in this range (0 = keep the source's). */
+constexpr int kMinSampleRate = 8000;
+constexpr int kMaxSampleRate = 192000;
+bool isValidSampleRate (int hz);
+
+/** The codec and bit depth as a settings value: "wav-f32" (the default), "wav-24", "wav-16",
+    "flac-24", "flac-16". */
+juce::String formatToString (const OutputFormat& format);
+/** Codec and bit depth from formatToString's text; anything unknown is WAV 32-bit float. The
+    sample rate is left at 0. */
+OutputFormat formatFromString (const juce::String& text);
+/** "wav" or "flac". */
+juce::String fileExtension (const OutputFormat& format);
+/** "WAV" or "FLAC", for progress text. */
+juce::String codecName (const OutputFormat& format);
+/** The arguments yt-dlp hands ffmpeg for the conversion (the ExtractAudio --ppa value). */
+juce::String ffmpegOutputArgs (const OutputFormat& format);
+
+//==============================================================================
 // Running yt-dlp
 
 /** A pasted or typed link worth handing to yt-dlp: http(s), a host, no spaces, sane length. */
@@ -85,7 +122,8 @@ struct YtDlpPaths
 /** yt-dlp's arguments (without the executable). allowLong drops the length limit after the user
     confirmed; live streams are always refused. The URL comes after "--" so it can't be read as an
     option. */
-juce::StringArray buildYtDlpArgs (const YtDlpPaths& paths, const juce::String& url, bool allowLong);
+juce::StringArray buildYtDlpArgs (const YtDlpPaths& paths, const juce::String& url, bool allowLong,
+                                  const OutputFormat& format = {});
 
 /** One line of yt-dlp's output, recognised by the [ix-...] markers our templates print. */
 struct OutputLine
@@ -131,6 +169,7 @@ enum class FailureKind
     noAudio,         // nothing INTERSECT could take
     network,
     ytDlpOutdated,   // the site changed; a newer yt-dlp usually fixes it
+    toolsOutdated,   // the installed ffmpeg can't write the chosen format (FLAC needs newer tools)
     other,
 };
 
@@ -141,9 +180,10 @@ juce::String describeFailure (FailureKind kind, const juce::String& rawError);
 /** True when checking for a newer yt-dlp and retrying is worth it. */
 bool failureSuggestsUpdate (FailureKind kind);
 
-/** "<title>.wav" made safe for every OS: illegal characters, reserved Windows names, trailing dots
-    and spaces, length. Falls back to the id, then "Imported audio". */
-juce::String makeOutputFileName (const juce::String& title, const juce::String& id);
+/** "<title>.<extension>" made safe for every OS: illegal characters, reserved Windows names,
+    trailing dots and spaces, length. Falls back to the id, then "Imported audio". */
+juce::String makeOutputFileName (const juce::String& title, const juce::String& id,
+                                 const juce::String& extension = "wav");
 /** folder/fileName, or "name (2).ext", "name (3).ext"... if taken. (juce::File's own numbering
     misreads titles that already end in brackets.) */
 juce::File uniqueFileIn (const juce::File& folder, const juce::String& fileName);

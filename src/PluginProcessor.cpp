@@ -479,6 +479,7 @@ void IntersectProcessor::startUrlImport (const juce::String& url, bool allowLong
     UrlImport::ImportRequest request;
     request.url = url.trim();
     request.channel = urlImportSettings.channel;
+    request.format = urlImportSettings.format;
     request.allowLong = allowLong;
     if (! urlImportSettings.askEachTime)
         request.destinationFolder = getResolvedUrlImportFolder();
@@ -540,7 +541,7 @@ void IntersectProcessor::handleUrlImportCompletionOnMessageThread()
         return;
     }
 
-    // "Ask each time": the WAV waits in staging until the editor's save dialog places it. With no
+    // "Ask each time": the file waits in staging until the editor's save dialog places it. With no
     // editor open there is no one to ask, so it goes to the folder instead.
     if (result.mode == Mode::import && result.status == Status::completed && result.workFolder != juce::File())
     {
@@ -550,7 +551,7 @@ void IntersectProcessor::handleUrlImportCompletionOnMessageThread()
             return;
         }
         const auto destination = UrlImport::uniqueFileIn (getResolvedUrlImportFolder(),
-                                                          UrlImport::makeOutputFileName (result.title, {}));
+                                                          UrlImport::makeOutputFileName (result.title, {}, result.file.getFileExtension()));
         urlImportJob.startPlace (result.file, destination, result.workFolder, result.title);
         return;
     }

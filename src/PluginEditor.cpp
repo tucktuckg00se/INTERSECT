@@ -1010,13 +1010,16 @@ void IntersectEditor::askWhereToSaveImport (const UrlImport::JobResult& result)
 {
     auto folder = lastUrlImportSaveFolder.isDirectory() ? lastUrlImportSaveFolder : processor.getResolvedUrlImportFolder();
     folder.createDirectory();
-    const auto suggested = folder.getChildFile (UrlImport::makeOutputFileName (result.title, {}));
+    auto extension = result.file.getFileExtension().trimCharactersAtStart (".");   // what ffmpeg wrote
+    if (extension.isEmpty())
+        extension = "wav";
+    const auto suggested = folder.getChildFile (UrlImport::makeOutputFileName (result.title, {}, extension));
 
-    urlImportChooser = std::make_unique<juce::FileChooser> ("Save Imported Audio", suggested, "*.wav");
+    urlImportChooser = std::make_unique<juce::FileChooser> ("Save Imported Audio", suggested, "*." + extension);
     urlImportChooser->launchAsync (juce::FileBrowserComponent::saveMode
                                        | juce::FileBrowserComponent::canSelectFiles
                                        | juce::FileBrowserComponent::warnAboutOverwriting,
-        [this, result] (const juce::FileChooser& chooser)
+        [this, result, extension] (const juce::FileChooser& chooser)
         {
             auto destination = chooser.getResult();
             if (destination == juce::File())
@@ -1024,8 +1027,8 @@ void IntersectEditor::askWhereToSaveImport (const UrlImport::JobResult& result)
                 processor.discardUrlImport (result.workFolder);
                 return;
             }
-            if (! destination.hasFileExtension ("wav"))
-                destination = destination.withFileExtension ("wav");
+            if (! destination.hasFileExtension (extension))
+                destination = destination.withFileExtension (extension);
             lastUrlImportSaveFolder = destination.getParentDirectory();
             processor.placeUrlImport (result.file, destination, result.workFolder, result.title);
         });
@@ -1403,6 +1406,8 @@ void IntersectEditor::saveUserSettings (float scale, const juce::String& themeNa
     values.set ("urlImportSaveMode", urlImport.askEachTime ? "ask" : "folder");
     setPath (values, "urlImportFolder", urlImport.folder);
     values.set ("urlImportChannel", UrlImport::channelToString (urlImport.channel));
+    values.set ("urlImportFormat", UrlImport::formatToString (urlImport.format));
+    values.set ("urlImportSampleRate", juce::String (urlImport.format.sampleRate));
 
     // Only the keys this editor changed are written; other instances' changes are kept.
     settingsFile.save (values);
@@ -1476,6 +1481,9 @@ void IntersectEditor::loadUserSettings()
     urlImport.askEachTime = values.getString ("urlImportSaveMode") == "ask";
     urlImport.folder = getPath ("urlImportFolder");
     urlImport.channel = UrlImport::channelFromString (values.getString ("urlImportChannel"));
+    urlImport.format = UrlImport::formatFromString (values.getString ("urlImportFormat"));
+    const int sampleRate = values.getString ("urlImportSampleRate").getIntValue();
+    urlImport.format.sampleRate = UrlImport::isValidSampleRate (sampleRate) ? sampleRate : 0;
     processor.setUrlImportSettings (urlImport);
 
     applyTheme (values.getString ("theme", "dark"));
