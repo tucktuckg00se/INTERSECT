@@ -191,6 +191,8 @@ IntersectEditor::IntersectEditor (IntersectProcessor& p)
     stemView.onCloseRequested = [this] { setStemViewVisible (false); };
     sampleLane.writeMidiForDrag = [this] (int sampleId) { return writeMidiForDrag (sampleId); };
     sampleLane.onMidiSaveRequested = [this] (int sampleId) { saveMidiAs (sampleId); };
+    sampleLane.getAudioFileForDrag = [this] (int sampleId) { return resolveAudioExportFile (sampleId); };
+    sampleLane.onAudioSaveRequested = [this] (int sampleId) { saveAudioAs (sampleId); };
     sampleLane.onRelinkRequested = [this] (int sampleId) { startRelink (sampleId); };
     waveformView.onRelinkRequested = [this] (int sampleId) { startRelink (sampleId); };
     waveformView.onRelinkFileDropped = [this] (int sampleId, const juce::File& file) { relinkSample (sampleId, file); };
@@ -486,7 +488,7 @@ bool IntersectEditor::writeMidiExport (const juce::File& dest, int sampleId)
     return intersectMidi::writeKitMidiFile (dest, ui, sample, ui.sampleParamsFor (sampleId).bpm);
 }
 
-juce::String IntersectEditor::getMidiExportBaseName (int sampleId) const
+juce::String IntersectEditor::getExportBaseName (int sampleId) const
 {
     const auto& ui = processor.getUiSliceSnapshot();
     juce::String name;
@@ -498,22 +500,27 @@ juce::String IntersectEditor::getMidiExportBaseName (int sampleId) const
     return name.isEmpty() ? juce::String ("INTERSECT slices") : name;
 }
 
-// MIDI dragged out of the sample lane: the OS drag needs a real file, so write it up front.
-// The temp name avoids spaces and URI-reserved characters so every drop target can parse it.
-juce::File IntersectEditor::writeMidiForDrag (int sampleId)
+juce::File IntersectEditor::getTempExportFile (int sampleId, const juce::String& extension) const
 {
     auto folder = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("INTERSECT");
     if (! folder.createDirectory())
         return {};
 
     juce::String safeName;
-    for (auto c : getMidiExportBaseName (sampleId))
+    for (auto c : getExportBaseName (sampleId))
     {
         const bool keep = juce::CharacterFunctions::isLetterOrDigit (c) || c == '-' || c == '_' || c == '.';
         safeName += juce::String::charToString (keep ? c : (juce::juce_wchar) '_');
     }
+    return folder.getChildFile (safeName + "." + extension);
+}
 
-    auto file = folder.getChildFile (safeName + ".mid");
+// MIDI dragged out of the sample lane: the OS drag needs a real file, so write it up front.
+juce::File IntersectEditor::writeMidiForDrag (int sampleId)
+{
+    auto file = getTempExportFile (sampleId, "mid");
+    if (file == juce::File())
+        return {};
     if (! writeMidiExport (file, sampleId))
     {
         processor.showTransientStatusMessage ("No slices to export as MIDI", true);
@@ -540,7 +547,7 @@ void IntersectEditor::saveMidiAs (int sampleId)
 
     auto fileChooser = std::make_shared<juce::FileChooser> (
         "Save Slices as MIDI File",
-        folder.getChildFile (getMidiExportBaseName (sampleId) + ".mid"),
+        folder.getChildFile (getExportBaseName (sampleId) + ".mid"),
         "*.mid");
 
     fileChooser->launchAsync (juce::FileBrowserComponent::saveMode
@@ -558,6 +565,103 @@ void IntersectEditor::saveMidiAs (int sampleId)
             lastExportFolder = file.getParentDirectory();
             if (writeMidiExport (file, sampleId))
                 processor.showTransientStatusMessage ("MIDI saved to " + file.getFullPathName(), false);
+            else
+                processor.showTransientStatusMessage ("Couldn't write " + file.getFullPathName(), true);
+        });
+}
+
+juce::File IntersectEditor::resolveAudioExportFile (int sampleId)
+{
+    const auto sampleSnap = processor.sampleData.getSnapshot();
+    const SampleData::SessionSample* sample = nullptr;
+    if (sampleSnap != nullptr)
+        for (const auto& s : sampleSnap->sessionSamples)
+            if (s.sampleId == sampleId)
+                sample = &s;
+
+    if (sample == nullptr || sample->isPlaceholder())
+    {
+        processor.showTransientStatusMessage ("This sample's file is missing - relink it first", true);
+        return {};
+    }
+
+    const auto source = juce::File::createFileWithoutCheckingPath (sample->filePath);
+    if (! source.existsAsFile())
+    {
+        processor.showTransientStatusMessage ("Couldn't find " + source.getFullPathName(), true);
+        return {};
+    }
+    if (! AppFiles::isRex2File (source))
+        return source;   // the original file: the DAW imports or references it itself
+
+    // REX2: hand over what INTERSECT plays (rendered slices with their tails) as a WAV.
+    const auto& buffer = sampleSnap->buffer;
+    const int start = juce::jlimit (0, buffer.getNumSamples(), sample->startFrame);
+    const int numFrames = juce::jlimit (0, buffer.getNumSamples() - start, sample->numFrames);
+    auto wavFile = getTempExportFile (sampleId, "wav");
+    if (numFrames <= 0 || wavFile == juce::File() || sampleSnap->decodedSampleRate <= 0.0)
+    {
+        processor.showTransientStatusMessage ("Couldn't export this sample's audio", true);
+        return {};
+    }
+
+    wavFile.deleteFile();
+    auto fileStream = std::make_unique<juce::FileOutputStream> (wavFile);
+    std::unique_ptr<juce::AudioFormatWriter> writer;
+    if (fileStream->openedOk())
+    {
+        std::unique_ptr<juce::OutputStream> output = std::move (fileStream);   // the writer takes it on success
+        writer = juce::WavAudioFormat().createWriterFor (output, juce::AudioFormatWriterOptions{}
+                                                                     .withSampleRate (sampleSnap->decodedSampleRate)
+                                                                     .withNumChannels (buffer.getNumChannels())
+                                                                     .withBitsPerSample (24));
+    }
+    if (writer == nullptr || ! writer->writeFromAudioSampleBuffer (buffer, start, numFrames))
+    {
+        writer.reset();
+        wavFile.deleteFile();
+        processor.showTransientStatusMessage ("Couldn't write " + wavFile.getFullPathName(), true);
+        return {};
+    }
+    return wavFile;
+}
+
+void IntersectEditor::saveAudioAs (int sampleId)
+{
+    const auto source = resolveAudioExportFile (sampleId);
+    if (! source.existsAsFile())
+        return;   // already explained in the status line
+
+    const auto extension = source.getFileExtension();   // ".wav", ".flac"...
+    const auto folder = lastExportFolder.isDirectory()
+        ? lastExportFolder
+        : juce::File::getSpecialLocation (juce::File::userHomeDirectory);
+
+    auto fileChooser = std::make_shared<juce::FileChooser> (
+        "Save a Copy of the Audio File",
+        folder.getChildFile (getExportBaseName (sampleId) + extension),
+        "*" + extension);
+
+    fileChooser->launchAsync (juce::FileBrowserComponent::saveMode
+                                  | juce::FileBrowserComponent::canSelectFiles
+                                  | juce::FileBrowserComponent::warnAboutOverwriting,
+        [this, fileChooser, source, extension] (const juce::FileChooser& chooser)
+        {
+            auto file = chooser.getResult();
+            if (file == juce::File())
+                return;
+
+            if (file.getFileExtension().isEmpty())
+                file = file.withFileExtension (extension);
+
+            lastExportFolder = file.getParentDirectory();
+            if (file == source)
+            {
+                processor.showTransientStatusMessage ("That is the sample's own file - pick another name or folder", true);
+                return;
+            }
+            if (source.copyFileTo (file))
+                processor.showTransientStatusMessage ("Audio saved to " + file.getFullPathName(), false);
             else
                 processor.showTransientStatusMessage ("Couldn't write " + file.getFullPathName(), true);
         });

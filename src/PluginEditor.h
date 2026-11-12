@@ -129,11 +129,18 @@ private:
     juce::File pendingRenamePreset;   // a SAVE whose new file should open for renaming once written
     juce::File lastExportFolder;
 
-    // MIDI export of one session sample's slices (sample lane MIDI button).
+    // Sample-lane exports of one session sample: MIDI (its slices) and AUDIO (its file).
+    juce::String getExportBaseName (int sampleId) const;
+    /** <temp>/INTERSECT/<base>.<extension>, named without spaces or URI-reserved characters so
+        every drop target can parse it; {} if the folder can't be made. */
+    juce::File getTempExportFile (int sampleId, const juce::String& extension) const;
     bool writeMidiExport (const juce::File& dest, int sampleId);
-    juce::String getMidiExportBaseName (int sampleId) const;
     juce::File writeMidiForDrag (int sampleId);
     void saveMidiAs (int sampleId);
+    /** The sample's own file, or a WAV of its decoded audio for .rx2 (most DAWs can't read REX).
+        {} with a status message when there is nothing to export. */
+    juce::File resolveAudioExportFile (int sampleId);
+    void saveAudioAs (int sampleId);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (IntersectEditor)
 };

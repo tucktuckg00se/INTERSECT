@@ -21,6 +21,10 @@ public:
     std::function<juce::File (int sampleId)> writeMidiForDrag;
     /** MIDI clicked on a sample: save that sample's slices as a .mid via a file chooser. */
     std::function<void (int sampleId)> onMidiSaveRequested;
+    /** AUDIO dragged out of a sample: the audio file to hand to the drop target ({} if none). */
+    std::function<juce::File (int sampleId)> getAudioFileForDrag;
+    /** AUDIO clicked on a sample: save a copy of its audio file via a file chooser. */
+    std::function<void (int sampleId)> onAudioSaveRequested;
     /** A missing sample's chip was clicked: relink it. */
     std::function<void (int sampleId)> onRelinkRequested;
 
@@ -49,20 +53,32 @@ private:
         int x1 = 0;
         int x2 = 0;
         bool selected = false;
-        bool missing = false;   // placeholder awaiting relink: no MIDI or STEMS
+        bool missing = false;   // placeholder awaiting relink: no AUDIO, MIDI or STEMS
         juce::Colour colour;
         juce::String label;
+        juce::Rectangle<int> audioBounds;
         juce::Rectangle<int> midiBounds;
         juce::Rectangle<int> stemsBounds;
         juce::Rectangle<int> deleteBounds;
     };
 
+    /** The export chips: a click saves a file, a drag hands it to the OS. */
+    enum class ExportChip { none, audio, midi };
+    struct ChipPress
+    {
+        int sampleId = -1;
+        ExportChip chip = ExportChip::none;
+        bool dragStarted = false;
+    };
+
     std::vector<VisibleSample> buildVisibleSamples() const;
     int hitTestSample (juce::Point<int> pos) const;
+    static juce::Rectangle<int> boundsOf (const VisibleSample& sample, ExportChip chip);
+    /** Starts an OS file drag from this component (call from mouseDrag). */
+    void startExternalFileDrag (const juce::File& file);
 
     IntersectProcessor& processor;
-    int midiPressSampleId = -1;    // MIDI button pressed: click saves, drag exports
-    bool midiDragStarted = false;
+    ChipPress chipPress;
     int dragSampleId = -1;
     int dragStartX = 0;
     int dragTargetIndex = -1;

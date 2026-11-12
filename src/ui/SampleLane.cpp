@@ -81,16 +81,23 @@ std::vector<SampleLane::VisibleSample> SampleLane::buildVisibleSamples() const
         const int cancelW = juce::jmin (54, juce::jmax (34, blockW / 2));
         const int stemsW = visible.missing ? 0 : jobRunning ? cancelW : juce::jmin (44, juce::jmax (18, blockW / 3));
         const int midiW = (jobRunning || visible.missing) ? 0 : juce::jmin (40, juce::jmax (18, blockW / 4));
+        const int audioW = (jobRunning || visible.missing) ? 0 : juce::jmin (44, juce::jmax (18, blockW / 5));
         int right = x2 - 3;
         visible.deleteBounds = { right - deleteW, buttonY, deleteW, buttonH };
         right = visible.deleteBounds.getX() - 2;
         visible.stemsBounds = { right - stemsW, buttonY, stemsW, buttonH };
         right = visible.stemsBounds.getX() - 2;
         visible.midiBounds = { right - midiW, buttonY, midiW, buttonH };
+        right = visible.midiBounds.getX() - 2;
+        visible.audioBounds = { right - audioW, buttonY, audioW, buttonH };
         const juce::Rectangle<int> inner { x1 + 1, buttonY, juce::jmax (1, blockW - 2), buttonH };
         visible.deleteBounds = visible.deleteBounds.getIntersection (inner);
         visible.stemsBounds = visible.stemsBounds.getIntersection (inner);
         visible.midiBounds = visible.midiBounds.getIntersection (inner);
+        // The newest chip yields first: on a block too narrow for all of them, AUDIO is left out
+        // rather than squeezing the others.
+        if (! inner.contains (visible.audioBounds))
+            visible.audioBounds = {};
         out.push_back (std::move (visible));
     }
 
@@ -167,7 +174,8 @@ void SampleLane::paint (juce::Graphics& g)
                 labelX = end + 1;
         }
 
-        const int buttonsLeft = ! sample.midiBounds.isEmpty()  ? sample.midiBounds.getX()
+        const int buttonsLeft = ! sample.audioBounds.isEmpty() ? sample.audioBounds.getX()
+                              : ! sample.midiBounds.isEmpty()  ? sample.midiBounds.getX()
                               : ! sample.stemsBounds.isEmpty() ? sample.stemsBounds.getX()
                                                                : sample.deleteBounds.getX();
         const int maxLabelRight = juce::jmin (buttonsLeft - 2, getWidth());
@@ -218,6 +226,11 @@ void SampleLane::paint (juce::Graphics& g)
         if (! sample.midiBounds.isEmpty())
             drawButton (sample.midiBounds,
                         sample.midiBounds.getWidth() < 24 ? "M" : "MIDI",
+                        getTheme().surface4.withAlpha (0.92f),
+                        getTheme().text2.withAlpha (0.92f));
+        if (! sample.audioBounds.isEmpty())
+            drawButton (sample.audioBounds,
+                        sample.audioBounds.getWidth() < 30 ? "A" : "AUDIO",
                         getTheme().surface4.withAlpha (0.92f),
                         getTheme().text2.withAlpha (0.92f));
         drawButton (sample.deleteBounds,
@@ -304,14 +317,18 @@ void SampleLane::mouseDown (const juce::MouseEvent& e)
         return;
     }
 
-    if (it != visible.end() && it->midiBounds.contains (pos))
+    if (it != visible.end())
     {
-        processor.selectedSessionSampleId.store (hitId, std::memory_order_relaxed);
-        processor.markUiSnapshotDirty();
-        midiPressSampleId = hitId;
-        midiDragStarted = false;
-        repaint();
-        return;
+        for (const auto chip : { ExportChip::audio, ExportChip::midi })
+        {
+            if (! boundsOf (*it, chip).contains (pos))
+                continue;
+            processor.selectedSessionSampleId.store (hitId, std::memory_order_relaxed);
+            processor.markUiSnapshotDirty();
+            chipPress = { hitId, chip, false };
+            repaint();
+            return;
+        }
     }
 
     if (it != visible.end() && it->stemsBounds.contains (pos))
@@ -349,25 +366,16 @@ void SampleLane::mouseDown (const juce::MouseEvent& e)
 
 void SampleLane::mouseDrag (const juce::MouseEvent& e)
 {
-    if (midiPressSampleId >= 0)
+    if (chipPress.sampleId >= 0)
     {
-        if (midiDragStarted || e.getDistanceFromDragStart() < 4)
+        if (chipPress.dragStarted || e.getDistanceFromDragStart() < 4)
             return;
 
-        midiDragStarted = true;
-        const auto file = writeMidiForDrag != nullptr ? writeMidiForDrag (midiPressSampleId) : juce::File();
-        if (! file.existsAsFile())
-            return;
-
-        // Start the OS drag right here, while the pointer is still over this component (JUCE's
-        // documented requirement). JUCE's X11 drag source writes "file://" + path without
-        // percent-encoding, so hand it an encoded URI on Linux; other platforms want plain paths.
-       #if JUCE_LINUX || JUCE_BSD
-        const auto item = juce::URL (file).toString (false);
-       #else
-        const auto item = file.getFullPathName();
-       #endif
-        juce::DragAndDropContainer::performExternalDragDropOfFiles (juce::StringArray { item }, false, this);
+        chipPress.dragStarted = true;
+        const auto& source = chipPress.chip == ExportChip::midi ? writeMidiForDrag : getAudioFileForDrag;
+        const auto file = source != nullptr ? source (chipPress.sampleId) : juce::File();
+        if (file.existsAsFile())
+            startExternalFileDrag (file);
         return;
     }
 
@@ -394,19 +402,20 @@ void SampleLane::mouseDrag (const juce::MouseEvent& e)
 
 void SampleLane::mouseUp (const juce::MouseEvent& e)
 {
-    if (midiPressSampleId >= 0)
+    if (chipPress.sampleId >= 0)
     {
-        const int sampleId = midiPressSampleId;
-        const bool wasDrag = midiDragStarted;
-        midiPressSampleId = -1;
-        midiDragStarted = false;
+        const auto press = chipPress;
+        chipPress = {};
 
         const auto visible = buildVisibleSamples();
         const auto it = std::find_if (visible.begin(), visible.end(),
-                                      [sampleId] (const VisibleSample& s) { return s.sampleId == sampleId; });
-        if (! wasDrag && it != visible.end() && it->midiBounds.contains (e.getPosition())
-            && onMidiSaveRequested != nullptr)
-            onMidiSaveRequested (sampleId);
+                                      [&press] (const VisibleSample& s) { return s.sampleId == press.sampleId; });
+        if (press.dragStarted || it == visible.end() || ! boundsOf (*it, press.chip).contains (e.getPosition()))
+            return;
+
+        const auto& onSave = press.chip == ExportChip::midi ? onMidiSaveRequested : onAudioSaveRequested;
+        if (onSave != nullptr)
+            onSave (press.sampleId);
         return;
     }
 
@@ -433,6 +442,8 @@ juce::String SampleLane::getTooltip()
     const auto pos = getMouseXYRelative();
     for (const auto& sample : buildVisibleSamples())
     {
+        if (sample.audioBounds.contains (pos))
+            return "Drag into your DAW for this sample's audio file, or click to save a copy";
         if (sample.midiBounds.contains (pos))
             return "Drag into your DAW for a MIDI clip of this sample's slices, or click to save a .mid file";
         if (sample.stemsBounds.contains (pos))
@@ -445,6 +456,30 @@ juce::String SampleLane::getTooltip()
             return "File not found - click to relink it";
     }
     return {};
+}
+
+juce::Rectangle<int> SampleLane::boundsOf (const VisibleSample& sample, ExportChip chip)
+{
+    switch (chip)
+    {
+        case ExportChip::audio: return sample.audioBounds;
+        case ExportChip::midi:  return sample.midiBounds;
+        case ExportChip::none:  break;
+    }
+    return {};
+}
+
+void SampleLane::startExternalFileDrag (const juce::File& file)
+{
+    // Start the OS drag right here, while the pointer is still over this component (JUCE's
+    // documented requirement). JUCE's X11 drag source writes "file://" + path without
+    // percent-encoding, so hand it an encoded URI on Linux; other platforms want plain paths.
+   #if JUCE_LINUX || JUCE_BSD
+    const auto item = juce::URL (file).toString (false);
+   #else
+    const auto item = file.getFullPathName();
+   #endif
+    juce::DragAndDropContainer::performExternalDragDropOfFiles (juce::StringArray { item }, false, this);
 }
 
 void SampleLane::requestRemoveSample (int sampleId, bool skipConfirm)
