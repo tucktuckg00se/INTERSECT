@@ -2,6 +2,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "SettingsControls.h"
 #include "SettingsHost.h"
+#include "../../UpdateCheck.h"
 #include <functional>
 #include <memory>
 #include <vector>
@@ -60,6 +61,8 @@ private:
     void updateScale();
     /** Text and button for the update row from the shared checker's status. */
     void updateUpdateRow();
+    /** Version, OS, plugin format and host for REPORT AN ISSUE's pre-filled form. */
+    UpdateCheck::IssueEnvironment describeEnvironment() const;
 
     Stepper scaleStepper;
     DropdownField themeDropdown;
@@ -69,6 +72,7 @@ private:
     bool updateTextIsAccent = false;
     juce::TextButton discordButton { "JOIN THE DISCORD" };
     juce::TextButton coffeeButton { "BUY ME A COFFEE" };
+    juce::TextButton issueButton { "REPORT AN ISSUE" };
     juce::StringArray themes;
     juce::String scaleHint;
 };
