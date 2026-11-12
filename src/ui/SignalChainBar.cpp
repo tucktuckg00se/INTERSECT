@@ -1,10 +1,12 @@
 #include "SignalChainBar.h"
 #include "IntersectLookAndFeel.h"
+#include "SetBpmCallout.h"
 #include "../Constants.h"
 #include "../PluginProcessor.h"
 #include "../audio/GrainEngine.h"
 
 #include <algorithm>
+#include <iterator>
 #include <cmath>
 #include <numeric>
 
@@ -2128,85 +2130,115 @@ void SignalChainBar::dismissTextEditor()
     textEditor.reset();
 }
 
-void SignalChainBar::showSetBpmPopup (bool sliceScope)
+namespace
 {
-    juce::PopupMenu menu;
-    menu.setLookAndFeel (&getLookAndFeel());
-    menu.addSectionHeader ("Set BPM");
-    menu.addItem (1, "16 Bars");
-    menu.addItem (2, "8 Bars");
-    menu.addItem (3, "4 Bars");
-    menu.addItem (4, "2 Bars");
-    menu.addItem (5, "1 Bar");
-    menu.addItem (6, "1/2 Note");
-    menu.addItem (7, "1/4 Note");
-    menu.addItem (8, "1/8 Note");
-    menu.addItem (9, "1/16 Note");
+const juce::StringArray kSetBpmChoices { "16 Bars", "8 Bars", "4 Bars", "2 Bars", "1 Bar",
+                                         "1/2 Note", "1/4 Note", "1/8 Note", "1/16 Note" };
+constexpr float kSetBpmBars[] = { 16.0f, 8.0f, 4.0f, 2.0f, 1.0f, 0.5f, 0.25f, 0.125f, 0.0625f };
 
-    menu.showMenuAsync (IntersectLookAndFeel::makeEditorMenuOptions (*this, 156, 24)
-                            .withTargetComponent (this),
-        [this, sliceScope] (int result)
-        {
-            if (result <= 0 || result > 9)
-                return;
+float setBpmBarsFor (int choice)
+{
+    return juce::isPositiveAndBelow (choice, (int) std::size (kSetBpmBars)) ? kSetBpmBars[choice] : 0.0f;
+}
+} // namespace
 
-            const float bars[] = { 0.0f, 16.0f, 8.0f, 4.0f, 2.0f, 1.0f, 0.5f, 0.25f, 0.125f, 0.0625f };
-            const float barCount = bars[result];
+void SignalChainBar::showSetBpmPopup (bool sliceScope, juce::Rectangle<int> anchorArea)
+{
+    const auto safe = juce::Component::SafePointer<SignalChainBar> (this);
+    showSetBpmCallout (*this, anchorArea,
+                       sliceScope ? "Selected slice length" : "Selected sample length",
+                       kSetBpmChoices, lastSetBpmChoice,
+                       [safe, sliceScope] (int choice)
+                       {
+                           return safe != nullptr ? safe->previewSetBpm (sliceScope, setBpmBarsFor (choice)) : 0.0f;
+                       },
+                       [safe, sliceScope] (int choice)
+                       {
+                           if (safe == nullptr || setBpmBarsFor (choice) <= 0.0f)
+                               return;
+                           safe->lastSetBpmChoice = choice;
+                           safe->applySetBpm (sliceScope, setBpmBarsFor (choice));
+                       });
+}
 
-            if (sliceScope)
-            {
-                IntersectProcessor::Command cmd;
-                cmd.type = IntersectProcessor::CmdStretch;
-                cmd.floatParam1 = barCount;
-                cmd.sliceIdx = processor.sliceManager.selectedSlice.load();
-                processor.pushCommand (cmd);
-                layoutDirty = true;
-            }
-            else if (processor.sampleData.isLoaded())
-            {
-                // Measure the selected sample (or its selected slice), not the whole session.
-                const auto& ui = processor.getUiSliceSnapshot();
-                int startSmp = 0;
-                int endSmp = 0;
-                for (int i = 0; i < ui.numSessionSamples; ++i)
-                    if (ui.sessionSamples[(size_t) i].sampleId == ui.selectedSessionSampleId)
-                        endSmp = ui.sessionSamples[(size_t) i].numFrames;
+bool SignalChainBar::measureSetBpmSpan (bool sliceScope, int& startSample, int& endSample, double& sampleRate) const
+{
+    if (! processor.sampleData.isLoaded())
+        return false;
 
-                const int sel = ui.selectedSlice;
-                if (sel >= 0 && sel < ui.numSlices
-                    && ui.slices[(size_t) sel].sampleId == ui.selectedSessionSampleId)
-                {
-                    const auto& s = ui.slices[(size_t) sel];
-                    startSmp = s.startSample;
-                    endSmp = s.endSample;
-                }
-                if (endSmp <= startSmp)
-                    return;
+    const auto& ui = processor.getUiSliceSnapshot();
+    const auto sampleSnap = processor.sampleData.getSnapshot();
+    sampleRate = (sampleSnap != nullptr && sampleSnap->decodedSampleRate > 0.0)
+        ? sampleSnap->decodedSampleRate
+        : (processor.getSampleRate() > 0.0 ? processor.getSampleRate() : 44100.0);
 
-                const auto sampleSnap = processor.sampleData.getSnapshot();
-                const float sampleRate = (sampleSnap != nullptr && sampleSnap->decodedSampleRate > 0.0)
-                    ? (float) sampleSnap->decodedSampleRate
-                    : 44100.0f;
-                const float newBpm = GrainEngine::calcStretchBpm (startSmp, endSmp, barCount, sampleRate);
-                const int sampleId = processor.getUiSliceSnapshot().selectedSessionSampleId;
-                if (sampleId >= 0)
-                {
-                    IntersectProcessor::Command gestureCmd;
-                    gestureCmd.type = IntersectProcessor::CmdBeginGesture;
-                    processor.pushCommand (gestureCmd);
+    if (sliceScope)
+    {
+        // The span CmdStretch measures in the processor.
+        const int sel = processor.sliceManager.selectedSlice.load();
+        if (sel < 0 || sel >= ui.numSlices)
+            return false;
+        startSample = ui.slices[(size_t) sel].startSample;
+        endSample = ui.slices[(size_t) sel].endSample;
+        return endSample > startSample;
+    }
 
-                    IntersectProcessor::Command cmd;
-                    cmd.type = IntersectProcessor::CmdSetSampleParam;
-                    cmd.intParam1 = sampleId;
-                    cmd.intParam2 = IntersectProcessor::FieldBpm;
-                    cmd.floatParam1 = newBpm;
-                    processor.pushCommand (cmd);
-                }
-                layoutDirty = true;
-            }
+    // The selected sample (or its selected slice), not the whole session.
+    startSample = 0;
+    endSample = 0;
+    for (int i = 0; i < ui.numSessionSamples; ++i)
+        if (ui.sessionSamples[(size_t) i].sampleId == ui.selectedSessionSampleId)
+            endSample = ui.sessionSamples[(size_t) i].numFrames;
 
-            repaint();
-        });
+    const int sel = ui.selectedSlice;
+    if (sel >= 0 && sel < ui.numSlices && ui.slices[(size_t) sel].sampleId == ui.selectedSessionSampleId)
+    {
+        startSample = ui.slices[(size_t) sel].startSample;
+        endSample = ui.slices[(size_t) sel].endSample;
+    }
+    return endSample > startSample;
+}
+
+float SignalChainBar::previewSetBpm (bool sliceScope, float bars) const
+{
+    int startSample = 0, endSample = 0;
+    double sampleRate = 0.0;
+    if (bars <= 0.0f || ! measureSetBpmSpan (sliceScope, startSample, endSample, sampleRate))
+        return 0.0f;
+    return GrainEngine::calcStretchBpm (startSample, endSample, bars, sampleRate);
+}
+
+void SignalChainBar::applySetBpm (bool sliceScope, float bars)
+{
+    if (sliceScope)
+    {
+        IntersectProcessor::Command cmd;
+        cmd.type = IntersectProcessor::CmdStretch;
+        cmd.floatParam1 = bars;
+        cmd.sliceIdx = processor.sliceManager.selectedSlice.load();
+        processor.pushCommand (cmd);
+    }
+    else
+    {
+        const float newBpm = previewSetBpm (false, bars);
+        const int sampleId = processor.getUiSliceSnapshot().selectedSessionSampleId;
+        if (newBpm <= 0.0f || sampleId < 0)
+            return;
+
+        IntersectProcessor::Command gestureCmd;
+        gestureCmd.type = IntersectProcessor::CmdBeginGesture;
+        processor.pushCommand (gestureCmd);
+
+        IntersectProcessor::Command cmd;
+        cmd.type = IntersectProcessor::CmdSetSampleParam;
+        cmd.intParam1 = sampleId;
+        cmd.intParam2 = IntersectProcessor::FieldBpm;
+        cmd.floatParam1 = newBpm;
+        processor.pushCommand (cmd);
+    }
+
+    layoutDirty = true;
+    repaint();
 }
 
 void SignalChainBar::showTextEditor (const Cell& cell)
@@ -2414,7 +2446,7 @@ void SignalChainBar::mouseDown (const juce::MouseEvent& e)
             if (cell.isEnabled)
             {
                 const bool bpmSlice = expanded ? cell.isSliceScopeCell : isSliceScopeActive();
-                showSetBpmPopup (bpmSlice);
+                showSetBpmPopup (bpmSlice, cell.bounds);
             }
             return;
         }

@@ -171,7 +171,8 @@ target_sources(Intersect PRIVATE
     src/midi/MidiExport.cpp
     src/ui/IntersectLookAndFeel.cpp
     src/ui/HeaderBar.cpp
-    src/ui/ConfirmCallout.cpp
+    src/ui/Callout.cpp
+    src/ui/SetBpmCallout.cpp
     src/ui/UrlImportPanel.cpp
     src/ui/browser/BrowserView.cpp
     src/ui/browser/DirectoryListing.cpp

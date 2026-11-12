@@ -1,5 +1,5 @@
 #include "UrlImportSettingsPage.h"
-#include "../ConfirmCallout.h"
+#include "../Callout.h"
 #include "../IntersectLookAndFeel.h"
 #include "../../PluginProcessor.h"
 

@@ -1,4 +1,5 @@
 #include "UrlImportPanel.h"
+#include "Callout.h"
 #include "IntersectLookAndFeel.h"
 #include "settings/SettingsControls.h"
 #include "../PluginProcessor.h"
@@ -357,14 +358,7 @@ void UrlImportPanel::paint (juce::Graphics& g)
 {
     const auto& theme = getTheme();
 
-    // Same treatment as the confirm popover and the menus: a soft drop, surface2 body, thin outline.
-    const auto box = getLocalBounds().toFloat().withTrimmedBottom ((float) kShadow);
-    g.setColour (juce::Colours::black.withAlpha (0.24f));
-    g.fillRoundedRectangle (box.translated (0.0f, (float) kShadow), 4.0f);
-    g.setColour (theme.surface2.brighter (0.03f));
-    g.fillRoundedRectangle (box, 4.0f);
-    g.setColour (theme.surface4);
-    g.drawRoundedRectangle (box.reduced (0.5f), 4.0f, 1.0f);
+    Callout::paintBox (g, getLocalBounds());   // the same box as the popovers
 
     g.setColour (view == View::outcome && outcomeStatus == Status::failed ? theme.color5 : theme.text1);
     g.setFont (IntersectLookAndFeel::makeFont (8.5f, true));
