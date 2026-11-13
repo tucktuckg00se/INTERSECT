@@ -166,7 +166,10 @@ static Slice sanitiseRestoredSlice (Slice s)
     s.filterEnvAmount = juce::jlimit (-96.0f, 96.0f, s.filterEnvAmount);
     s.crossfadePct = juce::jlimit (0.0f, 100.0f, s.crossfadePct);
     {
-        const int sliceLen = juce::jmax (0, s.endSample - s.startSample);
+        // Clamp the loop to the slice's span inside its sample. A slice saved while its sample
+        // was missing (parked) only carries a stub of absolute bounds; clamping to that stub
+        // would lose its loop by the time the sample is relinked.
+        const int sliceLen = juce::jmax (0, s.endInSample - s.startInSample);
         s.loopStartOffset = juce::jlimit (0, juce::jmax (0, sliceLen - 1), s.loopStartOffset);
         if (s.loopLength > 0)
             s.loopLength = juce::jlimit (1, juce::jmax (1, sliceLen - s.loopStartOffset), s.loopLength);
