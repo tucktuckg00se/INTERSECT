@@ -3676,8 +3676,43 @@ void IntersectProcessor::setStateInformation (const void* data, int sizeInBytes)
     restoreState (data, sizeInBytes, {});
 }
 
+namespace
+{
+// Keeps the host from calling processBlock while the message thread replaces engine state.
+// suspendProcessing() takes the callback lock, so a block in progress finishes first; JUCE's
+// wrappers then output silence until the scope ends. A processor that was already suspended
+// (by the host or an outer scope) stays suspended.
+class ScopedProcessingSuspend
+{
+public:
+    explicit ScopedProcessingSuspend (juce::AudioProcessor& p)
+        : processor (p), wasSuspended (p.isSuspended())
+    {
+        if (! wasSuspended)
+            processor.suspendProcessing (true);
+    }
+
+    ~ScopedProcessingSuspend()
+    {
+        if (! wasSuspended)
+            processor.suspendProcessing (false);
+    }
+
+    ScopedProcessingSuspend (const ScopedProcessingSuspend&) = delete;
+    ScopedProcessingSuspend& operator= (const ScopedProcessingSuspend&) = delete;
+
+private:
+    juce::AudioProcessor& processor;
+    const bool wasSuspended;
+};
+}
+
 bool IntersectProcessor::restoreState (const void* data, int sizeInBytes, const RestoreOptions& options)
 {
+    // Restoring rewrites slices, sample params, stem metadata, the sample and the voices, all of
+    // which processBlock reads; audio stays silent for the few milliseconds this takes.
+    const ScopedProcessingSuspend suspendAudio (*this);
+
     juce::MemoryInputStream stream (data, (size_t) sizeInBytes, false);
     pendingStateRestoreToken.store (0, std::memory_order_release);
     clearPendingStateFiles();

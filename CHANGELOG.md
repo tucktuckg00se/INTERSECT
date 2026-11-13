@@ -17,6 +17,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 - Ctrl+Z (undo), Ctrl+V (paste a link) and Ctrl+F (search the file browser) did nothing on Linux.
 - Slice loop points were lost when you saved a project whose sample was missing and opened it again; relinking the sample didn't bring them back.
+- Loading a preset (or your DAW reloading a project) while audio was playing could crash INTERSECT.
 
 ## [0.19.1] - 2026-11-09
 

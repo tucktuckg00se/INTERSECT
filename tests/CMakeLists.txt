@@ -247,7 +247,11 @@ target_link_libraries(IntersectProcessorTests PRIVATE
 )
 # HOME points at a scratch folder so the tests never read or write the real settings.yaml.
 add_test(NAME processor_state COMMAND IntersectProcessorTests state)
-set_tests_properties(processor_state PROPERTIES ENVIRONMENT "HOME=${CMAKE_CURRENT_BINARY_DIR}/test-home")
+# Preset/project restores while another thread renders audio. Plain builds only catch crashes;
+# a TSan build (-DINTERSECT_SANITIZE=thread, TSAN_OPTIONS=suppressions=tests/tsan.supp) shows races.
+add_test(NAME processor_restore_during_playback COMMAND IntersectProcessorTests stress)
+set_tests_properties(processor_state processor_restore_during_playback
+                     PROPERTIES ENVIRONMENT "HOME=${CMAKE_CURRENT_BINARY_DIR}/test-home")
 
 # Every test that ctest runs, so CI can build just these: cmake --build <dir> --target IntersectTests
 add_custom_target(IntersectTests)
