@@ -191,3 +191,72 @@ target_link_libraries(IntersectUrlImportE2E PRIVATE
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags
 )
+
+# The real processor (every plugin source but the standalone shell), driven like a host would.
+# Keep the include dirs, definitions and libraries in step with the Intersect target.
+juce_add_console_app(IntersectProcessorTests
+    PRODUCT_NAME "INTERSECT processor tests"
+    VERSION "${INTERSECT_VERSION}"
+    NEEDS_CURL TRUE
+)
+
+target_sources(IntersectProcessorTests PRIVATE
+    ProcessorTests.cpp
+    ${INTERSECT_CORE_SOURCES}
+)
+target_include_directories(IntersectProcessorTests PRIVATE
+    ..
+    ../src
+    ../signalsmith-stretch
+    ../signalsmith-linear
+    ${BUNGEE_ROOT}
+)
+if(INTERSECT_HAS_ONNX_RUNTIME)
+    target_include_directories(IntersectProcessorTests PRIVATE "${INTERSECT_ORT_HEADERS_ROOT}/include")
+endif()
+target_compile_definitions(IntersectProcessorTests PRIVATE
+    JucePlugin_VersionString="${INTERSECT_VERSION}"
+    JucePlugin_Build_Standalone=0
+    JUCE_MODAL_LOOPS_PERMITTED=1
+    JUCE_DISPLAY_SPLASH_SCREEN=0
+    INTERSECT_HAS_ONNX_RUNTIME=$<BOOL:${INTERSECT_HAS_ONNX_RUNTIME}>
+    INTERSECT_ORT_VERSION="${INTERSECT_ORT_VERSION}"
+    INTERSECT_TEST_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+)
+# On Linux, NEEDS_CURL above defines JUCE_USE_CURL=1 and links libcurl, like the plugin's JUCE_USE_CURL=1.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_compile_definitions(IntersectProcessorTests PRIVATE JUCE_USE_MP3AUDIOFORMAT=1)
+else()
+    target_compile_definitions(IntersectProcessorTests PRIVATE JUCE_USE_CURL=0 JUCE_WEB_BROWSER=0)
+endif()
+if(WIN32)
+    target_link_libraries(IntersectProcessorTests PRIVATE dxgi)
+endif()
+if(INTERSECT_HAS_ONNX_RUNTIME AND UNIX AND NOT APPLE)
+    target_link_libraries(IntersectProcessorTests PRIVATE ${CMAKE_DL_LIBS})
+endif()
+target_link_libraries(IntersectProcessorTests PRIVATE
+    juce::juce_audio_utils
+    juce::juce_cryptography
+    juce::juce_dsp
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_warning_flags
+    bungee_lib
+    velociloops
+    IntersectFonts
+)
+# HOME points at a scratch folder so the tests never read or write the real settings.yaml.
+add_test(NAME processor_state COMMAND IntersectProcessorTests state)
+set_tests_properties(processor_state PROPERTIES ENVIRONMENT "HOME=${CMAKE_CURRENT_BINARY_DIR}/test-home")
+
+# Every test that ctest runs, so CI can build just these: cmake --build <dir> --target IntersectTests
+add_custom_target(IntersectTests)
+add_dependencies(IntersectTests
+    IntersectAudioTests
+    IntersectStemTests
+    IntersectSettingsTests
+    IntersectUpdateTests
+    IntersectBrowserTests
+    IntersectUrlImportTests
+    IntersectProcessorTests
+)
