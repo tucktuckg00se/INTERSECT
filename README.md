@@ -130,7 +130,7 @@ Requires CMake 3.22+, a C++20 compiler, and Git. For per-OS toolchain setup, bui
 
 ## License
 
-INTERSECT is licensed under the [GNU General Public License v3.0](LICENSE).
+INTERSECT is licensed under the [GNU General Public License v3.0](LICENSE). It is built with [JUCE](https://juce.com), used under the AGPLv3, and other open-source libraries and the Inter typeface; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Every release zip includes both files.
 
 REX2 import uses [VelociLoops](https://github.com/kunitoki/VelociLoops) (public domain, Unlicense). REX2 import and MIDI export were originally contributed by [@cadecomposer](https://github.com/cadecomposer).
 

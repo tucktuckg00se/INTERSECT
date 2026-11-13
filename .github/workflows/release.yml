@@ -44,6 +44,7 @@ jobs:
             ART_ROOT="$ART_ROOT/Release"
           fi
           mkdir staging
+          cp LICENSE THIRD_PARTY_NOTICES.md staging/
           cp -r "$ART_ROOT/VST3/INTERSECT.vst3" staging/
           cp -a "$ART_ROOT/Standalone/." staging/
           cd staging && 7z a ../INTERSECT-${{ env.ZIP_TAG }}-Windows-x64.zip *
@@ -92,6 +93,7 @@ jobs:
           $artRoot = 'build/Intersect_artefacts'
           if (Test-Path "$artRoot/Release") { $artRoot = "$artRoot/Release" }
           New-Item -ItemType Directory -Path staging | Out-Null
+          Copy-Item LICENSE, THIRD_PARTY_NOTICES.md staging/
           Copy-Item -Recurse "$artRoot/VST3/INTERSECT.vst3" staging/
           Copy-Item -Recurse "$artRoot/Standalone/*" staging/
           # Fail early if the VST3 isn't an ARM64 bundle.
@@ -145,6 +147,7 @@ jobs:
             ART_ROOT="$ART_ROOT/Release"
           fi
           mkdir staging
+          cp LICENSE THIRD_PARTY_NOTICES.md staging/
           cp -r "$ART_ROOT/VST3/INTERSECT.vst3" staging/
           cp -a "$ART_ROOT/Standalone/." staging/
           cd staging && zip -r ../INTERSECT-${{ env.ZIP_TAG }}-Linux-x64.zip .
@@ -197,6 +200,7 @@ jobs:
             ART_ROOT="$ART_ROOT/Release"
           fi
           mkdir staging
+          cp LICENSE THIRD_PARTY_NOTICES.md staging/
           cp -r "$ART_ROOT/VST3/INTERSECT.vst3" staging/
           cp -a "$ART_ROOT/Standalone/." staging/
           test -d staging/INTERSECT.vst3/Contents/aarch64-linux
@@ -245,6 +249,7 @@ jobs:
             ART_ROOT="$ART_ROOT/Release"
           fi
           mkdir staging
+          cp LICENSE THIRD_PARTY_NOTICES.md staging/
           cp -r "$ART_ROOT/VST3/INTERSECT.vst3" staging/
           cp -r "$ART_ROOT/Standalone/INTERSECT.app" staging/
           cp -r "$ART_ROOT/AU/INTERSECT.component" staging/
@@ -293,6 +298,7 @@ jobs:
             ART_ROOT="$ART_ROOT/Release"
           fi
           mkdir staging
+          cp LICENSE THIRD_PARTY_NOTICES.md staging/
           cp -r "$ART_ROOT/VST3/INTERSECT.vst3" staging/
           cp -r "$ART_ROOT/Standalone/INTERSECT.app" staging/
           cp -r "$ART_ROOT/AU/INTERSECT.component" staging/
