@@ -62,8 +62,6 @@ public:
     enum CommandType
     {
         CmdNone = 0,
-        CmdLoadFile,
-        CmdAppendFiles,
         CmdCreateSlice,
         CmdDeleteSlice,
         CmdDeleteSessionSample,
@@ -144,8 +142,6 @@ public:
         int intParam2 = 0;
         float floatParam1 = 0.0f;
         uint64_t lockBitParam = 0;
-        juce::File fileParam;
-        std::vector<juce::File> filesParam;
         // Fixed-size array avoids heap allocation/deallocation on the audio thread.
         std::array<int, 128> positions {};
         int numPositions = 0;

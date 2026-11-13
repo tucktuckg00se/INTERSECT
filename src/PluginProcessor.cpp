@@ -208,8 +208,6 @@ static bool isCriticalCommand (IntersectProcessor::CommandType type)
         case IntersectProcessor::CmdBeginGesture:
             return false;
 
-        case IntersectProcessor::CmdLoadFile:
-        case IntersectProcessor::CmdAppendFiles:
         case IntersectProcessor::CmdCreateSlice:
         case IntersectProcessor::CmdDeleteSlice:
         case IntersectProcessor::CmdDeleteSessionSample:
@@ -2120,8 +2118,6 @@ void IntersectProcessor::handleCommand (const Command& cmd)
     switch (cmd.type)
     {
         case CmdNone:
-        case CmdLoadFile:
-        case CmdAppendFiles:
         case CmdLazyChopStart:
         case CmdLazyChopStop:
         case CmdFileLoadCompleted:
@@ -2170,17 +2166,6 @@ void IntersectProcessor::handleCommand (const Command& cmd)
 
     switch (cmd.type)
     {
-        case CmdLoadFile:
-            if (! cmd.filesParam.empty())
-                loadFilesAsync (cmd.filesParam, false);
-            else
-                loadFileAsync (cmd.fileParam);
-            break;
-
-        case CmdAppendFiles:
-            loadFilesAsync (cmd.filesParam, true);
-            break;
-
         case CmdCreateSlice:
         {
             bool wasAtLimit = sliceManager.nextMidiNote() == kMaxMidiNote
