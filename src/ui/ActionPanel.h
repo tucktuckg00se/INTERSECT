@@ -39,8 +39,8 @@ private:
     {
         juce::String text;
         juce::Rectangle<int> bounds;
-        int id;
-        bool isNarrow;
+        int id = 0;
+        bool isNarrow = false;
     };
 
     std::vector<ActionItem> items;

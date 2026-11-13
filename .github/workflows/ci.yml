@@ -1,0 +1,43 @@
+name: CI
+
+# Linux build + tests on every branch push and pull request. Release builds for every platform
+# stay in release.yml (tags, or a manual dry run before a release).
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux-tests:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libfreetype-dev libx11-dev libxrandr-dev libxcursor-dev libxinerama-dev libwebkit2gtk-4.1-dev libcurl4-openssl-dev cppcheck
+
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      # Same flags as the local pre-build check. Ubuntu 22.04's cppcheck (2.7) also reports calls to
+      # an override from constructors, which newer versions don't under these flags; those calls are
+      # meant to run the class's own version.
+      - name: cppcheck
+        run: cppcheck --enable=warning,performance --suppress=missingInclude --suppress=virtualCallInConstructor --error-exitcode=1 --quiet src/
+
+      # Debug + AddressSanitizer/UBSan: memory errors and undefined behaviour fail the run.
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -DINTERSECT_BUILD_TESTS=ON -DINTERSECT_SANITIZE=address,undefined
+
+      - name: Build tests
+        run: cmake --build build --target IntersectTests -j4
+
+      - name: Run tests
+        env:
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: ctest --test-dir build --output-on-failure

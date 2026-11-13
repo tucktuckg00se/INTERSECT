@@ -332,7 +332,7 @@ void ActionPanel::resized()
 
     row.performLayout (bounds.toFloat());
 
-    struct ItemDef { juce::String text; int id; bool narrow; };
+    struct ItemDef { juce::String text; int id = 0; bool narrow = false; };
     const ItemDef defs[] = {
         { "ADD",   0, false },
         { "LAZY",  1, false },

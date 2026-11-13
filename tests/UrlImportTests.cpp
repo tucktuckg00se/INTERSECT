@@ -375,6 +375,15 @@ void processEnvironmentAndStdin()
     ::unsetenv ("PYTHONPATH");
 }
 
+// Ended: gone, or a zombie its adopter (a busy PID 1 in a container) hasn't reaped yet.
+bool processEnded (pid_t pid)
+{
+    if (::kill (pid, 0) != 0)
+        return errno == ESRCH;
+    const auto stat = juce::File ("/proc/" + juce::String ((int) pid) + "/stat").loadFileAsString();
+    return stat.fromLastOccurrenceOf (")", false, false).trimStart().startsWithChar ('Z');   // Linux only
+}
+
 void processTerminateKillsChildren()
 {
     ToolProcess process;
@@ -387,9 +396,9 @@ void processTerminateKillsChildren()
 
     process.terminate();
     bool gone = false;
-    for (int i = 0; i < 100 && ! gone; ++i)
+    for (int i = 0; i < 250 && ! gone; ++i)
     {
-        gone = ::kill (grandchild, 0) != 0 && errno == ESRCH;
+        gone = processEnded (grandchild);
         if (! gone)
             juce::Thread::sleep (20);
     }

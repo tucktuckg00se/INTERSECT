@@ -45,7 +45,7 @@ void SliceLane::paint (juce::Graphics& g)
         && waveformView->getActiveSlicePreview (previewIdx, previewStart, previewEnd);
 
     // Collect visible slice info without per-frame heap allocations.
-    struct SliceInfo { int idx; int x1; int x2; bool selected; juce::Colour col; };
+    struct SliceInfo { int idx = 0; int x1 = 0; int x2 = 0; bool selected = false; juce::Colour col; };
     std::array<SliceInfo, SliceManager::kMaxSlices> visibleSlices {};
     int visibleCount = 0;
 
