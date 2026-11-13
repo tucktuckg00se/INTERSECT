@@ -704,24 +704,6 @@ juce::File IntersectProcessor::getPendingStateFile() const
     return pendingStateFile;
 }
 
-void IntersectProcessor::setPendingStateFiles (const std::vector<juce::File>& files)
-{
-    const juce::ScopedLock sl (pendingStateFileLock);
-    pendingStateFiles = files;
-}
-
-void IntersectProcessor::clearPendingStateFiles()
-{
-    const juce::ScopedLock sl (pendingStateFileLock);
-    pendingStateFiles.clear();
-}
-
-std::vector<juce::File> IntersectProcessor::getPendingStateFiles() const
-{
-    const juce::ScopedLock sl (pendingStateFileLock);
-    return pendingStateFiles;
-}
-
 ParamUndoState IntersectProcessor::captureParamUndoState() const
 {
     ParamUndoState state;
@@ -951,7 +933,6 @@ void IntersectProcessor::loadFilesAsync (const std::vector<juce::File>& files, b
             newSampleIds.push_back (sampleIds.back());
         }
         setPendingStateFile (orderedFiles.front());
-        setPendingStateFiles (orderedFiles);
         requestSampleLoad (orderedFiles, LoadKindPreserveSlices, &sampleIds, &newSampleIds);
         return;
     }
@@ -961,7 +942,6 @@ void IntersectProcessor::loadFilesAsync (const std::vector<juce::File>& files, b
     for (size_t i = 0; i < files.size(); ++i)
         sampleIds.push_back (generateSessionSampleId());
     setPendingStateFile (orderedFiles.front());
-    setPendingStateFiles (orderedFiles);
     requestSampleLoad (orderedFiles, LoadKindReplace, &sampleIds, &sampleIds);
 }
 
@@ -998,7 +978,6 @@ void IntersectProcessor::relinkSessionSamplesAsync (const std::vector<std::pair<
     // Same ids, so per-sample params, stem metadata and the parked slices all carry over.
     pendingStateRestoreToken.store (0, std::memory_order_release);
     setPendingStateFile (files.front());
-    setPendingStateFiles (files);
     requestSampleLoad (files, LoadKindPreserveSlices, &sampleIds);
 }
 
@@ -1686,7 +1665,6 @@ void IntersectProcessor::deleteSessionSample (int sampleId)
         sampleParams.clear();
         sliceManager.clearAll();
         updateSampleMissingState();
-        clearPendingStateFiles();
         selectedSessionSampleId.store (-1, std::memory_order_relaxed);
         uiSnapshotDirty.store (true, std::memory_order_release);
         return;
@@ -2109,7 +2087,6 @@ void IntersectProcessor::restoreSnapshot (const UndoManager::Snapshot& snap)
         sliceManager.rebuildMidiMap();
         pendingStateRestoreToken.store (0, std::memory_order_release);
         setPendingStateFile (files.front());
-        setPendingStateFiles (files);
         requestSampleLoad (files, LoadKindPreserveSlices, &sampleIds);
     }
     else
@@ -2118,7 +2095,6 @@ void IntersectProcessor::restoreSnapshot (const UndoManager::Snapshot& snap)
         sampleData.clear();
         updateSampleMissingState();
         clearPendingStateFile();
-        clearPendingStateFiles();
         sliceManager.rebuildMidiMap();
     }
 
@@ -3204,7 +3180,6 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 // New session samples start at factory defaults; removed ones lose their entry.
                 sampleParams.syncToSession (sampleData.getSessionSamples());
                 updateSampleMissingState();
-                clearPendingStateFiles();
                 if (sampleData.getNumSessionSamples() > 0)
                 {
                     const auto& sessionSamples = sampleData.getSessionSamples();
@@ -3715,7 +3690,6 @@ bool IntersectProcessor::restoreState (const void* data, int sizeInBytes, const 
 
     juce::MemoryInputStream stream (data, (size_t) sizeInBytes, false);
     pendingStateRestoreToken.store (0, std::memory_order_release);
-    clearPendingStateFiles();
 
     int version = stream.readInt();
     if (version != 19 && version != 20 && version != 21 && version != 22 && version != 23 && version != kCurrentStateVersion)
@@ -4287,7 +4261,6 @@ bool IntersectProcessor::restoreState (const void* data, int sizeInBytes, const 
     {
         updateSampleMissingState();
         setPendingStateFile (restoreFiles.front());
-        setPendingStateFiles (restoreFiles);
         primePendingSliceTimelineRemap (version,
                                         savedDecodedNumFrames,
                                         savedDecodedSampleRate,
@@ -4302,7 +4275,6 @@ bool IntersectProcessor::restoreState (const void* data, int sizeInBytes, const 
     {
         updateSampleMissingState();
         clearPendingStateFile();
-        clearPendingStateFiles();
         clearPendingSliceTimelineRemap();
         selectedSessionSampleId.store (-1, std::memory_order_relaxed);
     }

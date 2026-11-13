@@ -534,9 +534,6 @@ private:
     void setPendingStateFile (const juce::File& file);
     void clearPendingStateFile();
     juce::File getPendingStateFile() const;
-    void setPendingStateFiles (const std::vector<juce::File>& files);
-    void clearPendingStateFiles();
-    std::vector<juce::File> getPendingStateFiles() const;
     ParamUndoState captureParamUndoState() const;
     void applyParamUndoState (const ParamUndoState& state);
     void clearPendingSliceTimelineRemap();
@@ -682,7 +679,6 @@ private:
     std::atomic<int> uiStatusMessageIndex { 0 };
     std::atomic<int> pendingStateRestoreToken { 0 };
     juce::File pendingStateFile;
-    std::vector<juce::File> pendingStateFiles;
     mutable juce::CriticalSection pendingStateFileLock;
 
     // Cached parameter pointers
