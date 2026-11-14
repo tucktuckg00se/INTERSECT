@@ -111,6 +111,9 @@ public:
     // Audio thread: the active sample, to check a prepared edit still applies to it.
     const DecodedSample* getActive() const noexcept { return activeDecoded.get(); }
 
+    // Audio thread: a reference to the active sample without the snapshot's lock (a save copy).
+    SnapshotPtr getActiveSample() const noexcept { return activeDecoded; }
+
     // Thread-safe snapshot for UI access.
     SnapshotPtr getSnapshot() const;
 

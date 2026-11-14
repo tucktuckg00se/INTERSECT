@@ -2109,6 +2109,7 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 {
     juce::ScopedNoDenormals noDenormals;
     lastProcessBlockMs.store (juce::Time::getMillisecondCounter(), std::memory_order_relaxed);
+    audioThreadId.store (juce::Thread::getCurrentThreadId(), std::memory_order_relaxed);   // for captureSessionState
     buffer.clear();
 
     // Standalone has no host transport, so its shell provides the tempo directly.
@@ -2163,6 +2164,7 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     }
 
     drainCommands();
+    serviceSaveRequest();   // a save waiting for a consistent copy (captureSessionState)
     applyLiveDragBoundsToSlice();
 
     // Update max active voices from param
@@ -2472,8 +2474,69 @@ juce::AudioProcessorEditor* IntersectProcessor::createEditor()
     return new IntersectEditor (*this);
 }
 
+void IntersectProcessor::copyEngineState (SaveCopy& into, bool onAudioThread) noexcept
+{
+    into.numSlices = sliceManager.getNumSlices();
+    for (int i = 0; i < into.numSlices; ++i)
+        into.slices[(size_t) i] = sliceManager.getSlice (i);
+    into.selectedSlice = sliceManager.selectedSlice.load (std::memory_order_relaxed);
+    into.rootNote = sliceManager.rootNote.load (std::memory_order_relaxed);
+    into.selectedSessionSampleId = selectedSessionSampleId.load (std::memory_order_relaxed);
+    into.sampleParams = sampleParams;
+    into.stemMetaEntries = stemMetaEntries;
+    into.stemMetaEntryCount = stemMetaEntryCount;
+    // The audio thread owns the active sample; any other thread reads the published snapshot.
+    into.sample = onAudioThread ? sampleData.getActiveSample() : sampleData.getSnapshot();
+}
+
+void IntersectProcessor::serviceSaveRequest() noexcept
+{
+    int expected = saveRequested;
+    if (saveRequestState.load (std::memory_order_relaxed) != saveRequested
+        || ! saveRequestState.compare_exchange_strong (expected, saveFilling, std::memory_order_acq_rel))
+        return;
+
+    copyEngineState (saveCopy, true);   // saveCopy.sample is empty here, so this frees nothing
+    saveRequestState.store (saveReady, std::memory_order_release);
+}
+
+bool IntersectProcessor::takeSaveCopyFromAudioThread (SaveCopy& into)
+{
+    // Read directly when that is already safe: this is the audio thread, processing is held off,
+    // or the audio thread isn't running (it would never answer).
+    const auto now = juce::Time::getMillisecondCounter();
+    const bool audioRunning = now - lastProcessBlockMs.load (std::memory_order_relaxed) < 50;
+    if (audioThreadId.load (std::memory_order_relaxed) == juce::Thread::getCurrentThreadId()
+        || isSuspended() || ! audioRunning)
+        return false;
+
+    saveRequestState.store (saveRequested, std::memory_order_release);
+    const auto deadline = now + 250;
+    while (saveRequestState.load (std::memory_order_acquire) != saveReady)
+    {
+        if (juce::Time::getMillisecondCounter() > deadline)
+        {
+            int expected = saveRequested;
+            if (saveRequestState.compare_exchange_strong (expected, saveIdle, std::memory_order_acq_rel))
+                return false;   // never picked up: read directly
+            // Otherwise the audio thread is filling it right now, which takes microseconds.
+        }
+        juce::Thread::sleep (1);
+    }
+
+    into = saveCopy;
+    saveCopy.sample.reset();
+    saveRequestState.store (saveIdle, std::memory_order_release);
+    return true;
+}
+
 SessionState IntersectProcessor::captureSessionState()
 {
+    const juce::ScopedLock oneSaveAtATime (saveLock);
+    auto copy = std::make_unique<SaveCopy>();
+    if (! takeSaveCopyFromAudioThread (*copy))
+        copyEngineState (*copy, audioThreadId.load (std::memory_order_relaxed) == juce::Thread::getCurrentThreadId());
+
     SessionState state;
     state.version = kCurrentStateVersion;
 
@@ -2482,17 +2545,13 @@ SessionState IntersectProcessor::captureSessionState()
 
     state.zoom = zoom.load();
     state.scroll = scroll.load();
-    state.selectedSlice = sliceManager.selectedSlice;
+    state.selectedSlice = copy->selectedSlice;
     state.midiSelectsSlice = midiSelectsSlice.load();
-    state.rootNote = sliceManager.rootNote.load();
-
-    const int numSlices = sliceManager.getNumSlices();
-    state.slices.reserve ((size_t) numSlices);
-    for (int i = 0; i < numSlices; ++i)
-        state.slices.push_back (sliceManager.getSlice (i));
+    state.rootNote = copy->rootNote;
+    state.slices.assign (copy->slices.begin(), copy->slices.begin() + copy->numSlices);
 
     // The first sample's file, kept for single-file states and older builds.
-    const auto sampleSnap = sampleData.getSnapshot();
+    const auto& sampleSnap = copy->sample;
     if (sampleSnap != nullptr)
     {
         if (! sampleSnap->sessionSamples.empty())
@@ -2505,6 +2564,13 @@ SessionState IntersectProcessor::captureSessionState()
             state.filePath = sampleSnap->filePath;
             state.fileName = sampleSnap->fileName;
         }
+
+        // The same values applyDecodedSample publishes for this sample.
+        state.decodedNumFrames = sampleSnap->decodedNumFrames > 0 ? sampleSnap->decodedNumFrames
+                                                                  : sampleSnap->buffer.getNumSamples();
+        state.decodedSampleRate = sampleSnap->decodedSampleRate;
+        state.sourceNumFrames = sampleSnap->sourceNumFrames;
+        state.sourceSampleRate = sampleSnap->sourceSampleRate;
     }
     else if (const auto pendingFile = getPendingStateFile(); pendingFile != juce::File())
     {
@@ -2512,17 +2578,20 @@ SessionState IntersectProcessor::captureSessionState()
         state.fileName = pendingFile.getFileName();
     }
 
-    state.decodedNumFrames = sampleData.getNumFrames();
-    state.decodedSampleRate = sampleData.getDecodedSampleRate();
-    state.sourceNumFrames = sampleData.getSourceNumFrames();
-    state.sourceSampleRate = sampleData.getSourceSampleRate();
     state.snapToZeroCrossing = snapToZeroCrossing.load();
     state.midiEditEnabled = midiEditState.enabled.load (std::memory_order_relaxed);
     state.midiEditChannel = midiEditState.channel.load (std::memory_order_relaxed);
     state.consumeMidiEditCc = midiEditState.consumeMidiEditCc.load (std::memory_order_relaxed);
 
-    state.selectedSessionSampleId = selectedSessionSampleId.load (std::memory_order_relaxed);
+    state.selectedSessionSampleId = copy->selectedSessionSampleId;
     state.stemComputeDevice = stemComputeDevice;
+    const auto stemMetaFor = [&copy] (int sampleId)
+    {
+        for (int i = 0; i < copy->stemMetaEntryCount; ++i)
+            if (copy->stemMetaEntries[(size_t) i].sampleId == sampleId)
+                return copy->stemMetaEntries[(size_t) i].meta;
+        return StemMetadata {};
+    };
     SampleParamTable params;
     if (sampleSnap != nullptr)
     {
@@ -2532,8 +2601,8 @@ SessionState IntersectProcessor::captureSessionState()
         for (int i = 0; i < numSessionSamples; ++i)
         {
             auto sample = sampleSnap->sessionSamples[(size_t) i];
-            sample.stemMeta = getStemMeta (sample.sampleId);
-            params.set (sample.sampleId, paramsForSample (sample.sampleId));
+            sample.stemMeta = stemMetaFor (sample.sampleId);
+            params.set (sample.sampleId, copy->sampleParams.get (sample.sampleId));
             state.sessionSamples.push_back (std::move (sample));
         }
     }

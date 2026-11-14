@@ -22,6 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Loading or adding samples, and undo/redo, could cause a click or dropout while audio was playing.
 - Removing a sample while audio was playing could cause a dropout, longer the bigger the kit.
 - A project or preset with damaged INTERSECT data could half-load (resetting the root note and slices) without saying why. It now leaves your kit as it was and says the data is damaged.
+- Saving (or a DAW autosave) at the moment of an edit could store a half-applied change.
 
 ## [0.19.1] - 2026-11-09
 

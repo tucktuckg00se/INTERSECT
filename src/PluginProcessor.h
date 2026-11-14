@@ -683,6 +683,32 @@ private:
     std::array<StemMetaEntry, SampleData::kMaxSessionSamples> stemMetaEntries {};
     int stemMetaEntryCount = 0;
 
+    // The engine state a save needs. captureSessionState asks the audio thread to copy it between
+    // blocks (serviceSaveRequest), so a save never sees a half-applied edit; when audio isn't
+    // running, processing is suspended or the save runs on the audio thread, it's read directly.
+    struct SaveCopy
+    {
+        int numSlices = 0;
+        std::array<Slice, SliceManager::kMaxSlices> slices {};
+        int selectedSlice = -1;
+        int rootNote = kDefaultRootNote;
+        int selectedSessionSampleId = -1;
+        SampleParamTable sampleParams;
+        std::array<StemMetaEntry, SampleData::kMaxSessionSamples> stemMetaEntries {};
+        int stemMetaEntryCount = 0;
+        SampleData::SnapshotPtr sample;   // emptied by the saver before going idle, so the audio thread never frees a sample
+    };
+    // idle -> requested (saver) -> filling (audio thread) -> ready (audio thread) -> idle (saver).
+    // The audio thread writes saveCopy only while filling; the saver reads it only when ready.
+    enum SaveRequestState { saveIdle = 0, saveRequested, saveFilling, saveReady };
+    SaveCopy saveCopy;
+    std::atomic<int> saveRequestState { saveIdle };
+    std::atomic<juce::Thread::ThreadID> audioThreadId { nullptr };
+    juce::CriticalSection saveLock;   // one save at a time; never taken on the audio thread
+    void copyEngineState (SaveCopy& into, bool onAudioThread) noexcept;
+    void serviceSaveRequest() noexcept;                  // audio thread, once per block
+    bool takeSaveCopyFromAudioThread (SaveCopy& into);   // saving thread
+
     SampleParamTable sampleParams;   // audio-thread owned; restoreState writes it like stemMetaEntries
     void setStemMeta (int sampleId, const StemMetadata& meta);
     StemMetadata getStemMeta (int sampleId) const;
