@@ -100,10 +100,16 @@ public:
     static std::unique_ptr<DecodedSample> rebuildWithSessionSamples (const DecodedSample& source,
                                                                      const std::vector<SessionSample>& sessionSamples);
 
-    // Audio-thread safe: converts unique_ptr to shared_ptr (no buffer copy).
-    void applyDecodedSample (std::unique_ptr<DecodedSample> decoded);
+    // Audio thread. Makes `sample` the active sample and returns the one it replaces. Nothing is
+    // allocated or freed here as long as the caller makes the shared_ptr elsewhere (a decode
+    // worker) and hands the returned one to the message thread instead of dropping it.
+    [[nodiscard]] SnapshotPtr applyDecodedSample (SnapshotPtr sample);
 
-    void clear();
+    // Unloads the sample and returns it, for the caller to free off the audio thread.
+    [[nodiscard]] SnapshotPtr clear();
+
+    // Audio thread: the active sample, to check a prepared edit still applies to it.
+    const DecodedSample* getActive() const noexcept { return activeDecoded.get(); }
 
     // Thread-safe snapshot for UI access.
     SnapshotPtr getSnapshot() const;

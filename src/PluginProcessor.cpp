@@ -358,10 +358,12 @@ IntersectProcessor::IntersectProcessor()
     stemManifestRefreshJob.onManifestChanged = [this] { stemManifestGeneration.fetch_add (1, std::memory_order_acq_rel); };
 
 	    publishUiSliceSnapshot();
+    startTimerHz (20);   // frees what the audio thread retires (timerCallback)
 }
 
 IntersectProcessor::~IntersectProcessor()
 {
+    stopTimer();
         cancelPendingUpdate();
 	    auditionPool.removeAllJobs (true, 2000);
 	    fileLoadPool.removeAllJobs (true, 5000);
@@ -445,6 +447,18 @@ void IntersectProcessor::setDroppedCommandWarning (uint32_t droppedCount, uint32
 const IntersectProcessor::UiStatusMessage& IntersectProcessor::getUiStatusMessage() const
 {
     return uiStatusMessages[(size_t) uiStatusMessageIndex.load (std::memory_order_acquire)];
+}
+
+void IntersectProcessor::timerCallback()
+{
+    retiredObjects.clear();
+}
+
+void IntersectProcessor::retire (RetiredObjects&& objects) noexcept
+{
+    // The queue only fills up if the message thread stalls for seconds; the objects are then
+    // freed here after all, when the caller's temporary goes away.
+    retiredObjects.push (std::move (objects));
 }
 
 void IntersectProcessor::handleAsyncUpdate()
@@ -848,8 +862,11 @@ int IntersectProcessor::requestSampleLoad (const std::vector<juce::File>& files,
         if (finishedToken != latestLoadToken.load (std::memory_order_acquire))
             return;
 
-        auto* old = completedLoadData.exchange (decoded.release(), std::memory_order_acq_rel);
-        delete old;
+        auto load = std::make_unique<CompletedLoad>();
+        load->token = finishedToken;
+        load->kind = finishedKind;
+        load->sample = std::move (decoded);   // the shared_ptr's control block is allocated here, off the audio thread
+        delete completedLoadData.exchange (load.release(), std::memory_order_acq_rel);
         latestLoadKind.store ((int) finishedKind, std::memory_order_release);
     };
 
@@ -1659,7 +1676,9 @@ void IntersectProcessor::deleteSessionSample (int sampleId)
     if (sampleSnap->sessionSamples.size() == 1)
     {
         clearVoicesBeforeSampleSwap();
-        sampleData.clear();
+        RetiredObjects unloaded;
+        unloaded.sample = sampleData.clear();
+        retire (std::move (unloaded));
         sampleParams.clear();
         sliceManager.clearAll();
         updateSampleMissingState();
@@ -1703,7 +1722,9 @@ void IntersectProcessor::deleteSessionSample (int sampleId)
 
     auto rebuilt = SampleData::rebuildWithSessionSamples (*sampleSnap, remainingSamples);
     clearVoicesBeforeSampleSwap();
-    sampleData.applyDecodedSample (std::move (rebuilt));
+    RetiredObjects replaced;
+    replaced.sample = sampleData.applyDecodedSample (std::move (rebuilt));
+    retire (std::move (replaced));
     sampleParams.syncToSession (sampleData.getSessionSamples());
     updateSampleMissingState();
     selectedSessionSampleId.store (nextSelectedSampleId, std::memory_order_relaxed);
@@ -2094,7 +2115,9 @@ void IntersectProcessor::restoreSnapshot (const UndoManager::Snapshot& snap)
     else
     {
         clearVoicesBeforeSampleSwap();
-        sampleData.clear();
+        RetiredObjects unloaded;
+        unloaded.sample = sampleData.clear();
+        retire (std::move (unloaded));
         updateSampleMissingState();
         clearPendingStateFile();
         sliceManager.rebuildMidiMap();
@@ -3135,10 +3158,11 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
     bool loadStateChanged = false;
     {
-        auto* rawDecoded = completedLoadData.exchange (nullptr, std::memory_order_acq_rel);
-        if (rawDecoded != nullptr)
+        auto* rawLoad = completedLoadData.exchange (nullptr, std::memory_order_acq_rel);
+        if (rawLoad != nullptr)
         {
-            std::unique_ptr<SampleData::DecodedSample> decoded (rawDecoded);
+            std::unique_ptr<CompletedLoad> load (rawLoad);
+            const auto& decoded = load->sample;
             const int currentToken = latestLoadToken.load (std::memory_order_acquire);
             const auto currentLoadKind = (LoadKind) latestLoadKind.load (std::memory_order_acquire);
             const bool isStateRestoreLoad = pendingStateRestoreToken.load (std::memory_order_acquire) == currentToken;
@@ -3165,7 +3189,9 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             else
             {
                 clearVoicesBeforeSampleSwap();
-                sampleData.applyDecodedSample (std::move (decoded));
+                RetiredObjects replaced;
+                replaced.sample = sampleData.applyDecodedSample (std::move (load->sample));
+                retire (std::move (replaced));
                 // New session samples start at factory defaults; removed ones lose their entry.
                 sampleParams.syncToSession (sampleData.getSessionSamples());
                 updateSampleMissingState();
@@ -3193,7 +3219,7 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
                 // Apply pending stem metadata to newly imported session samples
                 {
-                    auto* pending = pendingStemImport.exchange (nullptr, std::memory_order_acq_rel);
+                    std::unique_ptr<PendingStemImport> pending (pendingStemImport.exchange (nullptr, std::memory_order_acq_rel));
                     if (pending != nullptr)
                     {
                         const auto& sessionSamples = sampleData.getSessionSamples();
@@ -3210,7 +3236,9 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                             const auto sourceParams = paramsForSample (pending->parentSourceSampleId);
                             sampleParams.set (stemId, sourceParams);
                         }
-                        delete pending;
+                        RetiredObjects applied;
+                        applied.stemImport = std::move (pending);
+                        retire (std::move (applied));
                     }
                 }
 
@@ -3266,6 +3294,11 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 loadStateChanged = true;
                 uiSnapshotDirty.store (true, std::memory_order_release);
             }
+
+            // The hand-off (and the decoded sample, after a sample-rate retry) is freed off the audio thread.
+            RetiredObjects done;
+            done.load = std::move (load);
+            retire (std::move (done));
         }
     }
 
@@ -3285,6 +3318,10 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 loadStateChanged = true;
                 uiSnapshotDirty.store (true, std::memory_order_release);
             }
+
+            RetiredObjects done;
+            done.failure = std::move (failed);
+            retire (std::move (done));
         }
     }
 
@@ -4179,7 +4216,7 @@ bool IntersectProcessor::restoreState (const void* data, int sizeInBytes, const 
     double savedSourceSampleRate = postSliceResult->savedSourceSampleRate;
 
     clearVoicesBeforeSampleSwap();
-    sampleData.clear();
+    sampleData.clear().reset();   // message thread, audio suspended: freeing it here is fine
 
     // Restore stem metadata from parsed session samples
     stemMetaEntryCount = 0;

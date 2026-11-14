@@ -8,6 +8,7 @@
 #include "Constants.h"
 #include "RtText.h"
 #include "audio/SampleData.h"
+#include "audio/SpscQueue.h"
 
 // RealtimeSanitizer builds (-DINTERSECT_SANITIZE=realtime, Clang 20+) mark processBlock as
 // nonblocking, so RTSan reports any allocation, free or lock reached from it at run time.
@@ -35,7 +36,8 @@
 
 class IntersectProcessor : public juce::AudioProcessor,
                            public ParamFieldIds,   // FieldBpm, ... (IntersectProcessor::FieldBpm)
-                           private juce::AsyncUpdater
+                           private juce::AsyncUpdater,
+                           private juce::Timer       // message-thread housekeeping for the audio thread
 {
 public:
     IntersectProcessor();
@@ -428,6 +430,15 @@ private:
         RtText<512> fileName;
     };
 
+    // A finished decode, handed from the decode worker to processBlock. The shared_ptr (and its
+    // control block) is made on the worker, so taking the sample on the audio thread allocates nothing.
+    struct CompletedLoad
+    {
+        int token = 0;
+        LoadKind kind = LoadKindReplace;
+        SampleData::SnapshotPtr sample;
+    };
+
     struct UiStatusMessage
     {
         enum class Source
@@ -520,6 +531,7 @@ private:
     int generateSessionSampleId();
     void publishUiSliceSnapshot();
     void handleAsyncUpdate() override;
+    void timerCallback() override;
     void handleStemJobCompletionOnMessageThread();
     void handleDownloadCompletionsOnMessageThread();
     void handleUrlImportCompletionOnMessageThread();
@@ -636,6 +648,18 @@ private:
     };
     std::atomic<PendingStemImport*> pendingStemImport { nullptr };
 
+    // Heap objects the audio thread lets go of. processBlock moves them in here instead of freeing
+    // them; timerCallback() frees them on the message thread.
+    struct RetiredObjects
+    {
+        SampleData::SnapshotPtr sample;
+        std::unique_ptr<CompletedLoad> load;
+        std::unique_ptr<FailedLoadResult> failure;
+        std::unique_ptr<PendingStemImport> stemImport;
+    };
+    SpscQueue<RetiredObjects, 64> retiredObjects;
+    void retire (RetiredObjects&& objects) noexcept;   // audio thread
+
     // Presets. A newer preset load, a sample load or a host state restore bumps the generation,
     // which makes any in-flight preset load drop its result. Declared before fileLoadPool so
     // these outlive the pool's worker thread.
@@ -667,7 +691,7 @@ private:
     std::atomic<int> nextSessionSampleId { 0 };
     std::atomic<int> latestLoadToken { 0 };
     std::atomic<int> latestLoadKind { (int) LoadKindReplace };
-    std::atomic<SampleData::DecodedSample*> completedLoadData { nullptr };
+    std::atomic<CompletedLoad*> completedLoadData { nullptr };
     std::atomic<FailedLoadResult*> completedLoadFailure { nullptr };
     std::array<UiSliceSnapshot, 2> uiSliceSnapshots {};
     std::atomic<int> uiSliceSnapshotIndex { 0 };
