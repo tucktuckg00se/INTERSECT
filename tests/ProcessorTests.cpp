@@ -44,6 +44,28 @@ juce::File writeSine (const juce::File& file, int numFrames)
     return file;
 }
 
+// One second at each level, so the output shows which half (slice) is playing.
+juce::File writeTwoLevels (const juce::File& file, float firstLevel, float secondLevel)
+{
+    const int half = (int) kRate;
+    juce::AudioBuffer<float> buffer (2, half * 2);
+    for (int i = 0; i < half * 2; ++i)
+    {
+        const auto level = i < half ? firstLevel : secondLevel;
+        const auto value = level * (float) std::sin (juce::MathConstants<double>::twoPi * i / 109.0);
+        buffer.setSample (0, i, value);
+        buffer.setSample (1, i, value);
+    }
+
+    file.deleteFile();
+    std::unique_ptr<juce::OutputStream> stream = std::make_unique<juce::FileOutputStream> (file);
+    const auto options = juce::AudioFormatWriterOptions{}.withSampleRate (kRate).withNumChannels (2).withBitsPerSample (16);
+    auto writer = juce::WavAudioFormat().createWriterFor (stream, options);
+    require (writer != nullptr, "could not write test wav");
+    writer->writeFromAudioSampleBuffer (buffer, 0, half * 2);
+    return file;
+}
+
 struct TempDir
 {
     juce::File dir = juce::File::getSpecialLocation (juce::File::tempDirectory)
@@ -379,6 +401,46 @@ void missingSampleKeepsLoopPoints()
                  + std::to_string (reopened.ui().slices[0].loopLength) + ")");
 }
 
+// MIDI in -> audio out: a slice's note plays that slice, and note-off ends it after the release.
+void notesPlayTheirSlices()
+{
+    TempDir temp;
+    const auto wav = writeTwoLevels (temp.dir.getChildFile ("levels.wav"), 0.5f, 0.1f);
+
+    Host host;
+    host.loadKit (wav, 2);   // slice 0 = the loud second, slice 1 = the quiet one
+    const int loudNote = host.ui().slices[0].midiNote;
+    const int quietNote = host.ui().slices[1].midiNote;
+    require (loudNote != quietNote, "the slices have their own notes");
+
+    const auto rms = [&host] (int blocks)
+    {
+        double sum = 0.0;
+        for (int b = 0; b < blocks; ++b)
+        {
+            host.renderBlock();
+            for (int i = 0; i < host.buffer.getNumSamples(); ++i)
+                sum += (double) host.buffer.getSample (0, i) * host.buffer.getSample (0, i);
+        }
+        return std::sqrt (sum / (blocks * host.buffer.getNumSamples()));
+    };
+
+    require (rms (8) < 1.0e-4, "silent before any note");
+
+    host.midi.addEvent (juce::MidiMessage::noteOn (1, loudNote, 1.0f), 0);
+    const auto loud = rms (40);   // about 0.2 s of the slice
+    host.midi.addEvent (juce::MidiMessage::noteOff (1, loudNote), 0);
+    rms (20);                     // past the 20 ms release
+    require (rms (8) < 1.0e-4, "silent after note-off");
+
+    host.midi.addEvent (juce::MidiMessage::noteOn (1, quietNote, 1.0f), 0);
+    const auto quiet = rms (40);
+
+    require (loud > 0.1, "the first note plays (rms " + std::to_string (loud) + ")");
+    require (quiet > 0.01 && quiet < loud * 0.5,
+             "the second note plays the quieter slice (rms " + std::to_string (quiet) + " vs " + std::to_string (loud) + ")");
+}
+
 // Adding, removing, undoing and redoing samples while voices play. RealtimeSanitizer builds
 // (-DINTERSECT_SANITIZE=realtime) also check that none of it allocates, frees or locks in processBlock.
 void kitEditsWhilePlaying()
@@ -495,6 +557,7 @@ int main (int argc, char* argv[])
         run ("a rich kit saves the expected bytes", richKitSavesExpectedBytes);
         run ("a damaged state changes nothing", damagedStateChangesNothing);
         run ("a missing sample keeps its slices' loops", missingSampleKeepsLoopPoints);
+        run ("notes play their slices, note-off ends them", notesPlayTheirSlices);
         run ("add, remove, undo and redo samples while playing", kitEditsWhilePlaying);
     }
     else if (group == "stress")
