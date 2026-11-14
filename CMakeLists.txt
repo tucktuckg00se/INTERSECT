@@ -171,6 +171,7 @@ set(INTERSECT_CORE_SOURCES
     src/audio/SampleData.cpp
     src/audio/Rex2Import.cpp
     src/audio/SliceManager.cpp
+    src/audio/SliceEdits.cpp
     src/audio/VoicePool.cpp
     src/audio/GrainEngine.cpp
     src/audio/LazyChopEngine.cpp

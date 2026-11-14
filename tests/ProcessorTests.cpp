@@ -6,6 +6,7 @@
 // The main thread is the message thread. Fixtures live in tests/fixtures (see extract_state.py).
 
 #include "PluginProcessor.h"
+#include "audio/SliceEdits.h"
 
 #include <atomic>
 #include <cmath>
@@ -407,6 +408,39 @@ void sliceFieldEditsSaveExpectedBytes()
     requireExpectedBytes (replacePath (host.save(), temp.dir.getFullPathName() + "/", "/kit/"), "slice-fields.bin", "slice field edits");
 }
 
+// SliceEdits on its own: values, lock bits (the sample's own value unlocks), clamping, and the
+// MIDI-map rebuild flag for note fields.
+void sliceEditsOnTheirOwn()
+{
+    using P = ParamFieldIds;
+    const auto sample = SampleParams::factoryDefaults();
+    Slice s;
+    s.midiNote = s.highNote = s.sliceRootNote = 36;
+
+    require (! SliceEdits::setField (s, sample, P::FieldPitch, 3.0f) && juce::exactlyEqual (s.pitchSemitones, 3.0f)
+             && (s.lockMask & kLockPitch) != 0, "a different value sets the field and its lock");
+    SliceEdits::setField (s, sample, P::FieldPitch, sample.pitchSemitones);
+    require ((s.lockMask & kLockPitch) == 0, "the sample's own value clears the lock");
+    SliceEdits::setField (s, sample, P::FieldBpm, sample.bpm + 5.0e-5f);
+    require ((s.lockMask & kLockBpm) == 0, "within 1e-4 of the sample's value counts as equal");
+
+    SliceEdits::setField (s, sample, P::FieldOutputBus, 99.0f);
+    require (s.outputBus == kMaxOutputBuses - 1 && (s.lockMask & kLockOutputBus) != 0, "output bus is clamped and locked");
+    SliceEdits::setField (s, sample, P::FieldFilterType, 9.0f);
+    require (s.filterType == 3, "filter type is clamped");
+
+    require (SliceEdits::setField (s, sample, P::FieldMidiNote, 50.0f), "a note change asks for a MIDI map rebuild");
+    require (s.midiNote == 50 && s.highNote == 50 && s.sliceRootNote == 50, "a single-note slice moves as a whole");
+    require (SliceEdits::setField (s, sample, P::FieldHighNote, 40.0f) && s.highNote == 50, "the high note can't go below the low note");
+    SliceEdits::setField (s, sample, P::FieldHighNote, 60.0f);
+    require (! SliceEdits::setField (s, sample, P::FieldSliceRootNote, 70.0f) && s.sliceRootNote == 60,
+             "the root note stays inside the range and needs no rebuild");
+
+    s.attackSec = 0.9f;
+    SliceEdits::copySampleParam (s, sample, kLockAttack);
+    require (juce::exactlyEqual (s.attackSec, sample.attackSec), "switching a lock on copies the sample's value");
+}
+
 // A damaged state is rejected before anything is applied, and says why. (It used to reset the
 // root note and the slice count, then fail silently.)
 void damagedStateChangesNothing()
@@ -628,6 +662,7 @@ int main (int argc, char* argv[])
         run ("saved-state fixtures load", fixturesLoad);
         run ("a rich kit saves the expected bytes", richKitSavesExpectedBytes);
         run ("slice field edits save the expected bytes", sliceFieldEditsSaveExpectedBytes);
+        run ("slice edits on their own", sliceEditsOnTheirOwn);
         run ("a damaged state changes nothing", damagedStateChangesNothing);
         run ("a missing sample keeps its slices' loops", missingSampleKeepsLoopPoints);
         run ("notes play their slices, note-off ends them", notesPlayTheirSlices);

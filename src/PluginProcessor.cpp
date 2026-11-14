@@ -5,6 +5,7 @@
 #include "PresetFile.h"
 #include "audio/GrainEngine.h"
 #include "audio/AudioAnalysis.h"
+#include "audio/SliceEdits.h"
 #include "state/SessionState.h"
 #include <algorithm>
 #include <cmath>
@@ -65,50 +66,6 @@ private:
     SuccessFn onSuccess;
     FailureFn onFailure;
 };
-
-// Copies the slice's sample-level value into the slice when a lock is switched on.
-static void copySampleParamToSlice (Slice& s, const SampleParams& g, uint64_t bit)
-{
-    switch (bit)
-    {
-        case kLockBpm:              s.bpm = g.bpm;                          break;
-        case kLockPitch:            s.pitchSemitones = g.pitchSemitones;    break;
-        case kLockAlgorithm:        s.algorithm = g.algorithm;              break;
-        case kLockRepitchMode:      s.repitchMode = g.repitchMode;          break;
-        case kLockAttack:           s.attackSec = g.attackSec;              break;
-        case kLockDecay:            s.decaySec = g.decaySec;                break;
-        case kLockSustain:          s.sustainLevel = g.sustain;             break;
-        case kLockRelease:          s.releaseSec = g.releaseSec;            break;
-        case kLockMuteGroup:        s.muteGroup = g.muteGroup;              break;
-        case kLockLoop:             s.loopMode = g.loopMode;                break;
-        case kLockStretch:          s.stretchEnabled = g.stretchEnabled;    break;
-        case kLockReleaseTail:      s.releaseTail = g.releaseTail;          break;
-        case kLockReverse:          s.reverse = g.reverse;                  break;
-        case kLockOneShot:          s.oneShot = g.oneShot;                  break;
-        case kLockCentsDetune:      s.centsDetune = g.centsDetune;          break;
-        case kLockTonality:         s.tonalityHz = g.tonalityHz;            break;
-        case kLockFormant:          s.formantSemitones = g.formantSemitones; break;
-        case kLockFormantComp:      s.formantComp = g.formantComp;          break;
-        case kLockGrainMode:        s.grainMode = g.grainMode;              break;
-        case kLockVolume:           s.volume = g.volumeDb;                  break;
-        case kLockFilterEnabled:    s.filterEnabled = g.filterEnabled;      break;
-        case kLockFilterType:       s.filterType = g.filterType;            break;
-        case kLockFilterSlope:      s.filterSlope = g.filterSlope;          break;
-        case kLockFilterCutoff:     s.filterCutoff = g.filterCutoffHz;      break;
-        case kLockFilterReso:       s.filterReso = g.filterReso;            break;
-        case kLockFilterDrive:      s.filterDrive = g.filterDrive;          break;
-        case kLockFilterKeyTrack:   s.filterKeyTrack = g.filterKeyTrack;    break;
-        case kLockFilterEnvAttack:  s.filterEnvAttackSec = g.filterEnvAttackSec;    break;
-        case kLockFilterEnvDecay:   s.filterEnvDecaySec = g.filterEnvDecaySec;      break;
-        case kLockFilterEnvSustain: s.filterEnvSustain = g.filterEnvSustain;        break;
-        case kLockFilterEnvRelease: s.filterEnvReleaseSec = g.filterEnvReleaseSec;  break;
-        case kLockFilterEnvAmount:  s.filterEnvAmount = g.filterEnvAmount;          break;
-        case kLockFilterAsym:       s.filterAsym = g.filterAsym;                  break;
-        // kLockOutputBus: no sample-level default — slice default (0) is correct.
-        // kLockLoopStart / kLockLoopLength: no sample-level default — slice defaults (0) are correct.
-        default: break;
-    }
-}
 
 constexpr int kCurrentStateVersion = StateFormat::kCurrentStateVersion;
 constexpr std::array<double, 6> kLegacyCommonSampleRates { 44100.0, 48000.0, 88200.0,
@@ -2281,7 +2238,7 @@ void IntersectProcessor::handleCommand (const Command& cmd)
                 bool turningOn = !(s.lockMask & bit);
 
                 if (turningOn)
-                    copySampleParamToSlice (s, sampleLevel, bit);
+                    SliceEdits::copySampleParam (s, sampleLevel, bit);
 
                 s.lockMask ^= bit;
             }
@@ -2294,186 +2251,8 @@ void IntersectProcessor::handleCommand (const Command& cmd)
             if (sel >= 0 && sel < sliceManager.getNumSlices())
             {
                 auto& s = sliceManager.getSlice (sel);
-                const auto& sampleLevel = paramsForSample (s.sampleId);
-                int field = cmd.intParam1;
-                float val = cmd.floatParam1;
-                constexpr float kCompareTolerance = 1.0e-4f;
-
-                auto setFloatField = [&s, kCompareTolerance] (float& target, float newValue, float sampleValue, uint64_t lockBit)
-                {
-                    target = newValue;
-                    if (std::abs (target - sampleValue) <= kCompareTolerance)
-                        s.lockMask &= ~lockBit;
-                    else
-                        s.lockMask |= lockBit;
-                };
-
-                auto setIntField = [&s] (int& target, int newValue, int sampleValue, uint64_t lockBit)
-                {
-                    target = newValue;
-                    if (target == sampleValue)
-                        s.lockMask &= ~lockBit;
-                    else
-                        s.lockMask |= lockBit;
-                };
-
-                auto setBoolField = [&s] (bool& target, bool newValue, bool sampleValue, uint64_t lockBit)
-                {
-                    target = newValue;
-                    if (target == sampleValue)
-                        s.lockMask &= ~lockBit;
-                    else
-                        s.lockMask |= lockBit;
-                };
-
-                switch (field)
-                {
-                    case FieldBpm:
-                        setFloatField (s.bpm, val, sampleLevel.bpm, kLockBpm);
-                        break;
-                    case FieldPitch:
-                        setFloatField (s.pitchSemitones, val, sampleLevel.pitchSemitones, kLockPitch);
-                        break;
-                    case FieldAlgorithm:
-                        setIntField (s.algorithm, (int) val, sampleLevel.algorithm, kLockAlgorithm);
-                        break;
-                    case FieldRepitchMode:
-                        setIntField (s.repitchMode, (int) val, sampleLevel.repitchMode, kLockRepitchMode);
-                        break;
-                    case FieldAttack:
-                        setFloatField (s.attackSec, val, sampleLevel.attackSec, kLockAttack);
-                        break;
-                    case FieldDecay:
-                        setFloatField (s.decaySec, val, sampleLevel.decaySec, kLockDecay);
-                        break;
-                    case FieldSustain:
-                        setFloatField (s.sustainLevel, val, sampleLevel.sustain, kLockSustain);
-                        break;
-                    case FieldRelease:
-                        setFloatField (s.releaseSec, val, sampleLevel.releaseSec, kLockRelease);
-                        break;
-                    case FieldMuteGroup:
-                        setIntField (s.muteGroup, (int) val, sampleLevel.muteGroup, kLockMuteGroup);
-                        break;
-                    case FieldStretchEnabled:
-                        setBoolField (s.stretchEnabled, val > 0.5f, sampleLevel.stretchEnabled, kLockStretch);
-                        break;
-                    case FieldTonality:
-                        setFloatField (s.tonalityHz, val, sampleLevel.tonalityHz, kLockTonality);
-                        break;
-                    case FieldFormant:
-                        setFloatField (s.formantSemitones, val, sampleLevel.formantSemitones, kLockFormant);
-                        break;
-                    case FieldFormantComp:
-                        setBoolField (s.formantComp, val > 0.5f, sampleLevel.formantComp, kLockFormantComp);
-                        break;
-                    case FieldGrainMode:
-                        setIntField (s.grainMode, (int) val, sampleLevel.grainMode, kLockGrainMode);
-                        break;
-                    case FieldVolume:
-                        setFloatField (s.volume, val, sampleLevel.volumeDb, kLockVolume);
-                        break;
-                    case FieldReleaseTail:
-                        setBoolField (s.releaseTail, val > 0.5f, sampleLevel.releaseTail, kLockReleaseTail);
-                        break;
-                    case FieldReverse:
-                        setBoolField (s.reverse, val > 0.5f, sampleLevel.reverse, kLockReverse);
-                        break;
-                    case FieldOutputBus:
-                        s.outputBus = juce::jlimit (0, kMaxOutputBuses - 1, (int) val);
-                        s.lockMask |= kLockOutputBus;
-                        break;
-                    case FieldLoop:
-                        setIntField (s.loopMode, (int) val, sampleLevel.loopMode, kLockLoop);
-                        break;
-                    case FieldOneShot:
-                        setBoolField (s.oneShot, val > 0.5f, sampleLevel.oneShot, kLockOneShot);
-                        break;
-                    case FieldCentsDetune:
-                        setFloatField (s.centsDetune, val, sampleLevel.centsDetune, kLockCentsDetune);
-                        break;
-                    case FieldFilterEnabled:
-                        setBoolField (s.filterEnabled, val > 0.5f, sampleLevel.filterEnabled, kLockFilterEnabled);
-                        break;
-                    case FieldFilterType:
-                        setIntField (s.filterType, juce::jlimit (0, 3, (int) val), sampleLevel.filterType, kLockFilterType);
-                        break;
-                    case FieldFilterSlope:
-                        setIntField (s.filterSlope, juce::jlimit (0, 1, (int) val), sampleLevel.filterSlope, kLockFilterSlope);
-                        break;
-                    case FieldFilterCutoff:
-                        setFloatField (s.filterCutoff, val, sampleLevel.filterCutoffHz, kLockFilterCutoff);
-                        break;
-                    case FieldFilterReso:
-                        setFloatField (s.filterReso, val, sampleLevel.filterReso, kLockFilterReso);
-                        break;
-                    case FieldFilterDrive:
-                        setFloatField (s.filterDrive, val, sampleLevel.filterDrive, kLockFilterDrive);
-                        break;
-                    case FieldFilterKeyTrack:
-                        setFloatField (s.filterKeyTrack, val, sampleLevel.filterKeyTrack, kLockFilterKeyTrack);
-                        break;
-                    case FieldFilterEnvAttack:
-                        setFloatField (s.filterEnvAttackSec, val, sampleLevel.filterEnvAttackSec, kLockFilterEnvAttack);
-                        break;
-                    case FieldFilterEnvDecay:
-                        setFloatField (s.filterEnvDecaySec, val, sampleLevel.filterEnvDecaySec, kLockFilterEnvDecay);
-                        break;
-                    case FieldFilterEnvSustain:
-                        setFloatField (s.filterEnvSustain, val, sampleLevel.filterEnvSustain, kLockFilterEnvSustain);
-                        break;
-                    case FieldFilterEnvRelease:
-                        setFloatField (s.filterEnvReleaseSec, val, sampleLevel.filterEnvReleaseSec, kLockFilterEnvRelease);
-                        break;
-                    case FieldFilterEnvAmount:
-                        setFloatField (s.filterEnvAmount, val, sampleLevel.filterEnvAmount, kLockFilterEnvAmount);
-                        break;
-                    case FieldFilterAsym:
-                        setFloatField (s.filterAsym, val, sampleLevel.filterAsym, kLockFilterAsym);
-                        break;
-                    case FieldCrossfade:
-                        s.crossfadePct = juce::jlimit (0.0f, 100.0f, val);
-                        s.lockMask |= kLockCrossfade;
-                        break;
-                    case FieldLoopStart:
-                        s.loopStartOffset = juce::jmax (0, (int) val);
-                        s.lockMask |= kLockLoopStart;
-                        break;
-                    case FieldLoopLength:
-                        s.loopLength = juce::jmax (0, (int) val);
-                        s.lockMask |= kLockLoopLength;
-                        break;
-                    case FieldMidiNote:
-                    {
-                        const bool wasSingleNote = (s.highNote == s.midiNote);
-                        s.midiNote = juce::jlimit (0, kMaxMidiNote, (int) val);
-
-                        if (wasSingleNote)
-                        {
-                            s.highNote = s.midiNote;
-                            s.sliceRootNote = s.midiNote;
-                        }
-                        else
-                        {
-                            if (s.highNote < s.midiNote)
-                                s.highNote = s.midiNote;
-                            s.sliceRootNote = juce::jlimit (s.midiNote, s.highNote, s.sliceRootNote);
-                        }
-
-                        sliceManager.rebuildMidiMap();
-                        break;
-                    }
-                    case FieldHighNote:
-                    {
-                        s.highNote = juce::jlimit (s.midiNote, kMaxMidiNote, (int) val);
-                        s.sliceRootNote = juce::jlimit (s.midiNote, s.highNote, s.sliceRootNote);
-                        sliceManager.rebuildMidiMap();
-                        break;
-                    }
-                    case FieldSliceRootNote:
-                        s.sliceRootNote = juce::jlimit (s.midiNote, s.highNote, (int) val);
-                        break;
-                }
+                if (SliceEdits::setField (s, paramsForSample (s.sampleId), cmd.intParam1, cmd.floatParam1))
+                    sliceManager.rebuildMidiMap();
             }
             break;
         }
