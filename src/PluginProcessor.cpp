@@ -2135,185 +2135,9 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         }
     }
 
-    bool loadStateChanged = false;
-    {
-        auto* rawLoad = completedLoadData.exchange (nullptr, std::memory_order_acq_rel);
-        if (rawLoad != nullptr)
-        {
-            std::unique_ptr<CompletedLoad> load (rawLoad);
-            const auto& decoded = load->sample;
-            const int currentToken = latestLoadToken.load (std::memory_order_acquire);
-            const auto currentLoadKind = load->kind;
-            const bool isStateRestoreLoad = pendingStateRestoreToken.load (std::memory_order_acquire) == currentToken;
-
-            const bool needsSampleRateRetry = decoded->filePath.isNotEmpty()
-                && currentSampleRate > 0.0
-                && decoded->decodedSampleRate > 0.0
-                && std::abs (decoded->decodedSampleRate - currentSampleRate) > 0.01;
-
-            if (load->token != currentToken)
-            {
-                // A newer load started after this one finished decoding: drop it.
-            }
-            else if (needsSampleRateRetry)
-            {
-                // Decode again at the current rate; the message thread starts it (timerCallback).
-                LoadRequest retry;
-                retry.kind = currentLoadKind;
-                for (const auto& sample : decoded->sessionSamples)
-                {
-                    if (retry.numSamples == SampleData::kMaxSessionSamples)
-                        break;
-                    retry.paths[(size_t) retry.numSamples] = sample.filePath;
-                    retry.sampleIds[(size_t) retry.numSamples] = sample.sampleId;
-                    ++retry.numSamples;
-                }
-                for (const int id : decoded->importSliceSampleIds)
-                    if (retry.numImportIds < SampleData::kMaxSessionSamples)
-                        retry.importIds[(size_t) retry.numImportIds++] = id;
-                retry.token = beginSampleLoad (currentLoadKind);
-                if (isStateRestoreLoad)
-                    pendingStateRestoreToken.store (retry.token, std::memory_order_release);
-                loadRequests.push (std::move (retry));
-            }
-            else
-            {
-                clearVoicesBeforeSampleSwap();
-                RetiredObjects replaced;
-                replaced.sample = sampleData.applyDecodedSample (std::move (load->sample));
-                retire (std::move (replaced));
-                // New session samples start at factory defaults; removed ones lose their entry.
-                sampleParams.syncToSession (sampleData.getSessionSamples());
-                updateSampleMissingState();
-                if (sampleData.getNumSessionSamples() > 0)
-                {
-                    const auto& sessionSamples = sampleData.getSessionSamples();
-                    int maxSampleId = 0;
-                    for (const auto& sample : sessionSamples)
-                        maxSampleId = juce::jmax (maxSampleId, sample.sampleId);
-                    nextSessionSampleId.store (juce::jmax (nextSessionSampleId.load (std::memory_order_relaxed), maxSampleId),
-                                               std::memory_order_relaxed);
-                    const int currentSelectedSampleId = selectedSessionSampleId.load (std::memory_order_relaxed);
-                    const bool stillPresent = std::any_of (sessionSamples.begin(), sessionSamples.end(),
-                                                           [currentSelectedSampleId] (const auto& sample)
-                                                           {
-                                                               return sample.sampleId == currentSelectedSampleId;
-                                                           });
-                    if (! stillPresent)
-                        selectedSessionSampleId.store (sessionSamples.front().sampleId, std::memory_order_relaxed);
-                }
-                else
-                {
-                    selectedSessionSampleId.store (-1, std::memory_order_relaxed);
-                }
-
-                // Apply pending stem metadata to newly imported session samples
-                {
-                    std::unique_ptr<PendingStemImport> pending (pendingStemImport.exchange (nullptr, std::memory_order_acq_rel));
-                    if (pending != nullptr)
-                    {
-                        const auto& sessionSamples = sampleData.getSessionSamples();
-                        const auto numNewStems = (int) pending->metas.size();
-                        const int totalSamples = (int) sessionSamples.size();
-                        const int firstStemIdx = totalSamples - numNewStems;
-                        for (int i = 0; i < numNewStems && firstStemIdx + i < totalSamples; ++i)
-                        {
-                            const auto& meta = pending->metas[(size_t) i];
-                            const int stemId = sessionSamples[(size_t) (firstStemIdx + i)].sampleId;
-                            setStemMeta (stemId, meta);
-                            // Stems play the same material as their source, so they start with its
-                            // sample-level settings (BPM, pitch, …) instead of factory defaults.
-                            const auto sourceParams = paramsForSample (pending->parentSourceSampleId);
-                            sampleParams.set (stemId, sourceParams);
-                        }
-                        RetiredObjects applied;
-                        applied.stemImport = std::move (pending);
-                        retire (std::move (applied));
-                    }
-                }
-
-                if (! isStateRestoreLoad
-                    && currentLoadKind == LoadKindReplace)
-                    sliceManager.clearAll();
-                else
-                {
-                    applyPendingSliceTimelineRemap();
-                    syncAllSliceAbsolutePositions();
-                    clampSlicesToSampleBounds();
-                    deselectParkedSlice();
-                    sliceManager.rebuildMidiMap();
-                }
-
-                // REX2 import: create the slices embedded in freshly loaded loops. The decoder
-                // only fills this list for files the load request marked for import, so
-                // reloads (append, reorder, undo, state restore) never duplicate slices.
-                // Each freshly imported loop's tempo becomes that sample's own BPM (stretch untouched).
-                {
-                    const auto& importedSlices = sampleData.getImportedSlices();
-                    for (const auto& sample : sampleData.getSessionSamples())
-                    {
-                        if (sample.anchorTempoBpm <= 0.0f)
-                            continue;
-                        const bool imported = std::any_of (importedSlices.begin(), importedSlices.end(),
-                                                           [id = sample.sampleId] (const auto& imp) { return imp.sampleId == id; });
-                        if (auto* params = imported ? sampleParams.find (sample.sampleId) : nullptr)
-                            params->setField (FieldBpm, sample.anchorTempoBpm);
-                    }
-
-                    int created = 0;
-                    for (const auto& imp : importedSlices)
-                    {
-                        const int idx = sliceManager.createSlice (imp.startSample, imp.endSample);
-                        if (idx < 0)
-                            break;   // kMaxSlices reached
-                        syncSliceOwnershipFromAbsolute (sliceManager.getSlice (idx));
-                        ++created;
-                    }
-
-                    if (created > 0)
-                        sliceManager.rebuildMidiMap();
-                    if (created < (int) importedSlices.size())
-                        setUiStatusMessage ("REX file has " + juce::String ((int) importedSlices.size())
-                                                + " slices - only " + juce::String (created) + " imported",
-                                            true);
-                }
-
-                if (isStateRestoreLoad)
-                    pendingStateRestoreToken.store (0, std::memory_order_release);
-
-                loadStateChanged = true;
-                uiSnapshotDirty.store (true, std::memory_order_release);
-            }
-
-            // The hand-off (and the decoded sample, after a sample-rate retry) is freed off the audio thread.
-            RetiredObjects done;
-            done.load = std::move (load);
-            retire (std::move (done));
-        }
-    }
-
-    {
-        auto* rawFailure = completedLoadFailure.exchange (nullptr, std::memory_order_acq_rel);
-        if (rawFailure != nullptr)
-        {
-            std::unique_ptr<FailedLoadResult> failed (rawFailure);
-            const bool isStateRestoreLoad = pendingStateRestoreToken.load (std::memory_order_acquire) == failed->token;
-            // Unreadable files become placeholders, so a whole load only fails when the
-            // decoder had nothing to work with; leave the current kit as it is.
-            if (failed->token == latestLoadToken.load (std::memory_order_acquire))
-            {
-                if (isStateRestoreLoad)
-                    pendingStateRestoreToken.store (0, std::memory_order_release);
-
-                loadStateChanged = true;
-                uiSnapshotDirty.store (true, std::memory_order_release);
-            }
-
-            RetiredObjects done;
-            done.failure = std::move (failed);
-            retire (std::move (done));
-        }
-    }
+    bool loadStateChanged = applyCompletedLoad();
+    if (applyFailedLoad())
+        loadStateChanged = true;
 
     {
         const auto& status = getUiStatusMessage();
@@ -2452,6 +2276,195 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
     // Pass through MIDI
     // (already in the buffer, no action needed)
+}
+
+// Audio thread: swaps in a finished decode, or asks for a re-decode when the device rate
+// changed meanwhile. Returns true when the load state changed (the host is told).
+bool IntersectProcessor::applyCompletedLoad()
+{
+    bool loadStateChanged = false;
+    auto* rawLoad = completedLoadData.exchange (nullptr, std::memory_order_acq_rel);
+    if (rawLoad != nullptr)
+    {
+        std::unique_ptr<CompletedLoad> load (rawLoad);
+        const auto& decoded = load->sample;
+        const int currentToken = latestLoadToken.load (std::memory_order_acquire);
+        const auto currentLoadKind = load->kind;
+        const bool isStateRestoreLoad = pendingStateRestoreToken.load (std::memory_order_acquire) == currentToken;
+
+        const bool needsSampleRateRetry = decoded->filePath.isNotEmpty()
+            && currentSampleRate > 0.0
+            && decoded->decodedSampleRate > 0.0
+            && std::abs (decoded->decodedSampleRate - currentSampleRate) > 0.01;
+
+        if (load->token != currentToken)
+        {
+            // A newer load started after this one finished decoding: drop it.
+        }
+        else if (needsSampleRateRetry)
+        {
+            // Decode again at the current rate; the message thread starts it (timerCallback).
+            LoadRequest retry;
+            retry.kind = currentLoadKind;
+            for (const auto& sample : decoded->sessionSamples)
+            {
+                if (retry.numSamples == SampleData::kMaxSessionSamples)
+                    break;
+                retry.paths[(size_t) retry.numSamples] = sample.filePath;
+                retry.sampleIds[(size_t) retry.numSamples] = sample.sampleId;
+                ++retry.numSamples;
+            }
+            for (const int id : decoded->importSliceSampleIds)
+                if (retry.numImportIds < SampleData::kMaxSessionSamples)
+                    retry.importIds[(size_t) retry.numImportIds++] = id;
+            retry.token = beginSampleLoad (currentLoadKind);
+            if (isStateRestoreLoad)
+                pendingStateRestoreToken.store (retry.token, std::memory_order_release);
+            loadRequests.push (std::move (retry));
+        }
+        else
+        {
+            clearVoicesBeforeSampleSwap();
+            RetiredObjects replaced;
+            replaced.sample = sampleData.applyDecodedSample (std::move (load->sample));
+            retire (std::move (replaced));
+            // New session samples start at factory defaults; removed ones lose their entry.
+            sampleParams.syncToSession (sampleData.getSessionSamples());
+            updateSampleMissingState();
+            if (sampleData.getNumSessionSamples() > 0)
+            {
+                const auto& sessionSamples = sampleData.getSessionSamples();
+                int maxSampleId = 0;
+                for (const auto& sample : sessionSamples)
+                    maxSampleId = juce::jmax (maxSampleId, sample.sampleId);
+                nextSessionSampleId.store (juce::jmax (nextSessionSampleId.load (std::memory_order_relaxed), maxSampleId),
+                                           std::memory_order_relaxed);
+                const int currentSelectedSampleId = selectedSessionSampleId.load (std::memory_order_relaxed);
+                const bool stillPresent = std::any_of (sessionSamples.begin(), sessionSamples.end(),
+                                                       [currentSelectedSampleId] (const auto& sample)
+                                                       {
+                                                           return sample.sampleId == currentSelectedSampleId;
+                                                       });
+                if (! stillPresent)
+                    selectedSessionSampleId.store (sessionSamples.front().sampleId, std::memory_order_relaxed);
+            }
+            else
+            {
+                selectedSessionSampleId.store (-1, std::memory_order_relaxed);
+            }
+
+            // Apply pending stem metadata to newly imported session samples
+            {
+                std::unique_ptr<PendingStemImport> pending (pendingStemImport.exchange (nullptr, std::memory_order_acq_rel));
+                if (pending != nullptr)
+                {
+                    const auto& sessionSamples = sampleData.getSessionSamples();
+                    const auto numNewStems = (int) pending->metas.size();
+                    const int totalSamples = (int) sessionSamples.size();
+                    const int firstStemIdx = totalSamples - numNewStems;
+                    for (int i = 0; i < numNewStems && firstStemIdx + i < totalSamples; ++i)
+                    {
+                        const auto& meta = pending->metas[(size_t) i];
+                        const int stemId = sessionSamples[(size_t) (firstStemIdx + i)].sampleId;
+                        setStemMeta (stemId, meta);
+                        // Stems play the same material as their source, so they start with its
+                        // sample-level settings (BPM, pitch, …) instead of factory defaults.
+                        const auto sourceParams = paramsForSample (pending->parentSourceSampleId);
+                        sampleParams.set (stemId, sourceParams);
+                    }
+                    RetiredObjects applied;
+                    applied.stemImport = std::move (pending);
+                    retire (std::move (applied));
+                }
+            }
+
+            if (! isStateRestoreLoad
+                && currentLoadKind == LoadKindReplace)
+                sliceManager.clearAll();
+            else
+            {
+                applyPendingSliceTimelineRemap();
+                syncAllSliceAbsolutePositions();
+                clampSlicesToSampleBounds();
+                deselectParkedSlice();
+                sliceManager.rebuildMidiMap();
+            }
+
+            // REX2 import: create the slices embedded in freshly loaded loops. The decoder
+            // only fills this list for files the load request marked for import, so
+            // reloads (append, reorder, undo, state restore) never duplicate slices.
+            // Each freshly imported loop's tempo becomes that sample's own BPM (stretch untouched).
+            {
+                const auto& importedSlices = sampleData.getImportedSlices();
+                for (const auto& sample : sampleData.getSessionSamples())
+                {
+                    if (sample.anchorTempoBpm <= 0.0f)
+                        continue;
+                    const bool imported = std::any_of (importedSlices.begin(), importedSlices.end(),
+                                                       [id = sample.sampleId] (const auto& imp) { return imp.sampleId == id; });
+                    if (auto* params = imported ? sampleParams.find (sample.sampleId) : nullptr)
+                        params->setField (FieldBpm, sample.anchorTempoBpm);
+                }
+
+                int created = 0;
+                for (const auto& imp : importedSlices)
+                {
+                    const int idx = sliceManager.createSlice (imp.startSample, imp.endSample);
+                    if (idx < 0)
+                        break;   // kMaxSlices reached
+                    syncSliceOwnershipFromAbsolute (sliceManager.getSlice (idx));
+                    ++created;
+                }
+
+                if (created > 0)
+                    sliceManager.rebuildMidiMap();
+                if (created < (int) importedSlices.size())
+                    setUiStatusMessage ("REX file has " + juce::String ((int) importedSlices.size())
+                                            + " slices - only " + juce::String (created) + " imported",
+                                        true);
+            }
+
+            if (isStateRestoreLoad)
+                pendingStateRestoreToken.store (0, std::memory_order_release);
+
+            loadStateChanged = true;
+            uiSnapshotDirty.store (true, std::memory_order_release);
+        }
+
+        // The hand-off (and the decoded sample, after a sample-rate retry) is freed off the audio thread.
+        RetiredObjects done;
+        done.load = std::move (load);
+        retire (std::move (done));
+    }
+    return loadStateChanged;
+}
+
+// Audio thread: handles a load that produced nothing, leaving the kit as it is.
+// Returns true when it was the newest load.
+bool IntersectProcessor::applyFailedLoad()
+{
+    bool loadStateChanged = false;
+    auto* rawFailure = completedLoadFailure.exchange (nullptr, std::memory_order_acq_rel);
+    if (rawFailure != nullptr)
+    {
+        std::unique_ptr<FailedLoadResult> failed (rawFailure);
+        const bool isStateRestoreLoad = pendingStateRestoreToken.load (std::memory_order_acquire) == failed->token;
+        // Unreadable files become placeholders, so a whole load only fails when the
+        // decoder had nothing to work with; leave the current kit as it is.
+        if (failed->token == latestLoadToken.load (std::memory_order_acquire))
+        {
+            if (isStateRestoreLoad)
+                pendingStateRestoreToken.store (0, std::memory_order_release);
+
+            loadStateChanged = true;
+            uiSnapshotDirty.store (true, std::memory_order_release);
+        }
+
+        RetiredObjects done;
+        done.failure = std::move (failed);
+        retire (std::move (done));
+    }
+    return loadStateChanged;
 }
 
 juce::AudioProcessorEditor* IntersectProcessor::createEditor()

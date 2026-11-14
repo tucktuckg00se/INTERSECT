@@ -706,6 +706,8 @@ private:
     };
     SpscQueue<RetiredObjects, 64> retiredObjects;
     void retire (RetiredObjects&& objects) noexcept;   // audio thread
+    bool applyCompletedLoad();   // audio thread, from processBlock
+    bool applyFailedLoad();      // audio thread, from processBlock
 
     // Presets. A newer preset load, a sample load or a host state restore bumps the generation,
     // which makes any in-flight preset load drop its result. Declared before fileLoadPool so
