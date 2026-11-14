@@ -546,7 +546,19 @@ private:
     void startRequestedLoads();   // message thread
     void clearVoicesBeforeSampleSwap();
     void clampSlicesToSampleBounds();
-    void deleteSessionSample (int sampleId);
+    void deleteSessionSample (int sampleId);   // audio thread, applies a prepared SampleRemoval
+
+    // Removing a session sample, prepared on the message thread (deleteSessionSampleAsync) so the
+    // audio thread only swaps in the shortened kit. `source` is the kit it was built from; the
+    // audio thread drops the removal if another load has replaced that kit since.
+    struct SampleRemoval
+    {
+        int sampleId = -1;
+        int nextSelectedSampleId = -1;
+        SampleData::SnapshotPtr source;
+        SampleData::SnapshotPtr rebuilt;   // null when the last sample goes
+    };
+    SpscQueue<SampleRemoval, 16> sampleRemovals;   // message thread -> audio thread
     void syncAllSliceOwnershipToCurrentSession();
     void syncSliceOwnershipFromAbsolute (Slice& slice, bool clampToSessionBounds = true);
     void syncSliceAbsoluteToCurrentSession (Slice& slice);

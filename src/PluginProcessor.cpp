@@ -5,6 +5,7 @@
 #include "PresetFile.h"
 #include "audio/GrainEngine.h"
 #include "audio/AudioAnalysis.h"
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <functional>
@@ -457,6 +458,10 @@ void IntersectProcessor::timerCallback()
 
 void IntersectProcessor::retire (RetiredObjects&& objects) noexcept
 {
+    if (objects.sample == nullptr && objects.load == nullptr && objects.failure == nullptr
+        && objects.stemImport == nullptr)
+        return;
+
     // The queue only fills up if the message thread stalls for seconds; the objects are then
     // freed here after all, when the caller's temporary goes away.
     retiredObjects.push (std::move (objects));
@@ -1085,6 +1090,37 @@ void IntersectProcessor::deleteSessionSampleAsync (int sampleId)
     if (sampleId < 0)
         return;
 
+    // Build the shortened kit here (it copies the remaining audio), so the audio thread only swaps it in.
+    const auto source = sampleData.getSnapshot();
+    if (source == nullptr || source->sessionSamples.empty())
+        return;
+
+    const auto& samples = source->sessionSamples;
+    const auto removed = std::find_if (samples.begin(), samples.end(),
+                                       [sampleId] (const auto& sample) { return sample.sampleId == sampleId; });
+    if (removed == samples.end())
+        return;
+
+    SampleRemoval removal;
+    removal.sampleId = sampleId;
+    removal.source = source;
+    if (samples.size() > 1)
+    {
+        const auto removeIndex = (size_t) std::distance (samples.begin(), removed);
+        std::vector<SampleData::SessionSample> remaining;
+        remaining.reserve (samples.size() - 1);
+        for (size_t i = 0; i < samples.size(); ++i)
+            if (i != removeIndex)
+                remaining.push_back (samples[i]);
+
+        removal.nextSelectedSampleId = removeIndex < remaining.size() ? remaining[removeIndex].sampleId
+                                                                      : remaining.back().sampleId;
+        removal.rebuilt = SampleData::rebuildWithSessionSamples (*source, remaining);
+    }
+
+    if (! sampleRemovals.push (std::move (removal)))
+        return;   // sixteen removals already waiting for the audio thread
+
     Command cmd;
     cmd.type = CmdDeleteSessionSample;
     cmd.intParam1 = sampleId;
@@ -1701,82 +1737,81 @@ void IntersectProcessor::clampSlicesToSampleBounds()
 
 void IntersectProcessor::deleteSessionSample (int sampleId)
 {
-    const auto sampleSnap = sampleData.getSnapshot();
-    if (sampleSnap == nullptr || sampleSnap->sessionSamples.empty())
-        return;
-
-    int removeIndex = -1;
-    for (int i = 0; i < (int) sampleSnap->sessionSamples.size(); ++i)
+    // Take the removal prepared for this sample (older ones whose command never ran are dropped).
+    SampleRemoval removal;
+    bool found = false;
+    while (! found && sampleRemovals.pop (removal))
     {
-        if (sampleSnap->sessionSamples[(size_t) i].sampleId == sampleId)
+        found = removal.sampleId == sampleId;
+        if (! found)
         {
-            removeIndex = i;
-            break;
+            RetiredObjects stale;
+            stale.sample = std::move (removal.source);
+            retire (std::move (stale));
+            stale.sample = std::move (removal.rebuilt);
+            retire (std::move (stale));
         }
     }
-    if (removeIndex < 0)
-        return;
 
-    if (sampleSnap->sessionSamples.size() == 1)
+    // Only apply it to the kit it was built from; a load that landed in between wins.
+    if (found && removal.source.get() == sampleData.getActive())
     {
-        clearVoicesBeforeSampleSwap();
-        RetiredObjects unloaded;
-        unloaded.sample = sampleData.clear();
-        retire (std::move (unloaded));
-        sampleParams.clear();
-        sliceManager.clearAll();
-        updateSampleMissingState();
-        selectedSessionSampleId.store (-1, std::memory_order_relaxed);
-        uiSnapshotDirty.store (true, std::memory_order_release);
-        return;
+        if (removal.rebuilt == nullptr)
+        {
+            clearVoicesBeforeSampleSwap();
+            RetiredObjects unloaded;
+            unloaded.sample = sampleData.clear();
+            retire (std::move (unloaded));
+            sampleParams.clear();
+            sliceManager.clearAll();
+            updateSampleMissingState();
+            selectedSessionSampleId.store (-1, std::memory_order_relaxed);
+            uiSnapshotDirty.store (true, std::memory_order_release);
+        }
+        else
+        {
+            const int oldSelectedSlice = sliceManager.selectedSlice.load (std::memory_order_relaxed);
+            const int oldNumSlices = sliceManager.getNumSlices();
+            int writeSlice = 0;
+            int nextSelectedSlice = -1;
+            for (int i = 0; i < oldNumSlices; ++i)
+            {
+                const auto& src = sliceManager.getSlice (i);
+                if (src.sampleId == sampleId)
+                    continue;
+
+                sliceManager.getSlice (writeSlice) = src;
+                if (i == oldSelectedSlice)
+                    nextSelectedSlice = writeSlice;
+                ++writeSlice;
+            }
+
+            for (int i = writeSlice; i < SliceManager::kMaxSlices; ++i)
+                sliceManager.getSlice (i).active = false;
+            sliceManager.setNumSlices (writeSlice);
+            sliceManager.selectedSlice.store (nextSelectedSlice, std::memory_order_relaxed);
+
+            clearVoicesBeforeSampleSwap();
+            RetiredObjects replaced;
+            replaced.sample = sampleData.applyDecodedSample (std::move (removal.rebuilt));
+            retire (std::move (replaced));
+            sampleParams.syncToSession (sampleData.getSessionSamples());
+            updateSampleMissingState();
+            selectedSessionSampleId.store (removal.nextSelectedSampleId, std::memory_order_relaxed);
+            syncAllSliceAbsolutePositions();
+            clampSlicesToSampleBounds();
+            deselectParkedSlice();
+            sliceManager.rebuildMidiMap();
+            uiSnapshotDirty.store (true, std::memory_order_release);
+        }
     }
 
-    std::vector<SampleData::SessionSample> remainingSamples;
-    remainingSamples.reserve (sampleSnap->sessionSamples.size() - 1);
-    for (int i = 0; i < (int) sampleSnap->sessionSamples.size(); ++i)
-    {
-        if (i != removeIndex)
-            remainingSamples.push_back (sampleSnap->sessionSamples[(size_t) i]);
-    }
-
-    const int nextSelectedSampleId = removeIndex < (int) remainingSamples.size()
-        ? remainingSamples[(size_t) removeIndex].sampleId
-        : remainingSamples.back().sampleId;
-
-    const int oldSelectedSlice = sliceManager.selectedSlice.load (std::memory_order_relaxed);
-    const int oldNumSlices = sliceManager.getNumSlices();
-    int writeSlice = 0;
-    int nextSelectedSlice = -1;
-    for (int i = 0; i < oldNumSlices; ++i)
-    {
-        const auto& src = sliceManager.getSlice (i);
-        if (src.sampleId == sampleId)
-            continue;
-
-        sliceManager.getSlice (writeSlice) = src;
-        if (i == oldSelectedSlice)
-            nextSelectedSlice = writeSlice;
-        ++writeSlice;
-    }
-
-    for (int i = writeSlice; i < SliceManager::kMaxSlices; ++i)
-        sliceManager.getSlice (i).active = false;
-    sliceManager.setNumSlices (writeSlice);
-    sliceManager.selectedSlice.store (nextSelectedSlice, std::memory_order_relaxed);
-
-    auto rebuilt = SampleData::rebuildWithSessionSamples (*sampleSnap, remainingSamples);
-    clearVoicesBeforeSampleSwap();
-    RetiredObjects replaced;
-    replaced.sample = sampleData.applyDecodedSample (std::move (rebuilt));
-    retire (std::move (replaced));
-    sampleParams.syncToSession (sampleData.getSessionSamples());
-    updateSampleMissingState();
-    selectedSessionSampleId.store (nextSelectedSampleId, std::memory_order_relaxed);
-    syncAllSliceAbsolutePositions();
-    clampSlicesToSampleBounds();
-    deselectParkedSlice();
-    sliceManager.rebuildMidiMap();
-    uiSnapshotDirty.store (true, std::memory_order_release);
+    // Whatever the removal still holds is freed on the message thread.
+    RetiredObjects done;
+    done.sample = std::move (removal.source);
+    retire (std::move (done));
+    done.sample = std::move (removal.rebuilt);
+    retire (std::move (done));
 }
 
 void IntersectProcessor::publishUiSliceSnapshot()

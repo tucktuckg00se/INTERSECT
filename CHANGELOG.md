@@ -20,6 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Slice loop points were lost when you saved a project whose sample was missing and opened it again; relinking the sample didn't bring them back.
 - Loading a preset (or your DAW reloading a project) while audio was playing could crash INTERSECT.
 - Loading or adding samples, and undo/redo, could cause a click or dropout while audio was playing.
+- Removing a sample while audio was playing could cause a dropout, longer the bigger the kit.
 
 ## [0.19.1] - 2026-11-09
 
