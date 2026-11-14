@@ -1741,7 +1741,11 @@ void IntersectProcessor::publishUiSliceSnapshot()
     if (sampleSnap != nullptr)
     {
         if (snap.numSessionSamples > 1)
-            snap.sampleFileName.assign (juce::String (snap.numSessionSamples) + " samples loaded");
+        {
+            snap.sampleFileName.clear();   // no juce::String here: this runs on the audio thread
+            snap.sampleFileName.appendUnsigned ((uint32_t) snap.numSessionSamples);
+            snap.sampleFileName.appendAscii (" samples loaded");
+        }
         else
             snap.sampleFileName.assign (sampleSnap->fileName);
     }
