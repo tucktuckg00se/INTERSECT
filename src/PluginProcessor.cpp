@@ -454,6 +454,15 @@ void IntersectProcessor::timerCallback()
 {
     retiredObjects.clear();
     startRequestedLoads();
+
+    // Noticing a finished stem separation here (not in processBlock) keeps the audio thread from
+    // posting a message for it, and handles it even when no audio is running.
+    const auto stemState = stemJob.getState();
+    if ((stemState == StemJobState::completed
+         || stemState == StemJobState::failed
+         || stemState == StemJobState::cancelled)
+        && ! stemCompletionQueued.exchange (true, std::memory_order_acq_rel))
+        handleStemJobCompletionOnMessageThread();
 }
 
 void IntersectProcessor::retire (RetiredObjects&& objects) noexcept
@@ -3521,15 +3530,8 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             gestureSnapshotCaptured = false;
     }
 
+    // A finished stem separation is picked up by timerCallback, not here.
     const auto stemState = stemJob.getState();
-    if ((stemState == StemJobState::completed
-         || stemState == StemJobState::failed
-         || stemState == StemJobState::cancelled)
-        && ! stemCompletionQueued.exchange (true, std::memory_order_acq_rel))
-    {
-        triggerAsyncUpdate();
-    }
-
     if (stemState != StemJobState::idle
         || stemModelDownloadJob.getState() == StemModelDownloadState::downloading)
         uiSnapshotDirty.store (true, std::memory_order_release);
