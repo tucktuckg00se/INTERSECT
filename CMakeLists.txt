@@ -162,6 +162,7 @@ juce_add_binary_data(IntersectFonts SOURCES
 set(INTERSECT_CORE_SOURCES
     src/PluginProcessor.cpp
     src/ProcessorCommands.cpp
+    src/ProcessorGroups.cpp
     src/PluginEditor.cpp
     src/PresetFile.cpp
     src/SettingsFile.cpp
@@ -173,6 +174,7 @@ set(INTERSECT_CORE_SOURCES
     src/audio/Rex2Import.cpp
     src/audio/SliceManager.cpp
     src/audio/SliceEdits.cpp
+    src/audio/SampleGroups.cpp
     src/audio/VoicePool.cpp
     src/audio/GrainEngine.cpp
     src/audio/LazyChopEngine.cpp

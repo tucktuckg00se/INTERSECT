@@ -1427,7 +1427,7 @@ void IntersectProcessor::syncSliceOwnershipFromAbsolute (Slice& slice, bool clam
 
     // Slices of a placeholder are parked: their in-sample positions are the only record of
     // where they sit in the real file, so the silent slot must never rewrite them.
-    if (isPlaceholderSample (slice.sampleId))
+    if (isPlaceholderSample (slice.sampleId) && ! groupKeepsSlicesPlaying (slice.sampleId))
     {
         syncSliceAbsoluteToCurrentSession (slice);
         return;
@@ -1459,7 +1459,7 @@ void IntersectProcessor::syncSliceOwnershipFromAbsolute (Slice& slice, bool clam
     }
 
     slice.sampleId = owner.sampleId;
-    slice.parked = owner.isPlaceholder();
+    slice.parked = owner.isPlaceholder() && ! groupKeepsSlicesPlaying (owner.sampleId);
     slice.startInSample = startInSample;
     slice.endInSample = endInSample;
     slice.startSample = sampleStart + startInSample;
@@ -1489,7 +1489,10 @@ void IntersectProcessor::syncSliceAbsoluteToCurrentSession (Slice& slice)
     if (owner == nullptr)
         owner = &sampleSnap->sessionSamples.front();
 
-    const bool parked = owner->isPlaceholder() && slice.endInSample > slice.startInSample;
+    // A group's slices only park when every member is missing: the anchor's silent slot keeps its
+    // length, so the other members play from the same positions.
+    const bool ownerSilent = owner->isPlaceholder() && ! groupKeepsSlicesPlaying (owner->sampleId);
+    const bool parked = ownerSilent && slice.endInSample > slice.startInSample;
     int startInSample = slice.startInSample;
     int endInSample = slice.endInSample;
     if (endInSample <= startInSample)
@@ -1504,7 +1507,7 @@ void IntersectProcessor::syncSliceAbsoluteToCurrentSession (Slice& slice)
         endInSample = juce::jmin (owner->numFrames, startInSample + kMinSliceLengthSamples);
 
     slice.sampleId = owner->sampleId;
-    slice.parked = owner->isPlaceholder();
+    slice.parked = ownerSilent;
     slice.startSample = owner->startFrame + startInSample;
     slice.endSample = owner->startFrame + endInSample;
 
@@ -1580,6 +1583,7 @@ void IntersectProcessor::deleteSessionSample (int sampleId)
             unloaded.sample = sampleData.clear();
             retire (std::move (unloaded));
             sampleParams.clear();
+            sampleGroups = {};
             sliceManager.clearAll();
             updateSampleMissingState();
             selectedSessionSampleId.store (-1, std::memory_order_relaxed);
@@ -1587,6 +1591,9 @@ void IntersectProcessor::deleteSessionSample (int sampleId)
         }
         else
         {
+            // A group anchor hands its slices to the next member first, so they survive.
+            prepareGroupsForSampleRemoval (sampleId);
+
             const int oldSelectedSlice = sliceManager.selectedSlice.load (std::memory_order_relaxed);
             const int oldNumSlices = sliceManager.getNumSlices();
             int writeSlice = 0;
@@ -1613,6 +1620,7 @@ void IntersectProcessor::deleteSessionSample (int sampleId)
             replaced.sample = sampleData.applyDecodedSample (std::move (removal.rebuilt));
             retire (std::move (replaced));
             sampleParams.syncToSession (sampleData.getSessionSamples());
+            pruneGroupsToSession();
             updateSampleMissingState();
             selectedSessionSampleId.store (removal.nextSelectedSampleId, std::memory_order_relaxed);
             syncAllSliceAbsolutePositions();
@@ -1704,6 +1712,7 @@ void IntersectProcessor::publishUiSliceSnapshot()
         else
             snap.slices[(size_t) i].active = false;
     }
+    snap.sampleGroups = sampleGroups;
 
     uiSliceSnapshotIndex.store (writeIndex, std::memory_order_release);
     uiSnapshotVersion.fetch_add (1, std::memory_order_release);
@@ -2013,6 +2022,19 @@ void IntersectProcessor::processMidiEvent (const juce::MidiMessage& msg,
             const float hostBpm = dawBpm.load();
 
             const auto& sliceIndices = sliceManager.midiNoteToSlices (note);
+
+            // Mute-group cuts first: slices sharing this note (and a group slice's per-output
+            // voices) start together and must not cut each other.
+            for (int sliceIdx : sliceIndices)
+            {
+                if (! juce::isPositiveAndBelow (sliceIdx, sliceManager.getNumSlices()))
+                    continue;
+                const auto& s = sliceManager.getSlice (sliceIdx);
+                const int mg = (int) sliceManager.resolveParam (sliceIdx, kLockMuteGroup, (float) s.muteGroup,
+                                                                (float) paramsForSample (s.sampleId).muteGroup);
+                voicePool.muteGroup (mg, -1);
+            }
+
             for (int sliceIdx : sliceIndices)
             {
                 if (! juce::isPositiveAndBelow (sliceIdx, sliceManager.getNumSlices()))
@@ -2027,19 +2049,19 @@ void IntersectProcessor::processMidiEvent (const juce::MidiMessage& msg,
                         uiSnapshotDirty.store (true, std::memory_order_release);
                 }
 
-                int voiceIdx = voicePool.allocate();
-
-                // Each slice inherits from its own session sample's parameters.
+                // Each slice inherits from its own session sample's parameters (a group's: the anchor's).
                 const auto& s = sliceManager.getSlice (sliceIdx);
                 auto p = makeVoiceStartParams (paramsForSample (s.sampleId), rootNote, note, velocity, hostBpm);
-
-                // Handle mute groups
-                int mg = (int) sliceManager.resolveParam (sliceIdx, kLockMuteGroup,
-                                                          (float) s.muteGroup, (float) p.sampleMuteGroup);
-                voicePool.muteGroup (mg, voiceIdx);
-
                 p.sliceIdx = sliceIdx;
                 p.sliceRootNote = s.sliceRootNote;
+
+                if (const auto* group = sampleGroups.groupAnchoredBy (s.sampleId))
+                {
+                    startGroupSliceVoices (*group, sliceIdx, p);
+                    continue;
+                }
+
+                const int voiceIdx = voicePool.allocate();
                 voicePool.startVoice (voiceIdx, p, sliceManager, sampleData);
             }
         }
@@ -2332,6 +2354,7 @@ bool IntersectProcessor::applyCompletedLoad()
             retire (std::move (replaced));
             // New session samples start at factory defaults; removed ones lose their entry.
             sampleParams.syncToSession (sampleData.getSessionSamples());
+            pruneGroupsToSession();
             updateSampleMissingState();
             if (sampleData.getNumSessionSamples() > 0)
             {
@@ -2382,7 +2405,10 @@ bool IntersectProcessor::applyCompletedLoad()
 
             if (! isStateRestoreLoad
                 && currentLoadKind == LoadKindReplace)
+            {
                 sliceManager.clearAll();
+                sampleGroups = {};
+            }
             else
             {
                 applyPendingSliceTimelineRemap();
@@ -2483,6 +2509,7 @@ void IntersectProcessor::copyEngineState (SaveCopy& into, bool onAudioThread) no
     into.rootNote = sliceManager.rootNote.load (std::memory_order_relaxed);
     into.selectedSessionSampleId = selectedSessionSampleId.load (std::memory_order_relaxed);
     into.sampleParams = sampleParams;
+    into.sampleGroups = sampleGroups;
     into.stemMetaEntries = stemMetaEntries;
     into.stemMetaEntryCount = stemMetaEntryCount;
     // The audio thread owns the active sample; any other thread reads the published snapshot.
@@ -2607,6 +2634,12 @@ SessionState IntersectProcessor::captureSessionState()
         }
     }
     state.sampleParams = params;
+    state.sampleGroups = copy->sampleGroups;
+    state.sampleGroups.prune ([&state] (int sampleId)
+    {
+        return std::any_of (state.sessionSamples.begin(), state.sessionSamples.end(),
+                            [sampleId] (const auto& sample) { return sample.sampleId == sampleId; });
+    });
     return state;
 }
 
@@ -2783,6 +2816,13 @@ void IntersectProcessor::applySessionState (const SessionState& state, const Res
                                                          : (hasPerSample ? SampleParams::factoryDefaults() : legacy));
         }
     }
+
+    // Sample groups (extension v9): StateFormat already checked them against the state's samples.
+    sampleGroups = state.sampleGroups;
+    sampleGroups.prune ([&restoreSampleIds] (int sampleId)
+    {
+        return std::find (restoreSampleIds.begin(), restoreSampleIds.end(), sampleId) != restoreSampleIds.end();
+    });
 
     if (! restoreFiles.empty())
     {

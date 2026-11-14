@@ -2,6 +2,8 @@
 #include "../Constants.h"
 #include "AdsrEnvelope.h"
 #include "SvfFilter.h"
+#include "SampleGroups.h"
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -40,6 +42,11 @@ struct Voice
     bool         oneShot      = false;
     int          bufferEnd    = 0;       // actual end of sample buffer (for release tail)
     int          outputBus    = 0;       // output bus index (0-15)
+    // Group slices: the members this voice mixes, at frames relative to groupAnchorStart (the
+    // anchor's first frame). No taps: the voice reads its slice's own sample, as always.
+    int          numMemberTaps    = 0;
+    int          groupAnchorStart = 0;
+    std::array<SampleGroups::MemberTap, SampleGroup::kMaxMembers> memberTaps {};
     bool         filterEnabled = false;
     int          filterType    = 0;
     int          filterSlope   = 0;

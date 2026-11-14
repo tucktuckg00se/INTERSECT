@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../audio/SampleData.h"
+#include "../audio/SampleGroups.h"
 #include "../audio/Slice.h"
 #include "../audio/StemSeparation.h"
 #include "../params/SampleParamTable.h"
@@ -13,7 +14,7 @@
     processor: this file only knows the format.
 
     Format: a base version (19-24) followed by an append-only extension block ("RPM1", currently
-    v8). CLAUDE.md's Serialization section describes each version. Never change what an existing
+    v9). CLAUDE.md's Serialization section describes each version. Never change what an existing
     version means; tests/fixtures/expected/ pins the bytes a save writes. */
 struct SessionState
 {
@@ -44,6 +45,7 @@ struct SessionState
     int selectedSessionSampleId = -1;
     std::optional<StemComputeDevice> stemComputeDevice;      // extension v6
     std::optional<SampleParamTable> sampleParams;            // extension v7; absent: migrate the legacy APVTS values
+    SampleGroupTable sampleGroups;                           // extension v9; members checked against sessionSamples
 };
 
 namespace StateFormat
@@ -51,7 +53,7 @@ namespace StateFormat
     constexpr int kCurrentStateVersion = 24;
     constexpr int kOldestStateVersion = 19;
 
-    /** Writes `state` in the current format (base v24 + extension v8). */
+    /** Writes `state` in the current format (base v24 + extension v9). */
     void write (const SessionState& state, juce::OutputStream& out);
 
     struct ReadResult

@@ -4,7 +4,7 @@
 namespace
 {
 constexpr int kStateExtensionMagic = 0x52504D31;   // "RPM1"
-constexpr int kExtensionVersion = 8;
+constexpr int kExtensionVersion = 9;
 
 const juce::String kDamagedMessage = "This project's INTERSECT data is damaged, so it wasn't loaded.";
 
@@ -18,7 +18,7 @@ constexpr uint64_t kValidLockMask =
     | kLockFilterEnvSustain | kLockFilterEnvRelease | kLockFilterEnvAmount
     | kLockFilterAsym | kLockCrossfade | kLockRepitchMode
     | kLockLoopStart | kLockLoopLength
-    | kLockHighNote | kLockSliceRootNote;
+    | kLockHighNote | kLockSliceRootNote | kLockMembers;
 
 Slice sanitiseRestoredSlice (Slice s)
 {
@@ -106,6 +106,8 @@ struct PostSliceParseResult
     std::vector<int> sliceEndsInSample;
     std::optional<StemComputeDevice> stemComputeDevice;
     std::optional<SampleParamTable> sampleParams;   // extension v7; absent in older states
+    std::vector<uint32_t> memberMasks;               // extension v9
+    SampleGroupTable sampleGroups;                   // extension v9; empty in older states
 };
 
 PostSliceParseResult tryParsePostSliceData (const void* data, size_t size, juce::int64 postSliceBasePosition,
@@ -121,6 +123,7 @@ PostSliceParseResult tryParsePostSliceData (const void* data, size_t size, juce:
     result.sliceSampleIds.assign ((size_t) validatedNumSlices, 0);
     result.sliceStartsInSample.assign ((size_t) validatedNumSlices, 0);
     result.sliceEndsInSample.assign ((size_t) validatedNumSlices, 0);
+    result.memberMasks.assign ((size_t) validatedNumSlices, 0u);
 
     juce::MemoryInputStream trialStream (data, size, false);
     if (! trialStream.setPosition (postSliceBasePosition))
@@ -354,16 +357,68 @@ PostSliceParseResult tryParsePostSliceData (const void* data, size_t size, juce:
                 }
 
                 // v8 follows v7, so only read it when v7 parsed cleanly.
+                bool namesComplete = false;
                 if (extensionVersion >= 8 && result.sampleParams.has_value() && requireBytes (4))
                 {
                     const int storedNames = trialStream.readInt();
                     if (storedNames >= 0 && storedNames <= SampleData::kMaxSessionSamples)
                     {
-                        for (int i = 0; i < storedNames && requireBytes (1); ++i)
+                        int i = 0;
+                        for (; i < storedNames && requireBytes (1); ++i)
                         {
                             const auto name = trialStream.readString();
                             if (i < (int) result.sessionSamples.size() && name.isNotEmpty())
                                 result.sessionSamples[(size_t) i].stemMeta.setName (name);
+                        }
+                        namesComplete = i == storedNames;
+                    }
+                }
+
+                // v9 follows v8: sample groups, then each slice's member mask. A damaged block
+                // leaves the kit ungrouped rather than failing the whole state.
+                if (extensionVersion >= 9 && namesComplete && requireBytes (4))
+                {
+                    const int numGroups = trialStream.readInt();
+                    if (numGroups >= 0 && numGroups <= SampleGroupTable::kMaxGroups)
+                    {
+                        SampleGroupTable table;
+                        bool ok = true;
+                        for (int g = 0; g < numGroups && ok; ++g)
+                        {
+                            ok = requireBytes (8);
+                            if (! ok)
+                                break;
+                            const int numMembers = trialStream.readInt();
+                            const auto mutedMask = (uint32_t) trialStream.readInt();
+                            ok = numMembers >= 1 && numMembers <= SampleGroup::kMaxMembers
+                                 && requireBytes ((juce::int64) numMembers * 12);
+                            if (! ok)
+                                break;
+
+                            SampleGroup group;
+                            group.numMembers = numMembers;
+                            for (int m = 0; m < numMembers; ++m)
+                            {
+                                group.memberIds[(size_t) m] = trialStream.readInt();
+                                group.gainDb[(size_t) m] = juce::jlimit (-100.0f, 24.0f, trialStream.readFloat());
+                                group.outputBus[(size_t) m] = juce::jlimit (-1, 31, trialStream.readInt());
+                            }
+                            group.mutedMask = mutedMask & group.allMembersMask();
+                            table.groups[(size_t) table.count++] = group;
+                        }
+
+                        if (ok && requireBytes (4))
+                        {
+                            const int storedMasks = juce::jlimit (0, storedNumSlices, trialStream.readInt());
+                            int i = 0;
+                            for (; i < storedMasks && requireBytes (4); ++i)
+                            {
+                                const auto mask = (uint32_t) trialStream.readInt();
+                                if (i < validatedNumSlices)
+                                    result.memberMasks[(size_t) i] = mask & 0xffffu;
+                            }
+                            if (i == storedMasks)
+                                result.sampleGroups = table;
                         }
                     }
                 }
@@ -561,6 +616,25 @@ void StateFormat::write (const SessionState& state, juce::OutputStream& stream)
     stream.writeInt (numSessionSamples);
     for (int i = 0; i < numSessionSamples; ++i)
         stream.writeString (state.sessionSamples[(size_t) i].stemMeta.getName());
+    // Extension v9: sample groups (members in lane order, their levels, outputs and mutes), then
+    // each slice's member mask (used by group slices with kLockMembers).
+    const auto& groups = state.sampleGroups;
+    stream.writeInt (groups.count);
+    for (int g = 0; g < groups.count; ++g)
+    {
+        const auto& group = groups.groups[(size_t) g];
+        stream.writeInt (group.numMembers);
+        stream.writeInt ((int) group.mutedMask);
+        for (int m = 0; m < group.numMembers; ++m)
+        {
+            stream.writeInt (group.memberIds[(size_t) m]);
+            stream.writeFloat (group.gainDb[(size_t) m]);
+            stream.writeInt (group.outputBus[(size_t) m]);
+        }
+    }
+    stream.writeInt (numSlices);
+    for (const auto& s : state.slices)
+        stream.writeInt ((int) s.memberMask);
 }
 
 StateFormat::ReadResult StateFormat::read (const void* data, size_t size)
@@ -721,6 +795,7 @@ StateFormat::ReadResult StateFormat::read (const void* data, size_t size)
             parsed.endInSample = parsed.endSample;
         }
 
+        parsed.memberMask = postSliceResult->memberMasks[(size_t) i];
         state.slices.push_back (sanitiseRestoredSlice (parsed));
     }
 
@@ -738,6 +813,16 @@ StateFormat::ReadResult StateFormat::read (const void* data, size_t size)
     state.selectedSessionSampleId = postSliceResult->selectedSessionSampleId;
     state.stemComputeDevice = postSliceResult->stemComputeDevice;
     state.sampleParams = postSliceResult->sampleParams;
+
+    // Groups may only name the state's own session samples, each in one group, two or more each.
+    state.sampleGroups = postSliceResult->sampleGroups;
+    state.sampleGroups.prune ([&state] (int sampleId)
+    {
+        for (const auto& sample : state.sessionSamples)
+            if (sample.sampleId == sampleId)
+                return true;
+        return false;
+    });
 
     ReadResult ok;
     ok.state = std::move (state);

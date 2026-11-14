@@ -180,6 +180,13 @@ bool SliceEdits::setField (Slice& s, const SampleParams& sampleLevel, int field,
         case ParamFieldIds::FieldSliceRootNote:
             s.sliceRootNote = juce::jlimit (s.midiNote, s.highNote, (int) val);
             break;
+
+        // Touching a member in a slice always gives it its own list (SliceEdits can't see the
+        // group to compare against); the group mix comes back by clearing kLockMembers.
+        case ParamFieldIds::FieldMemberMask:
+            s.memberMask = (uint32_t) juce::jlimit (0, 0xffff, (int) val);
+            s.lockMask |= kLockMembers;
+            break;
     }
     return rebuildMidiMap;
 }

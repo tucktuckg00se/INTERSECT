@@ -332,6 +332,7 @@ UndoManager::Snapshot IntersectProcessor::makeSnapshot()
 
     snap.params = captureParamUndoState();
     snap.sampleParams = sampleParams;
+    snap.sampleGroups = sampleGroups;
     snap.midiSelectsSlice = midiSelectsSlice.load();
     snap.snapToZeroCrossing = snapToZeroCrossing.load();
     return snap;
@@ -365,6 +366,7 @@ void IntersectProcessor::restoreSnapshot (const UndoManager::Snapshot& snap)
     sliceManager.selectedSlice = snap.selectedSlice;
     sliceManager.rootNote.store (snap.rootNote);
     sampleParams = snap.sampleParams;
+    sampleGroups = snap.sampleGroups;
     selectedSessionSampleId.store (snap.selectedSessionSampleId, std::memory_order_relaxed);
     midiSelectsSlice.store (snap.midiSelectsSlice);
     snapToZeroCrossing.store (snap.snapToZeroCrossing);
@@ -431,6 +433,7 @@ void IntersectProcessor::handleCommand (const Command& cmd)
         case CmdSetSliceParam:
         case CmdSetSampleParam:
         case CmdSetRootNote:
+        case CmdSetMemberGain:
             if (! gestureSnapshotCaptured)
                 captureSnapshot();
             gestureSnapshotCaptured = true;
@@ -447,6 +450,12 @@ void IntersectProcessor::handleCommand (const Command& cmd)
         case CmdSplitSlice:
         case CmdTransientChop:
         case CmdRepackMidi:
+        case CmdGroupCreate:
+        case CmdGroupAddMembers:
+        case CmdGroupRemoveMember:
+        case CmdUngroup:
+        case CmdSetMemberMute:
+        case CmdSetMemberOutput:
             if (getUiStatusMessage().source == UiStatusMessage::Source::midiLimit)
                 clearUiStatusMessage();
             if (! gestureSnapshotCaptured)
@@ -529,6 +538,11 @@ void IntersectProcessor::handleCommand (const Command& cmd)
 
                 if (turningOn)
                     SliceEdits::copySampleParam (s, sampleLevel, bit);
+
+                // A group slice taking its own members starts from what the group plays now.
+                if (turningOn && bit == kLockMembers)
+                    if (const auto* group = sampleGroups.groupAnchoredBy (s.sampleId))
+                        s.memberMask = group->unmutedMask();
 
                 s.lockMask ^= bit;
             }
@@ -619,6 +633,16 @@ void IntersectProcessor::handleCommand (const Command& cmd)
 
         case CmdStemSeparate:
             // Launched from message thread via startStemSeparation(); nothing to do here.
+            break;
+
+        case CmdGroupCreate:
+        case CmdGroupAddMembers:
+        case CmdGroupRemoveMember:
+        case CmdUngroup:
+        case CmdSetMemberGain:
+        case CmdSetMemberMute:
+        case CmdSetMemberOutput:
+            handleGroupCommand (cmd);
             break;
 
         case CmdNone:

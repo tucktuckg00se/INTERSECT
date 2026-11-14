@@ -52,6 +52,12 @@ struct VoiceStartParams
     float sampleCrossfadePct        = 0.0f;
     int   rootNote = kDefaultRootNote;
     int   sliceRootNote = kDefaultRootNote;  // per-slice root for range transpose
+
+    // Group slices (see SampleGroups::planVoices): the members this voice mixes and its output.
+    int   numMemberTaps = 0;
+    int   groupAnchorStart = 0;
+    std::array<SampleGroups::MemberTap, SampleGroup::kMaxMembers> memberTaps {};
+    int   outputBusOverride = -1;            // >= 0: replaces the slice's resolved OUT
 };
 
 struct PreviewStretchParams

@@ -97,6 +97,14 @@ public:
         CmdSetRootNote,
         CmdStemSeparate,
         CmdSetSampleParam,   // intParam1 = sampleId, intParam2 = field, floatParam1 = value (SAMPLE-tab units)
+        // Sample groups (ProcessorGroups.cpp). Each structural one is one undo step.
+        CmdGroupCreate,      // intParam1 = anchor sampleId, positions[0..numPositions) = members to add
+        CmdGroupAddMembers,  // intParam1 = any member of the group, positions = samples to add
+        CmdGroupRemoveMember,// intParam1 = sampleId (leaves with a copy of the group's slices)
+        CmdUngroup,          // intParam1 = any member of the group
+        CmdSetMemberGain,    // intParam1 = sampleId, floatParam1 = level in dB (coalesced like CmdSetSampleParam)
+        CmdSetMemberMute,    // intParam1 = sampleId, intParam2 = 1 muted / 0 not
+        CmdSetMemberOutput,  // intParam1 = sampleId, intParam2 = output bus, or -1 for the slice's OUT
     };
 
     enum LoadKind
@@ -314,6 +322,7 @@ public:
         float stemDownloadProgress = 0.0f;
         std::array<UiSessionSample, SampleData::kMaxSessionSamples> sessionSamples {};
         std::array<Slice, SliceManager::kMaxSlices> slices {};
+        SampleGroupTable sampleGroups;
 
         /** The sample-level parameters of a session sample (factory defaults if unknown). */
         const SampleParams& sampleParamsFor (int sampleId) const
@@ -509,6 +518,20 @@ private:
     void duplicateSlice (const Command& cmd);
     void splitSlice (const Command& cmd);
     void transientChop (const Command& cmd);
+    // Sample groups (audio thread, ProcessorGroups.cpp).
+    void handleGroupCommand (const Command& cmd);
+    void createGroup (int anchorId, const int* memberIds, int numMemberIds);
+    void addGroupMembers (int groupMemberId, const int* memberIds, int numMemberIds);
+    void removeGroupMember (int sampleId);
+    void ungroup (int groupMemberId);
+    void startGroupSliceVoices (const SampleGroup& group, int sliceIdx, VoiceStartParams p);
+    bool groupKeepsSlicesPlaying (int anchorId) const;            // a group anchor with a loaded member
+    void handOverGroupSlices (SampleGroup& group, int fromIndex); // the anchor's slices to member 1
+    void dropGroupMember (int groupIndex, int memberIndex);       // remaps slice masks, ends 1-member groups
+    int copySlicesToSample (int fromSampleId, int toSampleId);    // returns how many it copied
+    void prepareGroupsForSampleRemoval (int sampleId);
+    void pruneGroupsToSession();
+    const SampleData::SessionSample* findActiveSessionSample (int sampleId) const;
 
     // MIDI edit settings sampled once per block so every event in the block sees one value
     struct MidiEditBlockSettings
@@ -694,6 +717,7 @@ private:
         int rootNote = kDefaultRootNote;
         int selectedSessionSampleId = -1;
         SampleParamTable sampleParams;
+        SampleGroupTable sampleGroups;
         std::array<StemMetaEntry, SampleData::kMaxSessionSamples> stemMetaEntries {};
         int stemMetaEntryCount = 0;
         SampleData::SnapshotPtr sample;   // emptied by the saver before going idle, so the audio thread never frees a sample
@@ -710,6 +734,8 @@ private:
     bool takeSaveCopyFromAudioThread (SaveCopy& into);   // saving thread
 
     SampleParamTable sampleParams;   // audio-thread owned; restoreState writes it like stemMetaEntries
+    SampleGroupTable sampleGroups;   // audio-thread owned, like sampleParams
+    SampleGroups::VoicePlan groupVoicePlan;   // note-on scratch (audio thread)
     void setStemMeta (int sampleId, const StemMetadata& meta);
     StemMetadata getStemMeta (int sampleId) const;
 

@@ -2,6 +2,7 @@
 #include <array>
 #include "Constants.h"
 #include "audio/SampleData.h"
+#include "audio/SampleGroups.h"
 #include "audio/Slice.h"
 #include "audio/SliceManager.h"
 #include "params/ParamUndoState.h"
@@ -23,6 +24,7 @@ public:
         int rootNote = kDefaultRootNote;
         ParamUndoState params;
         SampleParamTable sampleParams;
+        SampleGroupTable sampleGroups;
         bool midiSelectsSlice = false;
         bool snapToZeroCrossing = false;
     };

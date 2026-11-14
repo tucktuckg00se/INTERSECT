@@ -262,6 +262,7 @@ target_sources(IntersectStateTests PRIVATE
     StateFormatTests.cpp
     ../src/state/SessionState.cpp
     ../src/params/SampleParams.cpp
+    ../src/audio/SampleGroups.cpp
 )
 target_include_directories(IntersectStateTests PRIVATE .. ../src)
 target_compile_definitions(IntersectStateTests PRIVATE
