@@ -253,6 +253,31 @@ add_test(NAME processor_restore_during_playback COMMAND IntersectProcessorTests 
 set_tests_properties(processor_state processor_restore_during_playback
                      PROPERTIES ENVIRONMENT "HOME=${CMAKE_CURRENT_BINARY_DIR}/test-home")
 
+# The saved-state format on its own (state/SessionState), no processor.
+juce_add_console_app(IntersectStateTests
+    PRODUCT_NAME "INTERSECT state format tests"
+    VERSION "${INTERSECT_VERSION}"
+)
+target_sources(IntersectStateTests PRIVATE
+    StateFormatTests.cpp
+    ../src/state/SessionState.cpp
+    ../src/params/SampleParams.cpp
+)
+target_include_directories(IntersectStateTests PRIVATE .. ../src)
+target_compile_definitions(IntersectStateTests PRIVATE
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+    INTERSECT_TEST_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+)
+target_link_libraries(IntersectStateTests PRIVATE
+    juce::juce_audio_processors
+    juce::juce_audio_formats
+    juce::juce_graphics
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_warning_flags
+)
+add_test(NAME state_format COMMAND IntersectStateTests)
+
 # Every test that ctest runs, so CI can build just these: cmake --build <dir> --target IntersectTests
 add_custom_target(IntersectTests)
 add_dependencies(IntersectTests
@@ -263,4 +288,5 @@ add_dependencies(IntersectTests
     IntersectBrowserTests
     IntersectUrlImportTests
     IntersectProcessorTests
+    IntersectStateTests
 )
