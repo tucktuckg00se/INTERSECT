@@ -63,6 +63,8 @@ INTERSECT remembers your stem choice for each model.
 - `MODE`:
   - `Separate` — one WAV per selected stem.
   - `Combine` — the selected stems are summed into a single WAV (handy for "everything but vocals").
+  - `Group` — one WAV per selected stem, like `Separate`, and the new stems become a [sample group]({{ site.baseurl }}{% link workflow-basics.md %}#sample-groups) that starts with a copy of the source sample's slices. Slice the song once and each slice plays every stem; mute or rebalance stems for the whole group or per slice. The source sample stays as it was. A group holds up to 16 samples, so `START` is greyed while more than 16 stems are ticked.
+  - Click `MODE` to pick one; INTERSECT remembers your choice.
 - `OUTPUT` — "Beside sample" writes a new folder next to the original file; `...` picks another folder, and clicking the cell goes back to "Beside sample".
 
 ## Step 5 — START

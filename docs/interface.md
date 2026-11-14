@@ -21,9 +21,9 @@ description: "Tour of every visible area of the INTERSECT editor — header bar,
 
 | Area | Function | Notes |
 | --- | --- | --- |
-| Sample lane | Compact session-sample overview above the slice lane | Reflects selection and zoom; drag to reorder samples; includes per-sample `AUDIO`, `MIDI`, `STEMS` / `CANCEL` and an `X` that removes the sample (a small question pops up first: `REMOVE` or `Return` confirms, `CANCEL` / `Esc` keeps it; hold `Shift` to skip the question) |
+| Sample lane | Compact session-sample overview above the slice lane | Reflects selection and zoom; drag to reorder samples; includes per-sample `AUDIO`, `MIDI`, `STEMS` / `CANCEL` and an `X` that removes the sample (a small question pops up first: `REMOVE` or `Return` confirms, `CANCEL` / `Esc` keeps it; hold `Shift` to skip the question). A [sample group]({{ site.baseurl }}{% link workflow-basics.md %}#sample-groups) shows as one block with `AUDIO` (the group's mix), `MIX` (each member's mute, level and output), `MIDI` and `X` (removes the whole group). Right-click a sample or group for `Group with...`, `Add to group`, `Duplicate sample`, `Ungroup` and more |
 | Slice lane | Compact slice-region overview above the waveform | Reflects selection and zoom |
-| Waveform | Main editing surface | Drag-and-drop loading/appending, slice selection, boundary editing, move/duplicate, preview |
+| Waveform | Main editing surface | Drag-and-drop loading/appending, slice selection, boundary editing, move/duplicate, preview. A group shows one lane per member, with a header (number, `M`, and on hover the name, level, `x` and a menu) and `+ ADD SAMPLE` under the lanes; a standalone sample shows `+ GROUP` on hover |
 | Overlay hints | Contextual help and action prompts | Used by `ADD`, `AUTO`, and other actions |
 | Playback cursors | Voice-position display | Shows active playheads |
 | Transient preview markers | Auto Chop preview | Dashed markers shown before applying transient split |
@@ -121,6 +121,8 @@ Only import audio you have the rights to use.
 ## Audio and MIDI export
 
 Each sample in the sample lane has an `AUDIO` button (`A` when the sample is narrow; it is left out when the sample is too narrow for all its buttons). Drag it into your DAW or a folder to drop the sample's audio file, or click it to save a copy somewhere else. It is the file itself, unchanged; REX2 (`.rx2`) loops come out as a WAV of what INTERSECT plays, because most DAWs can't open REX files.
+
+For a group, `AUDIO` is a WAV of the group's mix: the unmuted members at their levels.
 
 Each sample also has a `MIDI` button (`M` when the sample is narrow). Drag it into your DAW to drop a MIDI clip of that sample's slices, or click it to save a `.mid` file. Each slice becomes one note on its MIDI key, timed from its position in the sample at the sample's BPM, so playing the clip back through INTERSECT replays the original pattern. REX2 (`.rx2`) loops keep their original groove even though their slices carry extra tails.
 

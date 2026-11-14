@@ -57,6 +57,7 @@ Time/Pitch notes:
 | `HIGH` | Highest note in the trigger range | Shown only in range mode |
 | `ROOT` | Transposition and filter key-track reference note for the slice | Shown only in range mode |
 | Note name text | Read-only pitch name display | Appears after the numeric field(s) and is not draggable |
+| `MEMBERS` | Which group members the slice plays | Group slices only. Shows the members' numbers, then `group mix` or `own` (orange). Click for the list: `Group mix`, `UNMUTE ALL` and an `M` per member that mutes it in this slice only |
 
 ### Filter module
 

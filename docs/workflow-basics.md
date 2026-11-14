@@ -1,7 +1,7 @@
 ---
 title: Concepts
 nav_order: 4
-description: "The mental model behind INTERSECT — sessions, slices, the inheritance/lock system, time/pitch algorithms, filter, and playback."
+description: "The mental model behind INTERSECT — sessions, slices, sample groups, the inheritance/lock system, time/pitch algorithms, filter, and playback."
 ---
 
 # Concepts
@@ -34,6 +34,19 @@ Each slice can respond to a single MIDI note or a range of notes:
 - **Range**: `RANGE` mode. The slice covers `LOW` through `HIGH`, transposing chromatically relative to a `ROOT` note. Filter key-tracking uses the slice's `ROOT` rather than the sample root.
 
 Range mode is what turns INTERSECT from a kit-style slicer into a chromatic instrument. Range transpose is ignored when `ALGO` is `Repitch` with `STRETCH` on — those modes are trigger-zone only.
+
+## Sample groups
+
+A **group** is two or more samples of the same length that share one set of slices, like the stems of one song. A group slice plays every member together on one key, so you cut the song once and still rebalance or isolate its parts per chop.
+
+- **Making a group.** Right-click a sample in the sample lane and choose `Group with...`, or point at a sample in the waveform and press `+ GROUP`. The list offers samples of the same length (within 10 ms); the others are greyed with the reason. STEMS can also make a group for you: see [Stem separation]({{ site.baseurl }}{% link stem-separation.md %}).
+- **Slices and settings.** The first member (the top lane) owns the group's slices, and its SAMPLE settings are the group's settings: the SAMPLE tab reads `GROUP` while a group is selected. When samples join a group, their own slices are removed; the group keeps the first member's.
+- **Lanes.** The waveform shows a group as one stretch with a lane per member, numbered from the top. Each lane header has the member's number, `M` (mute for the whole group) and, when you point at it, the name, a level slider, `x` (remove from the group) and a menu. `+ ADD SAMPLE` under the lanes adds more members. A group holds up to 16 samples.
+- **Mixing.** `MIX` on the group's block in the sample lane lists every member with its `M`, level and output (`Slice OUT` or its own bus), so you can send stems to separate DAW tracks. Level and mute changes apply from the next note.
+- **Per-slice members.** A slice follows the group mix until you give it its own members: use the `M`s inside the selected slice (when it is wide enough to show them) or `MEMBERS` on the SLICE tab's bottom row. A slice with its own members plays only those, at the group's levels, and its tab gets an orange corner. `GROUP MIX` in the MEMBERS list goes back to the group mix.
+- **Audio, MIDI, analysis.** `AUDIO` on the group block exports the group's mix as a WAV. `AUTO` and zero-crossing snap listen to the mix, and `LAZY` plays it.
+- **Leaving a group.** `x` on a lane header (or `Remove from group`) makes that member a standalone sample with a copy of the group's slices, if there is room for them (128 slices in all). `Ungroup` does that for every member. A group with one member left ends by itself. `Duplicate sample` adds a standalone copy of a sample, so a stem can be in a group and on its own.
+- **Missing files.** A member whose file is missing plays silence; the rest of the group still plays.
 
 ## The inheritance / lock model
 
