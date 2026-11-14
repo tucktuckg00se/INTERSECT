@@ -161,6 +161,7 @@ juce_add_binary_data(IntersectFonts SOURCES
 # Everything but the standalone shell; tests/ builds the processor tests from the same list.
 set(INTERSECT_CORE_SOURCES
     src/PluginProcessor.cpp
+    src/ProcessorCommands.cpp
     src/PluginEditor.cpp
     src/PresetFile.cpp
     src/SettingsFile.cpp
