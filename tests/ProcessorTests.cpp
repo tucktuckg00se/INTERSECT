@@ -7,6 +7,7 @@
 
 #include "PluginProcessor.h"
 #include "audio/SliceEdits.h"
+#include "state/SessionState.h"
 
 #include <atomic>
 #include <cmath>
@@ -677,6 +678,47 @@ void restoreWhilePlaying()
 }
 }
 
+// A save (or a DAW autosave) while edits are being applied on the audio thread must see whole
+// edits. The audio thread renders and applies a stream of slice edits while this thread saves
+// repeatedly; every save must read back. Run under TSan to see whether the save reads engine
+// state the audio thread is writing.
+void saveWhileEditing()
+{
+    TempDir temp;
+    const auto wav = writeSine (temp.dir.getChildFile ("edits.wav"), (int) kRate);
+
+    Host host;
+    host.loadKit (wav, 8);
+
+    std::atomic<bool> stop { false };
+    std::thread audio ([&]
+    {
+        juce::AudioBuffer<float> buffer (host.processor.getTotalNumOutputChannels(), kBlock);
+        juce::MidiBuffer midi;
+        while (! stop.load())
+        {
+            const juce::ScopedLock lock (host.processor.getCallbackLock());
+            if (host.processor.isSuspended())
+                buffer.clear();
+            else
+                host.processor.processBlock (buffer, midi);
+        }
+    });
+
+    for (int i = 0; i < 150; ++i)
+    {
+        host.setSliceParam (i % 8, IntersectProcessor::FieldPitch, (float) (i % 25) - 12.0f);
+        host.setSliceParam (i % 8, IntersectProcessor::FieldVolume, -(float) (i % 13));
+        const auto saved = host.save();
+        const auto read = StateFormat::read (saved.getData(), saved.getSize());
+        require (read.state.has_value() && read.state->slices.size() == 8, "save " + std::to_string (i) + " reads back with every slice");
+        juce::Thread::sleep (1);
+    }
+
+    stop = true;
+    audio.join();
+}
+
 int main (int argc, char* argv[])
 {
     const juce::ScopedJuceInitialiser_GUI juceInit;
@@ -715,6 +757,7 @@ int main (int argc, char* argv[])
     else if (group == "stress")
     {
         run ("restore while audio renders", restoreWhilePlaying);
+        run ("save while editing", saveWhileEditing);
     }
     else
     {
