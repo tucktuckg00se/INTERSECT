@@ -366,4 +366,47 @@ inline std::vector<int> detectTransients (const juce::AudioBuffer<float>& buffer
     return pickTransientsFromODF (odf, buffer, sensitivity, sampleRate, minSliceLenMs);
 }
 
+// Auto-chop marker positions for a slice, as the AUTO panel previews them: transients picked at
+// sensitivityPct (0..100), optionally snapped to zero crossings, at most maxPositions of them.
+inline std::vector<int> pickAutoChopPositions (const ODFResult& odfResult,
+                                               const juce::AudioBuffer<float>& buffer,
+                                               float sensitivityPct,
+                                               double sampleRate,
+                                               float minSliceLenMs,
+                                               bool snapToZero,
+                                               int sliceStart,
+                                               int sliceEnd,
+                                               size_t maxPositions = 128)
+{
+    auto positions = pickTransientsFromODF (odfResult, buffer, sensitivityPct * 0.1f, sampleRate, minSliceLenMs);
+
+    if (snapToZero)
+    {
+        std::transform (positions.begin(), positions.end(), positions.begin(),
+                        [&buffer, sliceStart, sliceEnd] (int p) {
+                            int snapped = findNearestZeroCrossing (buffer, p);
+                            return juce::jlimit (sliceStart + 1, sliceEnd - 1, snapped);
+                        });
+
+        std::sort (positions.begin(), positions.end());
+        int minDist = (int) std::round (sampleRate * (double) minSliceLenMs / 1000.0);
+        std::vector<int> sanitized;
+        int lastPos = sliceStart - minDist;
+        for (int p : positions)
+        {
+            if (p - lastPos >= minDist)
+            {
+                sanitized.push_back (p);
+                lastPos = p;
+            }
+        }
+        positions = std::move (sanitized);
+    }
+
+    if (positions.size() > maxPositions)
+        positions.resize (maxPositions);
+
+    return positions;
+}
+
 } // namespace AudioAnalysis

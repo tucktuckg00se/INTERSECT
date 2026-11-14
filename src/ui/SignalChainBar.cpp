@@ -2,7 +2,6 @@
 #include "IntersectLookAndFeel.h"
 #include "../Constants.h"
 #include "../PluginProcessor.h"
-#include "../audio/GrainEngine.h"
 
 #include <algorithm>
 #include <cmath>
@@ -2149,57 +2148,8 @@ void SignalChainBar::showSetBpmPopup (bool sliceScope)
             const float bars[] = { 0.0f, 16.0f, 8.0f, 4.0f, 2.0f, 1.0f, 0.5f, 0.25f, 0.125f, 0.0625f };
             const float barCount = bars[result];
 
-            if (sliceScope)
-            {
-                IntersectProcessor::Command cmd;
-                cmd.type = IntersectProcessor::CmdStretch;
-                cmd.floatParam1 = barCount;
-                cmd.sliceIdx = processor.sliceManager.selectedSlice.load();
-                processor.pushCommand (cmd);
-                layoutDirty = true;
-            }
-            else if (processor.sampleData.isLoaded())
-            {
-                // Measure the selected sample (or its selected slice), not the whole session.
-                const auto& ui = processor.getUiSliceSnapshot();
-                int startSmp = 0;
-                int endSmp = 0;
-                for (int i = 0; i < ui.numSessionSamples; ++i)
-                    if (ui.sessionSamples[(size_t) i].sampleId == ui.selectedSessionSampleId)
-                        endSmp = ui.sessionSamples[(size_t) i].numFrames;
-
-                const int sel = ui.selectedSlice;
-                if (sel >= 0 && sel < ui.numSlices
-                    && ui.slices[(size_t) sel].sampleId == ui.selectedSessionSampleId)
-                {
-                    const auto& s = ui.slices[(size_t) sel];
-                    startSmp = s.startSample;
-                    endSmp = s.endSample;
-                }
-                if (endSmp <= startSmp)
-                    return;
-
-                const auto sampleSnap = processor.sampleData.getSnapshot();
-                const float sampleRate = (sampleSnap != nullptr && sampleSnap->decodedSampleRate > 0.0)
-                    ? (float) sampleSnap->decodedSampleRate
-                    : 44100.0f;
-                const float newBpm = GrainEngine::calcStretchBpm (startSmp, endSmp, barCount, sampleRate);
-                const int sampleId = processor.getUiSliceSnapshot().selectedSessionSampleId;
-                if (sampleId >= 0)
-                {
-                    IntersectProcessor::Command gestureCmd;
-                    gestureCmd.type = IntersectProcessor::CmdBeginGesture;
-                    processor.pushCommand (gestureCmd);
-
-                    IntersectProcessor::Command cmd;
-                    cmd.type = IntersectProcessor::CmdSetSampleParam;
-                    cmd.intParam1 = sampleId;
-                    cmd.intParam2 = IntersectProcessor::FieldBpm;
-                    cmd.floatParam1 = newBpm;
-                    processor.pushCommand (cmd);
-                }
-                layoutDirty = true;
-            }
+            processor.setBpmFromBars (sliceScope, barCount);
+            layoutDirty = true;
 
             repaint();
         });

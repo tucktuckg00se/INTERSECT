@@ -23,6 +23,8 @@
 #include "params/ParamIds.h"
 #include "params/ParamLayout.h"
 
+class RemoteControlServer;
+
 class IntersectProcessor : public juce::AudioProcessor,
                            public ParamFieldIds,   // FieldBpm, ... (IntersectProcessor::FieldBpm)
                            private juce::AsyncUpdater
@@ -50,6 +52,10 @@ public:
     void setCurrentProgram (int) override {}
     const juce::String getProgramName (int) override { return {}; }
     void changeProgramName (int, const juce::String&) override {}
+
+    void updateTrackProperties (const TrackProperties& properties) override;
+    /** The host's name for this track, if it changed since the last call. Any thread. */
+    bool takeHostTrackNameIfChanged (juce::String& name);
 
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
@@ -156,6 +162,11 @@ public:
 
     void pushCommand (Command cmd);
     bool enqueueUiUndoSnapshot();
+
+    /** SET BPM: derives a BPM from a length in bars. Slice scope stretches the selected slice
+        (and locks its BPM); sample scope sets the selected sample's BPM from the selected
+        slice when it belongs to that sample, else from the whole sample. Message thread only. */
+    void setBpmFromBars (bool sliceScope, float bars);
 
     std::atomic<bool> pendingEndGesture { false };
 
@@ -335,7 +346,7 @@ public:
     std::atomic<int> liveDragSliceIdx   { -1 };
     std::atomic<int> liveDragBoundsStart {  0 };
     std::atomic<int> liveDragBoundsEnd   {  0 };
-    std::atomic<int> liveDragOwner       {  0 };   // 0=none, 1=mouse, 2=midi
+    std::atomic<int> liveDragOwner       {  0 };   // 0=none, 1=mouse, 2=midi, 3=remote
 
     std::atomic<int> midiBoundaryPreviewSliceIdx { -1 };
     std::atomic<int> midiBoundaryPreviewStart { 0 };
@@ -621,6 +632,13 @@ private:
     // Cached parameter pointers
     std::atomic<float>* maxVoicesParam   = nullptr;
     std::atomic<float>* uiScaleParam          = nullptr;
+
+    // Remote control (OSC) for external controllers. Declared last so it is destroyed first,
+    // while everything it reads is still alive.
+    juce::CriticalSection hostTrackNameLock;
+    juce::String hostTrackName;          // guarded by hostTrackNameLock
+    bool hostTrackNameChanged = false;   // guarded by hostTrackNameLock
+    std::unique_ptr<RemoteControlServer> remoteControl;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (IntersectProcessor)
 };

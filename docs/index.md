@@ -39,6 +39,7 @@ Start with the **[Getting started]({{ site.baseurl }}{% link getting-started.md 
 - [Settings file]({{ site.baseurl }}{% link settings-file.md %}) — what gets persisted between sessions and where
 - [Themes]({{ site.baseurl }}{% link themes.md %}) — `.intersectstyle` file format and colour-key reference
 - [NRPN MIDI routing]({{ site.baseurl }}{% link nrpn-midi.md %}) — hardware controller setup for slice editing
+- [Remote control (OSC)]({{ site.baseurl }}{% link remote-control-protocol.md %}) — protocol for custom controller apps (Push 2, Maschine, TouchOSC…)
 - [Changelog]({{ site.baseurl }}{% link changelog.md %}) — what's new in each release
 
 ### Operations

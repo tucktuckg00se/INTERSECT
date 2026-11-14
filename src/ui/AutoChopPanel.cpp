@@ -412,43 +412,11 @@ void AutoChopPanel::updatePreviewFromCachedODF()
         return;
     }
 
-    float sens = sensCell.value * 0.1f;
-    float minMs = minCell.value;
     const double sampleRate = sampleSnap->decodedSampleRate > 0.0 ? sampleSnap->decodedSampleRate : 44100.0;
 
-    auto positions = AudioAnalysis::pickTransientsFromODF (
-        cachedODF, sampleSnap->buffer, sens, sampleRate, minMs);
-
-    if (processor.snapToZeroCrossing.load())
-    {
-        int sliceStart = cachedSliceStart;
-        int sliceEnd = cachedSliceEnd;
-        std::transform (positions.begin(), positions.end(), positions.begin(),
-                        [sampleSnap, sliceStart, sliceEnd] (int p) {
-                            int snapped = AudioAnalysis::findNearestZeroCrossing (
-                                sampleSnap->buffer, p);
-                            return juce::jlimit (sliceStart + 1, sliceEnd - 1, snapped);
-                        });
-
-        std::sort (positions.begin(), positions.end());
-        int minDist = (int) std::round (sampleRate * (double) minMs / 1000.0);
-        std::vector<int> sanitized;
-        int lastPos = sliceStart - minDist;
-        for (int p : positions)
-        {
-            if (p - lastPos >= minDist)
-            {
-                sanitized.push_back (p);
-                lastPos = p;
-            }
-        }
-        positions = std::move (sanitized);
-    }
-
-    if (positions.size() > 128)
-        positions.resize (128);
-
-    waveformView.transientPreviewPositions = std::move (positions);
+    waveformView.transientPreviewPositions = AudioAnalysis::pickAutoChopPositions (
+        cachedODF, sampleSnap->buffer, sensCell.value, sampleRate, minCell.value,
+        processor.snapToZeroCrossing.load(), cachedSliceStart, cachedSliceEnd);
     waveformView.repaint();
 }
 

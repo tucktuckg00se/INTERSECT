@@ -161,6 +161,9 @@ target_sources(Intersect PRIVATE
     src/params/ParamLayout.cpp
     src/params/SampleParams.cpp
     src/midi/MidiExport.cpp
+    src/remote/InstanceRegistry.cpp
+    src/remote/RemoteControlServer.cpp
+    src/remote/RemoteParams.cpp
     src/ui/IntersectLookAndFeel.cpp
     src/ui/HeaderBar.cpp
     src/ui/browser/BrowserView.cpp
@@ -216,6 +219,7 @@ target_link_libraries(Intersect
         juce::juce_audio_utils
         juce::juce_cryptography
         juce::juce_dsp
+        juce::juce_osc
         bungee_lib
         velociloops
         IntersectFonts

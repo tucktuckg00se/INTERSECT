@@ -5,6 +5,7 @@
 #include "PresetFile.h"
 #include "audio/GrainEngine.h"
 #include "audio/AudioAnalysis.h"
+#include "remote/RemoteControlServer.h"
 #include <cmath>
 #include <cstring>
 #include <functional>
@@ -356,10 +357,18 @@ IntersectProcessor::IntersectProcessor()
     ortBundleDownloadJob.onTerminalState = [this] { triggerAsyncUpdate(); };
 
 	    publishUiSliceSnapshot();
+
+    // INTERSECT_REMOTE_CONTROL=0 turns the OSC remote control off (e.g. for locked-down hosts).
+    if (juce::SystemStats::getEnvironmentVariable ("INTERSECT_REMOTE_CONTROL", "1") != "0")
+    {
+        remoteControl = std::make_unique<RemoteControlServer> (*this);
+        remoteControl->start();
+    }
 }
 
 IntersectProcessor::~IntersectProcessor()
 {
+    remoteControl.reset();
         cancelPendingUpdate();
 	    auditionPool.removeAllJobs (true, 2000);
 	    fileLoadPool.removeAllJobs (true, 5000);
@@ -1530,6 +1539,78 @@ void IntersectProcessor::publishUiSliceSnapshot()
     uiSliceSnapshotIndex.store (writeIndex, std::memory_order_release);
     uiSnapshotVersion.fetch_add (1, std::memory_order_release);
     uiSnapshotDirty.store (false, std::memory_order_release);
+}
+
+void IntersectProcessor::updateTrackProperties (const TrackProperties& properties)
+{
+    const juce::ScopedLock sl (hostTrackNameLock);
+    hostTrackName = properties.name.value_or (juce::String());
+    hostTrackNameChanged = true;
+}
+
+bool IntersectProcessor::takeHostTrackNameIfChanged (juce::String& name)
+{
+    const juce::ScopedLock sl (hostTrackNameLock);
+    if (! hostTrackNameChanged)
+        return false;
+    hostTrackNameChanged = false;
+    name = hostTrackName;
+    return true;
+}
+
+void IntersectProcessor::setBpmFromBars (bool sliceScope, float bars)
+{
+    if (sliceScope)
+    {
+        Command cmd;
+        cmd.type = CmdStretch;
+        cmd.floatParam1 = bars;
+        cmd.sliceIdx = sliceManager.selectedSlice.load();
+        pushCommand (cmd);
+        return;
+    }
+
+    if (! sampleData.isLoaded())
+        return;
+
+    // Measure the selected sample (or its selected slice), not the whole session.
+    const auto& ui = getUiSliceSnapshot();
+    int startSmp = 0;
+    int endSmp = 0;
+    for (int i = 0; i < ui.numSessionSamples; ++i)
+        if (ui.sessionSamples[(size_t) i].sampleId == ui.selectedSessionSampleId)
+            endSmp = ui.sessionSamples[(size_t) i].numFrames;
+
+    const int sel = ui.selectedSlice;
+    if (sel >= 0 && sel < ui.numSlices
+        && ui.slices[(size_t) sel].sampleId == ui.selectedSessionSampleId)
+    {
+        const auto& s = ui.slices[(size_t) sel];
+        startSmp = s.startSample;
+        endSmp = s.endSample;
+    }
+    if (endSmp <= startSmp)
+        return;
+
+    const auto sampleSnap = sampleData.getSnapshot();
+    const float sampleRate = (sampleSnap != nullptr && sampleSnap->decodedSampleRate > 0.0)
+        ? (float) sampleSnap->decodedSampleRate
+        : 44100.0f;
+    const float newBpm = GrainEngine::calcStretchBpm (startSmp, endSmp, bars, sampleRate);
+    const int sampleId = ui.selectedSessionSampleId;
+    if (sampleId < 0)
+        return;
+
+    Command gestureCmd;
+    gestureCmd.type = CmdBeginGesture;
+    pushCommand (gestureCmd);
+
+    Command cmd;
+    cmd.type = CmdSetSampleParam;
+    cmd.intParam1 = sampleId;
+    cmd.intParam2 = FieldBpm;
+    cmd.floatParam1 = newBpm;
+    pushCommand (cmd);
 }
 
 void IntersectProcessor::pushCommand (Command cmd)
