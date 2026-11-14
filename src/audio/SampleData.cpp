@@ -3,6 +3,7 @@
 #include "../AppFiles.h"
 #include <algorithm>
 #include <cmath>
+#include <utility>
 #include <memory>
 
 namespace
@@ -360,36 +361,35 @@ std::unique_ptr<SampleData::DecodedSample> SampleData::rebuildWithSessionSamples
     return rebuilt;
 }
 
-void SampleData::applyDecodedSample (std::unique_ptr<DecodedSample> decoded)
+SampleData::SnapshotPtr SampleData::applyDecodedSample (SnapshotPtr sample)
 {
-    if (decoded == nullptr)
-        return;
+    if (sample == nullptr)
+        return {};
 
-    const int frames = decoded->decodedNumFrames > 0 ? decoded->decodedNumFrames
-                                                     : decoded->buffer.getNumSamples();
+    const int frames = sample->decodedNumFrames > 0 ? sample->decodedNumFrames
+                                                    : sample->buffer.getNumSamples();
 
-    // Convert to shared_ptr — no buffer copy, no heap allocation.
-    auto shared = std::shared_ptr<const DecodedSample> (decoded.release());
-
-    // Audio-thread reference (non-atomic, only written here on audio thread).
-    activeDecoded = shared;
+    // Audio-thread reference (non-atomic, only written on the audio thread). `previous` keeps
+    // the old sample alive, so replacing the UI snapshot below never frees it here.
+    auto previous = std::exchange (activeDecoded, sample);
     numFrames.store (frames, std::memory_order_release);
-    decodedSampleRate.store (shared->decodedSampleRate, std::memory_order_release);
-    sourceNumFrames.store (shared->sourceNumFrames, std::memory_order_release);
-    sourceSampleRate.store (shared->sourceSampleRate, std::memory_order_release);
+    decodedSampleRate.store (sample->decodedSampleRate, std::memory_order_release);
+    sourceNumFrames.store (sample->sourceNumFrames, std::memory_order_release);
+    sourceSampleRate.store (sample->sourceSampleRate, std::memory_order_release);
 
     // Publish the same object to UI via atomic snapshot.
 #if INTERSECT_HAS_STD_ATOMIC_SHARED_PTR
-    snapshot.store (shared, std::memory_order_release);
+    snapshot.store (std::move (sample), std::memory_order_release);
 #else
-    std::atomic_store_explicit (&snapshot, shared, std::memory_order_release);
+    std::atomic_store_explicit (&snapshot, std::move (sample), std::memory_order_release);
 #endif
     loaded.store (true, std::memory_order_release);
+    return previous;
 }
 
-void SampleData::clear()
+SampleData::SnapshotPtr SampleData::clear()
 {
-    activeDecoded.reset();
+    auto previous = std::exchange (activeDecoded, {});
     numFrames.store (0, std::memory_order_release);
 #if INTERSECT_HAS_STD_ATOMIC_SHARED_PTR
     snapshot.store (std::shared_ptr<const DecodedSample> {}, std::memory_order_release);
@@ -401,6 +401,7 @@ void SampleData::clear()
     decodedSampleRate.store (0.0, std::memory_order_release);
     sourceNumFrames.store (0, std::memory_order_release);
     sourceSampleRate.store (0.0, std::memory_order_release);
+    return previous;
 }
 
 SampleData::SnapshotPtr SampleData::getSnapshot() const

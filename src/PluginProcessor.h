@@ -8,6 +8,15 @@
 #include "Constants.h"
 #include "RtText.h"
 #include "audio/SampleData.h"
+#include "audio/SpscQueue.h"
+
+// RealtimeSanitizer builds (-DINTERSECT_SANITIZE=realtime, Clang 20+) mark processBlock as
+// nonblocking, so RTSan reports any allocation, free or lock reached from it at run time.
+#if defined (INTERSECT_RTSAN)
+ #define INTERSECT_NONBLOCKING [[clang::nonblocking]]
+#else
+ #define INTERSECT_NONBLOCKING
+#endif
 #include "audio/SliceManager.h"
 #include "audio/VoicePool.h"
 #include "audio/LazyChopEngine.h"
@@ -25,9 +34,12 @@
 #include "params/ParamIds.h"
 #include "params/ParamLayout.h"
 
+struct SessionState;
+
 class IntersectProcessor : public juce::AudioProcessor,
                            public ParamFieldIds,   // FieldBpm, ... (IntersectProcessor::FieldBpm)
-                           private juce::AsyncUpdater
+                           private juce::AsyncUpdater,
+                           private juce::Timer       // message-thread housekeeping for the audio thread
 {
 public:
     IntersectProcessor();
@@ -36,7 +48,7 @@ public:
     using juce::AudioProcessor::processBlock;
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
     void releaseResources() override;
-    void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+    void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) INTERSECT_NONBLOCKING override;
 
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
@@ -62,8 +74,6 @@ public:
     enum CommandType
     {
         CmdNone = 0,
-        CmdLoadFile,
-        CmdAppendFiles,
         CmdCreateSlice,
         CmdDeleteSlice,
         CmdDeleteSessionSample,
@@ -144,8 +154,6 @@ public:
         int intParam2 = 0;
         float floatParam1 = 0.0f;
         uint64_t lockBitParam = 0;
-        juce::File fileParam;
-        std::vector<juce::File> filesParam;
         // Fixed-size array avoids heap allocation/deallocation on the audio thread.
         std::array<int, 128> positions {};
         int numPositions = 0;
@@ -213,6 +221,7 @@ public:
         bool askEachTime = false;   // a save dialog after each import instead of the folder
         juce::File folder;          // empty: getDefaultUrlImportFolder()
         UrlImport::Channel channel = UrlImport::Channel::stable;
+        UrlImport::OutputFormat format;   // WAV 32-bit float at the source's rate unless changed
     };
     const UrlImportSettings& getUrlImportSettings() const noexcept { return urlImportSettings; }
     void setUrlImportSettings (const UrlImportSettings& settings) { urlImportSettings = settings; }
@@ -423,6 +432,15 @@ private:
         RtText<512> fileName;
     };
 
+    // A finished decode, handed from the decode worker to processBlock. The shared_ptr (and its
+    // control block) is made on the worker, so taking the sample on the audio thread allocates nothing.
+    struct CompletedLoad
+    {
+        int token = 0;
+        LoadKind kind = LoadKindReplace;
+        SampleData::SnapshotPtr sample;
+    };
+
     struct UiStatusMessage
     {
         enum class Source
@@ -474,6 +492,10 @@ private:
 
     // Returns false if the state was rejected; a malformed slice table can leave it partly applied.
     bool restoreState (const void* data, int sizeInBytes, const RestoreOptions& options);
+    // Engine side of the saved state (the format itself is in state/SessionState). Capture reads
+    // the engine; apply writes it and runs only inside restoreState's ScopedProcessingSuspend.
+    SessionState captureSessionState();
+    void applySessionState (const SessionState& state, const RestoreOptions& options);
     juce::StringArray getStateSampleFilePaths() const;
     void postPresetJobResult (PresetJobResult result);
     void handlePresetJobCompletionOnMessageThread();
@@ -482,6 +504,11 @@ private:
 
     void drainCommands();
     void handleCommand (const Command& cmd);
+    // handleCommand's larger cases (audio thread, ProcessorCommands.cpp).
+    void setSliceBounds (const Command& cmd);
+    void duplicateSlice (const Command& cmd);
+    void splitSlice (const Command& cmd);
+    void transientChop (const Command& cmd);
 
     // MIDI edit settings sampled once per block so every event in the block sees one value
     struct MidiEditBlockSettings
@@ -501,12 +528,48 @@ private:
     void setMidiBoundaryPreviewState (int sliceIdx, int startSample, int endSample, bool isStart);
     void commitMidiSliceBoundaryGestureIfIdle (int blockSamples);
     void clearMidiEditGestureState();
+    // Message thread: starts a load and returns its token (beginSampleLoad + startSampleLoad).
     int requestSampleLoad (const std::vector<juce::File>& files, LoadKind kind,
                            const std::vector<int>* sampleIds = nullptr,
                            const std::vector<int>* importSliceSampleIds = nullptr);
+    // Any thread, atomics only: makes a load of `kind` the newest, so older loads' results are
+    // dropped, and returns its token.
+    int beginSampleLoad (LoadKind kind) noexcept;
+    // Message thread: queues the decode for a token from beginSampleLoad.
+    void startSampleLoad (int token, LoadKind kind, const std::vector<juce::File>& files,
+                          const std::vector<int>* sampleIds, const std::vector<int>* importSliceSampleIds);
+
+    // A reload the audio thread needs (undo/redo, a sample-rate retry). It calls beginSampleLoad
+    // itself; timerCallback starts the decode. Paths are ref-counted strings copied into cleared
+    // slots, so building a request allocates and frees nothing on the audio thread.
+    struct LoadRequest
+    {
+        int token = 0;
+        LoadKind kind = LoadKindPreserveSlices;
+        bool updatesPendingStateFile = false;   // undo/redo: the first path (or none) is the pending state file
+        int numSamples = 0;
+        std::array<int, SampleData::kMaxSessionSamples> sampleIds {};
+        std::array<juce::String, SampleData::kMaxSessionSamples> paths;
+        int numImportIds = 0;
+        std::array<int, SampleData::kMaxSessionSamples> importIds {};
+    };
+    SpscQueue<LoadRequest, 32> loadRequests;   // roomy: stale requests are skipped, a dropped one would lose a reload
+    void startRequestedLoads();   // message thread
     void clearVoicesBeforeSampleSwap();
     void clampSlicesToSampleBounds();
-    void deleteSessionSample (int sampleId);
+    void deleteSessionSample (int sampleId);   // audio thread, applies a prepared SampleRemoval
+
+    // Removing a session sample, prepared on the message thread (deleteSessionSampleAsync) so the
+    // audio thread only swaps in the shortened kit. `source` is the kit it was built from; the
+    // audio thread drops the removal if another load has replaced that kit since.
+    struct SampleRemoval
+    {
+        int sampleId = -1;
+        int nextSelectedSampleId = -1;
+        SampleData::SnapshotPtr source;
+        SampleData::SnapshotPtr rebuilt;   // null when the last sample goes
+    };
+    SpscQueue<SampleRemoval, 16> sampleRemovals;   // message thread -> audio thread
     void syncAllSliceOwnershipToCurrentSession();
     void syncSliceOwnershipFromAbsolute (Slice& slice, bool clampToSessionBounds = true);
     void syncSliceAbsoluteToCurrentSession (Slice& slice);
@@ -515,6 +578,7 @@ private:
     int generateSessionSampleId();
     void publishUiSliceSnapshot();
     void handleAsyncUpdate() override;
+    void timerCallback() override;
     void handleStemJobCompletionOnMessageThread();
     void handleDownloadCompletionsOnMessageThread();
     void handleUrlImportCompletionOnMessageThread();
@@ -533,9 +597,6 @@ private:
     void setPendingStateFile (const juce::File& file);
     void clearPendingStateFile();
     juce::File getPendingStateFile() const;
-    void setPendingStateFiles (const std::vector<juce::File>& files);
-    void clearPendingStateFiles();
-    std::vector<juce::File> getPendingStateFiles() const;
     ParamUndoState captureParamUndoState() const;
     void applyParamUndoState (const ParamUndoState& state);
     void clearPendingSliceTimelineRemap();
@@ -622,6 +683,32 @@ private:
     std::array<StemMetaEntry, SampleData::kMaxSessionSamples> stemMetaEntries {};
     int stemMetaEntryCount = 0;
 
+    // The engine state a save needs. captureSessionState asks the audio thread to copy it between
+    // blocks (serviceSaveRequest), so a save never sees a half-applied edit; when audio isn't
+    // running, processing is suspended or the save runs on the audio thread, it's read directly.
+    struct SaveCopy
+    {
+        int numSlices = 0;
+        std::array<Slice, SliceManager::kMaxSlices> slices {};
+        int selectedSlice = -1;
+        int rootNote = kDefaultRootNote;
+        int selectedSessionSampleId = -1;
+        SampleParamTable sampleParams;
+        std::array<StemMetaEntry, SampleData::kMaxSessionSamples> stemMetaEntries {};
+        int stemMetaEntryCount = 0;
+        SampleData::SnapshotPtr sample;   // emptied by the saver before going idle, so the audio thread never frees a sample
+    };
+    // idle -> requested (saver) -> filling (audio thread) -> ready (audio thread) -> idle (saver).
+    // The audio thread writes saveCopy only while filling; the saver reads it only when ready.
+    enum SaveRequestState { saveIdle = 0, saveRequested, saveFilling, saveReady };
+    SaveCopy saveCopy;
+    std::atomic<int> saveRequestState { saveIdle };
+    std::atomic<juce::Thread::ThreadID> audioThreadId { nullptr };
+    juce::CriticalSection saveLock;   // one save at a time; never taken on the audio thread
+    void copyEngineState (SaveCopy& into, bool onAudioThread) noexcept;
+    void serviceSaveRequest() noexcept;                  // audio thread, once per block
+    bool takeSaveCopyFromAudioThread (SaveCopy& into);   // saving thread
+
     SampleParamTable sampleParams;   // audio-thread owned; restoreState writes it like stemMetaEntries
     void setStemMeta (int sampleId, const StemMetadata& meta);
     StemMetadata getStemMeta (int sampleId) const;
@@ -633,6 +720,20 @@ private:
         int parentSourceSampleId = -1;
     };
     std::atomic<PendingStemImport*> pendingStemImport { nullptr };
+
+    // Heap objects the audio thread lets go of. processBlock moves them in here instead of freeing
+    // them; timerCallback() frees them on the message thread.
+    struct RetiredObjects
+    {
+        SampleData::SnapshotPtr sample;
+        std::unique_ptr<CompletedLoad> load;
+        std::unique_ptr<FailedLoadResult> failure;
+        std::unique_ptr<PendingStemImport> stemImport;
+    };
+    SpscQueue<RetiredObjects, 64> retiredObjects;
+    void retire (RetiredObjects&& objects) noexcept;   // audio thread
+    bool applyCompletedLoad();   // audio thread, from processBlock
+    bool applyFailedLoad();      // audio thread, from processBlock
 
     // Presets. A newer preset load, a sample load or a host state restore bumps the generation,
     // which makes any in-flight preset load drop its result. Declared before fileLoadPool so
@@ -665,7 +766,7 @@ private:
     std::atomic<int> nextSessionSampleId { 0 };
     std::atomic<int> latestLoadToken { 0 };
     std::atomic<int> latestLoadKind { (int) LoadKindReplace };
-    std::atomic<SampleData::DecodedSample*> completedLoadData { nullptr };
+    std::atomic<CompletedLoad*> completedLoadData { nullptr };
     std::atomic<FailedLoadResult*> completedLoadFailure { nullptr };
     std::array<UiSliceSnapshot, 2> uiSliceSnapshots {};
     std::atomic<int> uiSliceSnapshotIndex { 0 };
@@ -681,7 +782,6 @@ private:
     std::atomic<int> uiStatusMessageIndex { 0 };
     std::atomic<int> pendingStateRestoreToken { 0 };
     juce::File pendingStateFile;
-    std::vector<juce::File> pendingStateFiles;
     mutable juce::CriticalSection pendingStateFileLock;
 
     // Cached parameter pointers

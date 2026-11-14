@@ -29,6 +29,20 @@ project(Intersect)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Sanitizer builds for the tests (GCC/Clang), e.g. -DINTERSECT_SANITIZE=address,undefined (CI)
+# or -DINTERSECT_SANITIZE=thread. Applies to everything configured below, so use its own build dir.
+set(INTERSECT_SANITIZE "" CACHE STRING "Sanitizers for a test build, e.g. address,undefined or thread")
+if(INTERSECT_SANITIZE)
+    add_compile_options(-fsanitize=${INTERSECT_SANITIZE} -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=${INTERSECT_SANITIZE})
+    # realtime (Clang 20+): processBlock becomes [[clang::nonblocking]] (see PluginProcessor.h).
+    # The compile-time effect analysis would flag every JUCE call, so only the run-time check is on.
+    if(INTERSECT_SANITIZE MATCHES "realtime")
+        add_compile_definitions(INTERSECT_RTSAN=1)
+        add_compile_options(-Wno-function-effects -Wno-perf-constraint-implies-noexcept)
+    endif()
+endif()
+
 set(INTERSECT_ORT_VERSION "1.24.2" CACHE STRING "ONNX Runtime version the plugin is compiled against")
 set(INTERSECT_ORT_HEADERS_ROOT "" CACHE PATH "Optional path to a prebuilt ONNX Runtime package containing include/ (skips header download)")
 
@@ -144,18 +158,21 @@ juce_add_binary_data(IntersectFonts SOURCES
     src/ui/fonts/Inter_24pt-Bold.ttf
 )
 
-target_sources(Intersect PRIVATE
+# Everything but the standalone shell; tests/ builds the processor tests from the same list.
+set(INTERSECT_CORE_SOURCES
     src/PluginProcessor.cpp
+    src/ProcessorCommands.cpp
     src/PluginEditor.cpp
     src/PresetFile.cpp
     src/SettingsFile.cpp
     src/HttpFetch.cpp
     src/Download.cpp
     src/UpdateCheck.cpp
-    src/StandaloneApp.cpp
+    src/state/SessionState.cpp
     src/audio/SampleData.cpp
     src/audio/Rex2Import.cpp
     src/audio/SliceManager.cpp
+    src/audio/SliceEdits.cpp
     src/audio/VoicePool.cpp
     src/audio/GrainEngine.cpp
     src/audio/LazyChopEngine.cpp
@@ -171,7 +188,8 @@ target_sources(Intersect PRIVATE
     src/midi/MidiExport.cpp
     src/ui/IntersectLookAndFeel.cpp
     src/ui/HeaderBar.cpp
-    src/ui/ConfirmCallout.cpp
+    src/ui/Callout.cpp
+    src/ui/SetBpmCallout.cpp
     src/ui/UrlImportPanel.cpp
     src/ui/browser/BrowserView.cpp
     src/ui/browser/DirectoryListing.cpp
@@ -200,6 +218,9 @@ target_sources(Intersect PRIVATE
     src/audio/StemSpectral.cpp
     src/audio/AuditionPlayer.cpp
 )
+list(TRANSFORM INTERSECT_CORE_SOURCES PREPEND "${CMAKE_CURRENT_SOURCE_DIR}/")
+
+target_sources(Intersect PRIVATE ${INTERSECT_CORE_SOURCES} src/StandaloneApp.cpp)
 
 target_include_directories(Intersect PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}

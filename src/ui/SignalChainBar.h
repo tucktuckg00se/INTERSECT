@@ -181,7 +181,12 @@ private:
     void endPluginGesture();
 
     void dismissTextEditor();
-    void showSetBpmPopup (bool sliceScope);
+    void showSetBpmPopup (bool sliceScope, juce::Rectangle<int> anchorArea);
+    /** The span SET BPM measures and the timeline rate; false when there is nothing to measure.
+        Shared by the popover's preview and applySetBpm so the two can't disagree. */
+    bool measureSetBpmSpan (bool sliceScope, int& startSample, int& endSample, double& sampleRate) const;
+    float previewSetBpm (bool sliceScope, float bars) const;
+    void applySetBpm (bool sliceScope, float bars);
     void showTextEditor (const Cell& cell);
     void showRootEditor();
 
@@ -193,6 +198,7 @@ private:
     IntersectProcessor& processor;
     Scope scope = Scope::Sample;
     bool lastHadValidSlice = false;
+    int lastSetBpmChoice = 4;   // SET BPM opens on the length used last (1 Bar at first)
     int activeDragCell = -1;
     int dragStartY = 0;
     float dragStartInteractionValue = 0.0f;

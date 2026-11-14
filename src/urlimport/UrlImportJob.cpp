@@ -33,7 +33,7 @@ YtDlpRun runYtDlp (const InstalledTools& tools, const ImportRequest& request, co
 
     context.progress ("Contacting the site", -1.0f);
     ToolProcess process;
-    if (! process.start (tools.ytDlp, buildYtDlpArgs (paths, request.url, request.allowLong), run.startError))
+    if (! process.start (tools.ytDlp, buildYtDlpArgs (paths, request.url, request.allowLong, request.format), run.startError))
         return run;
 
     for (;;)
@@ -60,7 +60,7 @@ YtDlpRun runYtDlp (const InstalledTools& tools, const ImportRequest& request, co
                 break;
             case OutputLine::Kind::postprocess:
                 if (parsed.status == "started" && parsed.postprocessor == "ExtractAudio")
-                    context.progress ("Converting to WAV", -1.0f);
+                    context.progress ("Converting to " + codecName (request.format), -1.0f);
                 run.keep (line);
                 break;
             case OutputLine::Kind::info:
@@ -116,7 +116,8 @@ juce::File placeInFolder (const juce::File& source, const juce::File& folder, co
         return {};
     }
 
-    const auto destination = uniqueFileIn (folder, makeOutputFileName (title, id));
+    // Named after the file ffmpeg wrote, so the extension always matches what's inside.
+    const auto destination = uniqueFileIn (folder, makeOutputFileName (title, id, source.getFileExtension()));
     if (! moveFile (source, destination))
     {
         error = "couldn't save " + destination.getFullPathName();
@@ -343,11 +344,11 @@ JobResult UrlImportJob::runImport (const InstallContext& context, const ImportRe
             return failed ("yt-dlp couldn't start (" + run.startError + "). Try UPDATE NOW in Settings > URL Import.");
         }
 
-        // Success: the after_move line names the WAV.
+        // Success: the after_move line names the converted file.
         auto file = run.done.kind == OutputLine::Kind::done ? juce::File::createFileWithoutCheckingPath (run.done.filepath)
                                                             : juce::File();
         if (! file.existsAsFile() && run.done.kind == OutputLine::Kind::done)
-            file = workFolder.getChildFile ("dl.wav");
+            file = workFolder.getChildFile ("dl." + fileExtension (importRequest.format));
         if (file.existsAsFile())
         {
             out.title = run.done.title.isNotEmpty() ? run.done.title : run.info.title;
@@ -398,13 +399,14 @@ JobResult UrlImportJob::runImport (const InstallContext& context, const ImportRe
         workFolder.deleteRecursively();
         const auto kind = classifyFailure (run.tail);
 
-        // Sites change; a newer yt-dlp usually copes. Check now (not in 6 h) and retry once if one arrived.
+        // Sites change; a newer yt-dlp usually copes. An ffmpeg without the chosen encoder needs newer
+        // audio tools. Check now (not in 6 h) and retry once if either arrived.
         if (attempt == 0 && failureSuggestsUpdate (kind))
         {
             auto retry = install.ensure (context, importRequest.channel, true);
             if (retry.cancelled)
                 return cancelled();
-            if (retry.error.isEmpty() && retry.ytDlpChanged)
+            if (retry.error.isEmpty() && (retry.ytDlpChanged || retry.mediaChanged))
             {
                 tools = std::move (retry);
                 continue;

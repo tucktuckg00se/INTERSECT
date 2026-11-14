@@ -1,0 +1,6 @@
+# ThreadSanitizer suppressions for the test builds (TSAN_OPTIONS=suppressions=tests/tsan.supp).
+# libstdc++'s condition_variable::wait isn't instrumented, so TSan misses the unlock inside it: it
+# then reports JUCE's WaitableEvent mutex as locked twice, and as part of lock-order cycles with
+# the ThreadPool lock when JUCE starts its threads.
+mutex:juce::WaitableEvent::signal
+deadlock:juce::WaitableEvent::signal

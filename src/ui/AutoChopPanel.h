@@ -26,9 +26,9 @@ private:
     {
         juce::Rectangle<int> bounds;
         juce::String label;
-        float value;
-        float minVal, maxVal;
-        float step;
+        float value = 0.0f;
+        float minVal = 0.0f, maxVal = 0.0f;
+        float step = 0.0f;
         juce::String suffix;
     };
 

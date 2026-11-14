@@ -1,8 +1,10 @@
 // End-to-end URL import outside the plugin: installs the tools into a fresh folder, imports one
-// link with the same job the plugin runs, and checks the WAV. Needs the network.
+// link with the same job the plugin runs, and checks the file. Needs the network.
 //
 //   INTERSECT_MEDIA_TOOLS_MANIFEST=file:///.../intersect_media_tools_manifest.json \
-//     IntersectUrlImportE2E <url> <tools folder> <output folder> [nightly]
+//     IntersectUrlImportE2E <url> <tools folder> <output folder> [nightly] [format=flac-24] [rate=16000]
+//
+// format is a settings value (wav-f32, wav-24, wav-16, flac-24, flac-16); rate is in Hz.
 //
 // Only use links to material you own or that is freely licensed (the project's own videos).
 #include "urlimport/UrlImportJob.h"
@@ -12,20 +14,35 @@ int main (int argc, char* argv[])
 {
     if (argc < 4)
     {
-        std::cerr << "usage: IntersectUrlImportE2E <url> <tools folder> <output folder> [nightly]\n";
+        std::cerr << "usage: IntersectUrlImportE2E <url> <tools folder> <output folder> [nightly] [format=...] [rate=...]\n";
         return 2;
     }
 
     const juce::String url = juce::String::fromUTF8 (argv[1]);
     const juce::File toolsRoot = juce::File::getCurrentWorkingDirectory().getChildFile (juce::String::fromUTF8 (argv[2]));
     const juce::File outputFolder = juce::File::getCurrentWorkingDirectory().getChildFile (juce::String::fromUTF8 (argv[3]));
-    const bool nightly = argc > 4 && juce::String (argv[4]) == "nightly";
+    bool nightly = false;
+    UrlImport::OutputFormat format;
+    int rate = 0;
+    for (int i = 4; i < argc; ++i)
+    {
+        const juce::String option (argv[i]);
+        if (option == "nightly")
+            nightly = true;
+        else if (option.startsWith ("format="))
+            format = UrlImport::formatFromString (option.fromFirstOccurrenceOf ("=", false, false));
+        else if (option.startsWith ("rate="))
+            rate = option.fromFirstOccurrenceOf ("=", false, false).getIntValue();
+    }
+    format.sampleRate = UrlImport::isValidSampleRate (rate) ? rate : 0;
+    std::cout << "format: " << UrlImport::formatToString (format) << (format.sampleRate > 0 ? " @ " + juce::String (format.sampleRate) + " Hz" : juce::String (" @ source rate")) << '\n';
 
     UrlImport::UrlImportJob job (toolsRoot);
     UrlImport::ImportRequest request;
     request.url = url;
     request.channel = nightly ? UrlImport::Channel::nightly : UrlImport::Channel::stable;
     request.destinationFolder = outputFolder;
+    request.format = format;
 
     const auto started = juce::Time::getMillisecondCounter();
     if (! job.startImport (request))

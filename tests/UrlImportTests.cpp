@@ -176,6 +176,50 @@ void ytDlpArgumentsAreSafe()
     const auto longArgs = buildYtDlpArgs (paths, "https://youtu.be/x", true);
     requireEqual (longArgs[longArgs.indexOf ("--match-filters") + 1], "!is_live", "confirmed long import keeps the live filter");
     require (args.joinIntoString (" ").contains ("pre_process:[ix-info]"), "info printed before the filters");
+
+    // The default format is what every import used before formats existed.
+    requireEqual (args[args.indexOf ("--audio-format") + 1], "wav", "WAV by default");
+    requireEqual (args[args.indexOf ("--ppa") + 1], "ExtractAudio+ffmpeg_o:-c:a pcm_f32le", "32-bit float by default");
+
+    OutputFormat flac;
+    flac.codec = OutputFormat::Codec::flac;
+    flac.bitDepth = 24;
+    flac.sampleRate = 48000;
+    const auto flacArgs = buildYtDlpArgs (paths, "https://youtu.be/x", false, flac);
+    requireEqual (flacArgs[flacArgs.indexOf ("--audio-format") + 1], "flac", "FLAC asked of yt-dlp");
+    requireEqual (flacArgs[flacArgs.indexOf ("--ppa") + 1],
+                  "ExtractAudio+ffmpeg_o:-c:a flac -sample_fmt s32 -bits_per_raw_sample 24 -ar 48000", "FLAC 24-bit at 48 kHz");
+}
+
+void outputFormats()
+{
+    OutputFormat format;
+    requireEqual (ffmpegOutputArgs (format), "-c:a pcm_f32le", "WAV float, source rate");
+    format.bitDepth = 24;
+    requireEqual (ffmpegOutputArgs (format), "-c:a pcm_s24le", "WAV 24-bit");
+    format.sampleRate = 44100;
+    requireEqual (ffmpegOutputArgs (format), "-c:a pcm_s24le -ar 44100", "WAV 24-bit resampled");
+    format.bitDepth = 16;
+    requireEqual (ffmpegOutputArgs (format), "-c:a pcm_s16le -af aresample=osr=44100:osf=s16:dither_method=triangular",
+                  "16-bit: one resampler call does the rate and the dither");
+    format.sampleRate = 0;
+    requireEqual (ffmpegOutputArgs (format), "-c:a pcm_s16le -af aresample=osf=s16:dither_method=triangular",
+                  "16-bit at the source rate still dithers");
+    format.codec = OutputFormat::Codec::flac;
+    requireEqual (ffmpegOutputArgs (format), "-c:a flac -sample_fmt s16 -af aresample=osf=s16:dither_method=triangular", "FLAC 16-bit");
+    format.sampleRate = 3000;
+    require (! ffmpegOutputArgs (format).contains ("3000"), "an out-of-range rate is ignored, not passed to ffmpeg");
+
+    for (const auto* text : { "wav-f32", "wav-24", "wav-16", "flac-24", "flac-16" })
+        requireEqual (formatToString (formatFromString (text)), text, std::string ("round trip ") + text);
+    require (formatFromString ("mp3-320") == OutputFormat(), "unknown -> WAV 32-bit float");
+    require (formatFromString ("") == OutputFormat(), "missing -> WAV 32-bit float");
+    require (formatFromString ("FLAC-16").codec == OutputFormat::Codec::flac, "case-insensitive");
+    requireEqual (fileExtension (formatFromString ("flac-24")), "flac", "FLAC extension");
+    requireEqual (fileExtension (OutputFormat()), "wav", "WAV extension");
+
+    require (isValidSampleRate (8000) && isValidSampleRate (16000) && isValidSampleRate (192000), "rates in range");
+    require (! isValidSampleRate (0) && ! isValidSampleRate (7999) && ! isValidSampleRate (192001), "rates out of range");
 }
 
 void outputLinesParse()
@@ -243,6 +287,10 @@ void failuresAreClassified()
     require (kindOf ("ERROR: Postprocessing: ffprobe and ffmpeg not found. Please install or provide the path using --ffmpeg-location")
              == FailureKind::other, "our ffmpeg missing is not a missing video");
     require (classifyFailure ({ "some output", "no error lines" }) == FailureKind::other, "no ERROR line");
+    require (kindOf ("ERROR: Postprocessing: Unknown encoder 'flac'") == FailureKind::toolsOutdated, "no FLAC encoder");
+    require (kindOf ("ERROR: Postprocessing: Error opening output files: Encoder not found") == FailureKind::toolsOutdated,
+             "encoder not found");
+    require (failureSuggestsUpdate (FailureKind::toolsOutdated), "old tools -> update");
 
     require (failureSuggestsUpdate (FailureKind::ytDlpOutdated), "outdated -> update");
     require (! failureSuggestsUpdate (FailureKind::needsAccount), "account -> no update");
@@ -259,6 +307,8 @@ void fileNamesAreSafe()
     requireEqual (makeOutputFileName ("ends with dots...", "id"), "ends with dots.wav", "trailing dots dropped");
     requireEqual (makeOutputFileName ("   ", "abc123"), "abc123.wav", "empty title uses the id");
     requireEqual (makeOutputFileName ({}, {}), "Imported audio.wav", "nothing at all");
+    requireEqual (makeOutputFileName ("Track", "id", "flac"), "Track.flac", "FLAC extension");
+    requireEqual (makeOutputFileName ("Track", "id", ".flac"), "Track.flac", "extension with its dot");
     require (makeOutputFileName (juce::String::repeatedString ("x", 500), "id").length() <= 124, "long titles cut");
     const auto unicode = makeOutputFileName (juce::String (juce::CharPointer_UTF8 ("Bj\xc3\xb6rk \xe2\x80\x94 J\xc3\xb3ga")), "id");
     require (unicode.startsWith (juce::String (juce::CharPointer_UTF8 ("Bj\xc3\xb6rk"))), "non-ASCII kept");
@@ -325,6 +375,15 @@ void processEnvironmentAndStdin()
     ::unsetenv ("PYTHONPATH");
 }
 
+// Ended: gone, or a zombie its adopter (a busy PID 1 in a container) hasn't reaped yet.
+bool processEnded (pid_t pid)
+{
+    if (::kill (pid, 0) != 0)
+        return errno == ESRCH;
+    const auto stat = juce::File ("/proc/" + juce::String ((int) pid) + "/stat").loadFileAsString();
+    return stat.fromLastOccurrenceOf (")", false, false).trimStart().startsWithChar ('Z');   // Linux only
+}
+
 void processTerminateKillsChildren()
 {
     ToolProcess process;
@@ -337,9 +396,9 @@ void processTerminateKillsChildren()
 
     process.terminate();
     bool gone = false;
-    for (int i = 0; i < 100 && ! gone; ++i)
+    for (int i = 0; i < 250 && ! gone; ++i)
     {
-        gone = ::kill (grandchild, 0) != 0 && errno == ESRCH;
+        gone = processEnded (grandchild);
         if (! gone)
             juce::Thread::sleep (20);
     }
@@ -383,6 +442,7 @@ int main()
     run ("web links are recognised", webUrlsAreRecognised);
     run ("typed links are normalised", typedLinksAreNormalised);
     run ("yt-dlp arguments", ytDlpArgumentsAreSafe);
+    run ("output formats", outputFormats);
     run ("yt-dlp output lines", outputLinesParse);
     run ("failures are classified", failuresAreClassified);
     run ("output file names are safe", fileNamesAreSafe);

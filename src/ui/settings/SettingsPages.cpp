@@ -67,7 +67,7 @@ GeneralSettingsPage::GeneralSettingsPage (IntersectProcessor& p, SettingsHost& h
     : SettingsPage (p, h)
 {
     for (auto* c : std::initializer_list<juce::Component*> { &scaleStepper, &themeDropdown, &middleCChips,
-                                                             &updateButton, &discordButton, &coffeeButton })
+                                                             &updateButton, &discordButton, &coffeeButton, &issueButton })
         addAndMakeVisible (*c);
 
     updateButton.onClick = [this]
@@ -99,6 +99,7 @@ GeneralSettingsPage::GeneralSettingsPage (IntersectProcessor& p, SettingsHost& h
 
     discordButton.onClick = [] { juce::URL ("https://discord.gg/yhNReDnQvE").launchInDefaultBrowser(); };
     coffeeButton.onClick = [] { juce::URL ("https://buymeacoffee.com/tucktuckgoose").launchInDefaultBrowser(); };
+    issueButton.onClick = [this] { juce::URL (UpdateCheck::makeIssueUrl (describeEnvironment())).launchInDefaultBrowser(); };
     refreshThemeColours();
 }
 
@@ -211,7 +212,35 @@ void GeneralSettingsPage::layout (RowLayout& rows)
     discordButton.setBounds (support.removeFromLeft (buttonWidthFor (discordButton.getButtonText(), 120)));
     support.removeFromLeft (6);
     coffeeButton.setBounds (support.removeFromLeft (buttonWidthFor (coffeeButton.getButtonText(), 120)));
-    rows.hint ("Questions, bug reports and new releases are on the Discord");
+    rows.hint ("Questions and new releases are on the Discord");
+
+    issueButton.setBounds (rows.row ("Issues").removeFromLeft (buttonWidthFor (issueButton.getButtonText(), 120)));
+    rows.hint ("Opens a bug report on GitHub with your version, OS and plugin format filled in");
+}
+
+UpdateCheck::IssueEnvironment GeneralSettingsPage::describeEnvironment() const
+{
+    UpdateCheck::IssueEnvironment environment;
+    environment.version = JucePlugin_VersionString;
+    environment.os = UpdateCheck::currentOsLabel();
+    environment.architecture = UpdateCheck::currentArchitectureLabel();
+
+    // The template's Plugin Format choices; other wrappers leave the field blank.
+    const auto wrapper = processor.wrapperType;
+    if (wrapper == juce::AudioProcessor::wrapperType_VST3)
+        environment.format = "VST3";
+    else if (wrapper == juce::AudioProcessor::wrapperType_AudioUnit)
+        environment.format = "AU";
+    else if (wrapper == juce::AudioProcessor::wrapperType_Standalone)
+        environment.format = "Standalone";
+
+    if (wrapper != juce::AudioProcessor::wrapperType_Standalone)
+    {
+        const juce::String hostName (juce::PluginHostType().getHostDescription());
+        if (hostName.isNotEmpty() && hostName != "Unknown")
+            environment.daw = hostName;
+    }
+    return environment;
 }
 
 //==============================================================================

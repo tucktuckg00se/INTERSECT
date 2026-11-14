@@ -72,7 +72,7 @@ Docs: [The inheritance / lock model](https://tucktuckg00se.github.io/INTERSECT/w
 
 - Up to 64 samples per session, with 31 voices, mute groups and 16 stereo outputs
 - Built-in file browser with search, bookmarks and preview
-- Import from URL: paste a YouTube, SoundCloud or Bandcamp link (or one from any other site yt-dlp supports) and the audio lands in your kit as a WAV
+- Import from URL: paste a YouTube, SoundCloud or Bandcamp link (or one from any other site yt-dlp supports) and the audio lands in your kit as a WAV or FLAC
 - Presets save the whole kit, optionally with the samples embedded for sharing
 - MIDI export: drag a slice pattern into your DAW as a MIDI clip
 - Loads WAV, AIFF, FLAC, OGG, MP3 and REX2; missing files relink in one step; full undo/redo
@@ -130,7 +130,7 @@ Requires CMake 3.22+, a C++20 compiler, and Git. For per-OS toolchain setup, bui
 
 ## License
 
-INTERSECT is licensed under the [GNU General Public License v3.0](LICENSE).
+INTERSECT is licensed under the [GNU General Public License v3.0](LICENSE). It is built with [JUCE](https://juce.com), used under the AGPLv3, and other open-source libraries and the Inter typeface; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Every release zip includes both files.
 
 REX2 import uses [VelociLoops](https://github.com/kunitoki/VelociLoops) (public domain, Unlicense). REX2 import and MIDI export were originally contributed by [@cadecomposer](https://github.com/cadecomposer).
 

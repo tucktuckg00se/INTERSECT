@@ -40,7 +40,7 @@ struct Fixture
             decoded->buffer.setSample (0, i, value);
             decoded->buffer.setSample (1, i, value);
         }
-        sample.applyDecodedSample (std::move (decoded));
+        (void) sample.applyDecodedSample (std::move (decoded));
         voices.prepareToPlay (sampleRate, 512);
         PreviewStretchParams params;
         params.stretchEnabled = true;

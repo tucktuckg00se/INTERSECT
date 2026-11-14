@@ -75,6 +75,7 @@ public:
         juce::String warning;    // the update check failed; the installed tools are used
         bool cancelled = false;
         bool ytDlpChanged = false;
+        bool mediaChanged = false;   // a newer ffmpeg + qjs was installed
     };
 
     /** Installs whatever is missing and, when an update check is due (6 h, a channel change) or

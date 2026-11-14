@@ -69,7 +69,7 @@ INTERSECT ships three time/pitch engines. Pick one per sample with `ALGO`.
 
 ## SET BPM
 
-`SET BPM` (in the Time/Pitch module) calculates the sample's BPM from a musical duration. Pick "1 bar", "1/4 note", "1/8 note", and so on; the engine computes BPM from the selected slice's length and auto-locks the BPM value. This is the workflow when you know "this loop is 2 bars" but don't know the exact tempo.
+`SET BPM` (in the Time/Pitch module) calculates the sample's BPM from a musical duration. A small box opens: pick "1 Bar", "1/4 Note", "1/8 Note", and so on from the dropdown, and it shows the BPM that length gives before anything changes. `SET` (or `Return`) applies it, computed from the selected slice's length, and auto-locks the BPM value; `CANCEL`, `Esc` or a click outside leaves it as it was. This is the workflow when you know "this loop is 2 bars" but don't know the exact tempo.
 
 Available in both `SAMPLE` and `SLICE` scope.
 

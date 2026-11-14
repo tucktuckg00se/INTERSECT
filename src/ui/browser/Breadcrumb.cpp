@@ -139,12 +139,12 @@ void Breadcrumb::paint (juce::Graphics& g)
     g.setColour (getTheme().surface4.withAlpha (0.92f));
     g.drawRoundedRectangle (bounds.reduced (0.5f), 3.0f, 1.0f);
 
-    if (editing)
+    if (editing || segments.empty())
         return;
 
     g.setFont (IntersectLookAndFeel::makeFont (kFontSize));
 
-    if (firstVisibleSegment > 0 && ! segments.empty())
+    if (firstVisibleSegment > 0)
     {
         const auto first = segments[(size_t) firstVisibleSegment].bounds;
         const auto ellipsis = juce::Rectangle<int> (4, first.getY(), textWidth ("...") + kSegmentPadX * 2, first.getHeight());

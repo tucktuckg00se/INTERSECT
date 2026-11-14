@@ -62,6 +62,8 @@ stemComputeDevice: cuda
 urlImportSaveMode: folder
 urlImportFolder: /home/you/samples/imports
 urlImportChannel: stable
+urlImportFormat: wav-f32
+urlImportSampleRate: 0
 ```
 
 ## Key reference
@@ -87,6 +89,8 @@ urlImportChannel: stable
 | `urlImportSaveMode` | string | `folder` / `ask` | Import from URL: save every import to `urlImportFolder` (default), or open a save dialog after each download. |
 | `urlImportFolder` | string | filesystem path | Where imports are saved. Omitted when it's the default, `Music/INTERSECT Downloads` (created on the first import). |
 | `urlImportChannel` | string | `stable` / `nightly` | Which yt-dlp builds to follow: tested releases (default) or nightly builds, which get site fixes sooner. |
+| `urlImportFormat` | string | `wav-f32` / `wav-24` / `wav-16` / `flac-24` / `flac-16` | What imports are saved as: WAV 32-bit float (default), 24 or 16-bit, or FLAC 24 or 16-bit. Unknown values mean `wav-f32`. |
+| `urlImportSampleRate` | integer | `0`, or `8000`–`192000` | The sample rate imports are converted to, in Hz. `0` (default) keeps the source's rate. |
 
 ## Legacy keys
 

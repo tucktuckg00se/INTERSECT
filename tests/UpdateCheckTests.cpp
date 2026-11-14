@@ -51,6 +51,40 @@ void unusableReleasesAreRejected()
     const auto noUrl = UpdateCheck::parseLatestRelease (R"({"tag_name":"v0.19.1"})");
     require (noUrl.has_value() && noUrl->pageUrl == UpdateCheck::kReleasesPageUrl, "missing page url falls back");
 }
+
+void issueUrlIsPrefilled()
+{
+    UpdateCheck::IssueEnvironment environment;
+    environment.version = "0.20.0";
+    environment.os = "Linux";
+    environment.format = "VST3";
+    environment.architecture = "Intel/AMD";
+    environment.daw = "Bitwig Studio";
+    const auto url = UpdateCheck::makeIssueUrl (environment);
+
+    require (url.startsWith (juce::String (UpdateCheck::kNewIssueUrl) + "?template=bug_report.yml"), "template first: " + url.toStdString());
+    require (url.contains ("version=v0.20.0"), "version gets the template's leading v: " + url.toStdString());
+    require (url.contains ("os=Linux") && url.contains ("format=VST3"), "os and format: " + url.toStdString());
+    require (url.contains ("architecture=Intel%2FAMD"), "slash escaped: " + url.toStdString());
+    require (url.contains ("daw=Bitwig") && ! url.contains ("Bitwig Studio"), "space escaped: " + url.toStdString());
+
+    const auto parsed = juce::URL (url);
+    const auto names = parsed.getParameterNames();
+    const auto values = parsed.getParameterValues();
+    require (values[names.indexOf ("architecture")] == "Intel/AMD", "architecture round-trips");
+    require (values[names.indexOf ("daw")] == "Bitwig Studio", "daw round-trips");
+}
+
+void issueUrlSkipsEmptyFields()
+{
+    UpdateCheck::IssueEnvironment environment;
+    environment.version = "v0.20.0";
+    environment.format = "Standalone";
+    const auto url = UpdateCheck::makeIssueUrl (environment);
+    require (url.contains ("version=v0.20.0") && ! url.contains ("vv0"), "an existing v is kept once: " + url.toStdString());
+    require (! url.contains ("daw=") && ! url.contains ("os="), "empty fields left out: " + url.toStdString());
+    require (UpdateCheck::currentOsLabel().isNotEmpty(), "this OS has a label");
+}
 } // namespace
 
 int main()
@@ -75,6 +109,8 @@ int main()
     run ("versions compare numerically", versionsCompare);
     run ("latest release parses", latestReleaseParses);
     run ("drafts, pre-releases and errors are rejected", unusableReleasesAreRejected);
+    run ("issue url is pre-filled and escaped", issueUrlIsPrefilled);
+    run ("issue url skips empty fields", issueUrlSkipsEmptyFields);
 
     std::cout << passed << " passed, " << failed << " failed\n";
     return failed == 0 ? 0 : 1;

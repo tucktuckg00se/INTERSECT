@@ -45,6 +45,51 @@ std::optional<Release> parseLatestRelease (const juce::String& json)
     const auto page = release->getProperty ("html_url").toString().trim();
     return Release { tag, page.startsWith ("https://") ? page : juce::String (kReleasesPageUrl) };
 }
+
+juce::String makeIssueUrl (const IssueEnvironment& environment)
+{
+    auto url = juce::URL (kNewIssueUrl).withParameter ("template", "bug_report.yml");
+
+    auto version = environment.version.trim();
+    if (version.isNotEmpty() && ! version.startsWithIgnoreCase ("v"))
+        version = "v" + version;
+
+    const std::pair<const char*, juce::String> fields[] {
+        { "version", version },
+        { "os", environment.os.trim() },
+        { "format", environment.format.trim() },
+        { "architecture", environment.architecture.trim() },
+        { "daw", environment.daw.trim() },
+    };
+    for (const auto& [id, value] : fields)
+        if (value.isNotEmpty())
+            url = url.withParameter (id, value);
+
+    return url.toString (true);
+}
+
+juce::String currentOsLabel()
+{
+    const auto type = juce::SystemStats::getOperatingSystemType();
+    if ((type & juce::SystemStats::Windows) != 0)
+        return "Windows";
+    if ((type & juce::SystemStats::MacOSX) != 0)
+        return "macOS";
+    if ((type & juce::SystemStats::Linux) != 0)
+        return "Linux";
+    return {};
+}
+
+juce::String currentArchitectureLabel()
+{
+   #if JUCE_ARM
+    return "ARM/Apple Silicon";
+   #elif JUCE_INTEL
+    return "Intel/AMD";
+   #else
+    return {};
+   #endif
+}
 } // namespace UpdateCheck
 
 //==============================================================================

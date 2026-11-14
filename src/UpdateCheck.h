@@ -20,6 +20,30 @@ bool isNewer (const juce::String& candidate, const juce::String& current);
 
 /** tag_name + html_url from a releases/latest response; nothing for drafts, pre-releases or junk. */
 std::optional<Release> parseLatestRelease (const juce::String& json);
+
+//==============================================================================
+// Report an issue
+
+constexpr auto kNewIssueUrl = "https://github.com/tucktuckg00se/INTERSECT/issues/new";
+
+/** What the bug-report form can be pre-filled with. Values match the field ids and dropdown
+    options in .github/ISSUE_TEMPLATE/bug_report.yml; empty ones are left out. */
+struct IssueEnvironment
+{
+    juce::String version;        // "0.20.0" or "v0.20.0"
+    juce::String os;             // Windows / macOS / Linux
+    juce::String format;         // VST3 / AU / Standalone
+    juce::String architecture;   // ARM/Apple Silicon / Intel/AMD
+    juce::String daw;            // the host's name; empty for the Standalone
+};
+
+/** The new-issue page with the bug-report template and the environment filled in. Nothing is
+    sent: the user's browser shows the form and they decide what to submit. */
+juce::String makeIssueUrl (const IssueEnvironment& environment);
+/** This machine's OS as the template names it. */
+juce::String currentOsLabel();
+/** This build's CPU family as the template names it. */
+juce::String currentArchitectureLabel();
 } // namespace UpdateCheck
 
 /**

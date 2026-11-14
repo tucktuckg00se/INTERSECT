@@ -21,7 +21,7 @@ description: "Tour of every visible area of the INTERSECT editor — header bar,
 
 | Area | Function | Notes |
 | --- | --- | --- |
-| Sample lane | Compact session-sample overview above the slice lane | Reflects selection and zoom; drag to reorder samples; includes per-sample `MIDI`, `STEMS` / `CANCEL` and an `X` that removes the sample (a small question pops up first: `REMOVE` or `Return` confirms, `CANCEL` / `Esc` keeps it; hold `Shift` to skip the question) |
+| Sample lane | Compact session-sample overview above the slice lane | Reflects selection and zoom; drag to reorder samples; includes per-sample `AUDIO`, `MIDI`, `STEMS` / `CANCEL` and an `X` that removes the sample (a small question pops up first: `REMOVE` or `Return` confirms, `CANCEL` / `Esc` keeps it; hold `Shift` to skip the question) |
 | Slice lane | Compact slice-region overview above the waveform | Reflects selection and zoom |
 | Waveform | Main editing surface | Drag-and-drop loading/appending, slice selection, boundary editing, move/duplicate, preview |
 | Overlay hints | Contextual help and action prompts | Used by `ADD`, `AUTO`, and other actions |
@@ -95,7 +95,7 @@ On a folder or preset with nothing playing, `Space` isn't used by the browser, s
 
 ### Import from URL
 
-Paste a link from YouTube, SoundCloud, Bandcamp or any other site [yt-dlp](https://github.com/yt-dlp/yt-dlp) supports, and INTERSECT downloads the audio, saves it as a WAV and adds it to your kit, as one step you can undo. There are three ways in:
+Paste a link from YouTube, SoundCloud, Bandcamp or any other site [yt-dlp](https://github.com/yt-dlp/yt-dlp) supports, and INTERSECT downloads the audio, saves it as a WAV (or FLAC) and adds it to your kit, as one step you can undo. There are three ways in:
 
 - **Import from URL...** in the browser's open menu (the folder button next to the path).
 - Type or paste the link into the **path bar** and press `Return`. A real folder path still opens the folder; a link starts the import straight away. Links work without `https://` too (`youtu.be/...`).
@@ -103,7 +103,12 @@ Paste a link from YouTube, SoundCloud, Bandcamp or any other site [yt-dlp](https
 
 A small panel at the top shows the download and the conversion. It doesn't block INTERSECT: `HIDE` puts it away while the import keeps running (open Import from URL again to see it), and `CANCEL IMPORT` stops it. When the import finishes, the panel closes and the header says what was added.
 
-Where the WAV goes is set in **SET → URL Import**: a folder (`Music/INTERSECT Downloads` by default), or a save dialog after each download. The file is named after the video or track.
+Where the file goes is set in **SET → URL Import**: a folder (`Music/INTERSECT Downloads` by default), or a save dialog after each download. The file is named after the video or track.
+
+What it is saved as is set there too, under **Output**:
+
+- **Format**: WAV 32-bit float (the default, which never clips), WAV 24-bit, WAV 16-bit, FLAC 24-bit or FLAC 16-bit. FLAC is lossless and about half the size of WAV. Very loud tracks can clip slightly at 24 or 16 bits, and 16-bit files are dithered.
+- **Sample rate**: `ORIGINAL` keeps the site's rate (usually 48 kHz on YouTube), or pick `44.1 kHz`, `48 kHz`, `96 kHz`, or `CUSTOM` and type any rate from 8000 to 192000 Hz (press `Return`). INTERSECT plays any rate, so this only changes the saved file; low rates such as 16000 Hz sound lo-fi.
 
 The first import downloads the tools it needs: yt-dlp (about 25–55 MB) from its official GitHub releases, and ffmpeg and QuickJS (about 5 MB) from INTERSECT's tools repository. Each download is checked against its published SHA-256 before it is used. After that, INTERSECT checks for a newer yt-dlp at most every 6 hours, only when you import, and right away when a site seems to have changed. Nothing is downloaded until you import something.
 
@@ -113,9 +118,11 @@ The first import downloads the tools it needs: yt-dlp (about 25–55 MB) from it
 
 Only import audio you have the rights to use.
 
-## MIDI export
+## Audio and MIDI export
 
-Each sample in the sample lane has a `MIDI` button (`M` when the sample is narrow). Drag it into your DAW to drop a MIDI clip of that sample's slices, or click it to save a `.mid` file. Each slice becomes one note on its MIDI key, timed from its position in the sample at the sample's BPM, so playing the clip back through INTERSECT replays the original pattern. REX2 (`.rx2`) loops keep their original groove even though their slices carry extra tails.
+Each sample in the sample lane has an `AUDIO` button (`A` when the sample is narrow; it is left out when the sample is too narrow for all its buttons). Drag it into your DAW or a folder to drop the sample's audio file, or click it to save a copy somewhere else. It is the file itself, unchanged; REX2 (`.rx2`) loops come out as a WAV of what INTERSECT plays, because most DAWs can't open REX files.
+
+Each sample also has a `MIDI` button (`M` when the sample is narrow). Drag it into your DAW to drop a MIDI clip of that sample's slices, or click it to save a `.mid` file. Each slice becomes one note on its MIDI key, timed from its position in the sample at the sample's BPM, so playing the clip back through INTERSECT replays the original pattern. REX2 (`.rx2`) loops keep their original groove even though their slices carry extra tails.
 
 ## Stem separation
 
@@ -129,12 +136,12 @@ Click `SET` in the header to open the settings view. Like the browser, it takes 
 
 | Page | What's there |
 | --- | --- |
-| General | UI scale (`−` / `+`, with a note when the window is shown smaller to fit your display), theme, which octave is called middle C, whether a newer INTERSECT is out (`VIEW RELEASE` opens its page), and Discord / support links |
+| General | UI scale (`−` / `+`, with a note when the window is shown smaller to fit your display), theme, which octave is called middle C, whether a newer INTERSECT is out (`VIEW RELEASE` opens its page), Discord / support links, and `REPORT AN ISSUE`, which opens a bug report on GitHub with your INTERSECT version, OS, plugin format and DAW already filled in (nothing is sent until you submit it) |
 | MIDI | NRPN editing on/off, consume NRPN CCs, and the NRPN channel (`OMNI` = all channels). See [NRPN MIDI routing]({{ site.baseurl }}{% link nrpn-midi.md %}) |
 | Files | The default folder for the `FILES` button: **Last used** or a **Chosen folder** |
 | Presets | The default presets folder and an optional custom one. See [Presets]({{ site.baseurl }}{% link presets.md %}) |
 | Stems | Model folder, the device `STEMS` starts with, ONNX Runtime bundles and model downloads, with progress. See [Stem separation]({{ site.baseurl }}{% link stem-separation.md %}) |
-| URL Import | Save imports **To the folder** or **Ask each time**, the folder, yt-dlp **Stable** or **Nightly** builds, the installed tool versions, `UPDATE NOW` and `REMOVE`. See [Import from URL](#import-from-url) |
+| URL Import | Save imports **To the folder** or **Ask each time**, the folder, the output **Format** and **Sample rate**, yt-dlp **Stable** or **Nightly** builds, the installed tool versions, `UPDATE NOW` and `REMOVE`. See [Import from URL](#import-from-url) |
 
 Opening settings asks GitHub whether a newer release exists (at most every 6 hours). Otherwise INTERSECT only goes online when you download stem models or runtimes, or import from a URL. Everything here is saved in the [settings file]({{ site.baseurl }}{% link settings-file.md %}), not in your session.
 
