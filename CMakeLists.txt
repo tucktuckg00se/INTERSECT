@@ -167,6 +167,7 @@ set(INTERSECT_CORE_SOURCES
     src/HttpFetch.cpp
     src/Download.cpp
     src/UpdateCheck.cpp
+    src/state/SessionState.cpp
     src/audio/SampleData.cpp
     src/audio/Rex2Import.cpp
     src/audio/SliceManager.cpp

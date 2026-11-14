@@ -313,6 +313,35 @@ void richKitSavesExpectedBytes()
     requireExpectedBytes (replacePath (host.save(), folder, "/kit/"), "rich-kit.bin", "rich kit");
 }
 
+// A damaged state is rejected before anything is applied, and says why. (It used to reset the
+// root note and the slice count, then fail silently.)
+void damagedStateChangesNothing()
+{
+    TempDir temp;
+    const auto other = writeSine (temp.dir.getChildFile ("other.wav"), (int) kRate);
+    const auto mine = writeSine (temp.dir.getChildFile ("mine.wav"), (int) kRate);
+
+    Host source;
+    source.loadKit (other, 3);
+    auto damaged = source.save();
+    damaged.setSize (damaged.getSize() / 2);   // cut off mid-way, as a broken project file would be
+
+    Host host;
+    host.loadKit (mine, 2);
+    host.push (IntersectProcessor::CmdSetRootNote, 48);
+    host.runUntil ([&] { return host.ui().rootNote == 48; }, "the root note");
+    const auto before = host.save();
+
+    host.restore (damaged);
+    host.runUntil ([&] { return wasRejected (host.ui()) || host.ui().hasStatusMessage; }, "the restore to finish");
+    for (int i = 0; i < 4; ++i)
+        host.renderBlock();
+
+    require (host.ui().hasStatusMessage && host.ui().statusMessage.toString().contains ("damaged"), "says the data is damaged");
+    require (host.ui().numSlices == 2 && host.ui().rootNote == 48, "the kit is untouched");
+    requireSameBytes (host.save(), before, "the kit saves exactly as before");
+}
+
 // A slice's loop survives saving and reopening a project whose sample is missing. The missing
 // file comes back as a 2 s placeholder, so a slice past its end is parked at a stub of absolute
 // bounds; the next load used to clamp the loop to that stub, losing it even after a relink.
@@ -464,6 +493,7 @@ int main (int argc, char* argv[])
         run ("state round trip", stateRoundTrips);
         run ("saved-state fixtures load", fixturesLoad);
         run ("a rich kit saves the expected bytes", richKitSavesExpectedBytes);
+        run ("a damaged state changes nothing", damagedStateChangesNothing);
         run ("a missing sample keeps its slices' loops", missingSampleKeepsLoopPoints);
         run ("add, remove, undo and redo samples while playing", kitEditsWhilePlaying);
     }

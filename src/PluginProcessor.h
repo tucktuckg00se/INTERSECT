@@ -34,6 +34,8 @@
 #include "params/ParamIds.h"
 #include "params/ParamLayout.h"
 
+struct SessionState;
+
 class IntersectProcessor : public juce::AudioProcessor,
                            public ParamFieldIds,   // FieldBpm, ... (IntersectProcessor::FieldBpm)
                            private juce::AsyncUpdater,
@@ -490,6 +492,10 @@ private:
 
     // Returns false if the state was rejected; a malformed slice table can leave it partly applied.
     bool restoreState (const void* data, int sizeInBytes, const RestoreOptions& options);
+    // Engine side of the saved state (the format itself is in state/SessionState). Capture reads
+    // the engine; apply writes it and runs only inside restoreState's ScopedProcessingSuspend.
+    SessionState captureSessionState();
+    void applySessionState (const SessionState& state, const RestoreOptions& options);
     juce::StringArray getStateSampleFilePaths() const;
     void postPresetJobResult (PresetJobResult result);
     void handlePresetJobCompletionOnMessageThread();
