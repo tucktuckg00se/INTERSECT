@@ -632,6 +632,11 @@ juce::String StemView::getStartBlockReason() const
     if (! anySelected)
         return "Select at least one stem";
 
+    const auto numChosen = (int) std::count_if (entry->outputs.begin(), entry->outputs.end(),
+                                                [&it] (const StemOutputDesc& o) { return it->second.count (o.name) > 0; });
+    if (exportMode == StemExportMode::group && numChosen > SampleGroup::kMaxMembers)
+        return "A group holds up to 16 samples: " + juce::String (numChosen) + " stems are ticked";
+
     return {};
 }
 
@@ -950,9 +955,24 @@ void StemView::mouseDown (const juce::MouseEvent& e)
     }
     else if (modeCell.bounds.contains (pos))
     {
-        exportMode = exportMode == StemExportMode::combine ? StemExportMode::separate : StemExportMode::combine;
-        modeCell.value = stemExportModeToString (exportMode);
-        repaint (modeCell.bounds);
+        juce::PopupMenu menu;
+        menu.addItem (1, "Combine: the chosen stems mixed into one file", true, exportMode == StemExportMode::combine);
+        menu.addItem (2, "Separate: one sample per stem", true, exportMode == StemExportMode::separate);
+        menu.addItem (3, "Group: one sample per stem, as a group with the source's slices", true,
+                      exportMode == StemExportMode::group);
+        juce::Component::SafePointer<StemView> safe (this);
+        menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this)
+                                .withTargetScreenArea (localAreaToGlobal (modeCell.bounds)),
+                            [safe] (int result)
+        {
+            if (safe == nullptr || result == 0)
+                return;
+            safe->exportMode = result == 1 ? StemExportMode::combine
+                             : result == 2 ? StemExportMode::separate : StemExportMode::group;
+            safe->modeCell.value = stemExportModeToString (safe->exportMode);
+            safe->updateControls();
+            safe->repaint();
+        });
     }
     else if (outputCell.bounds.contains (pos))
     {

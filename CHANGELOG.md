@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Sample groups**: group samples of the same length, like the stems of one song, and they share one set of slices. Each slice plays every sample in the group together on one key, so you cut the song once and can still rebalance or isolate its parts per slice. Right-click a sample → **Group with...**, or point at a sample in the waveform and press **+ GROUP**.
+- A group shows in the waveform as one stretch with a lane per sample. Each lane has a mute (**M**) and, when you point at it, its name, a level slider, **×** to take it out of the group, and a menu. **+ ADD SAMPLE** under the lanes adds more, up to 16.
+- **MIX** on a group in the sample lane sets each sample's mute, level and output, so stems can go to separate tracks in your DAW. **AUDIO** on a group exports its mix as a WAV, and AUTO, zero-crossing snap and LAZY listen to the mix.
+- A slice can play just some of the group: use the **M**s inside the selected slice, or **MEMBERS** on the SLICE tab's bottom row. Slices with their own choice get an orange corner, and **Group mix** puts them back.
+- STEMS has a third **MODE**, **Group**: the new stems become a group that starts with a copy of the source sample's slices. Click MODE to choose Combine, Separate or Group.
+- **Duplicate sample** (right-click a sample) adds a copy with the same settings and a copy of its slices on new keys, so a stem can be in a group and on its own too.
 - **Import from URL** can save FLAC as well as WAV. In SET → URL Import → **Output**, choose WAV 32-bit float (the default), WAV 24-bit or 16-bit, or FLAC 24-bit or 16-bit (lossless, about half the size of WAV), and a sample rate: the original, 44.1, 48 or 96 kHz, or any rate you type from 8000 to 192000 Hz.
 - An **AUDIO** button on each sample in the sample lane, next to MIDI: drag it into your DAW or a folder to drop the sample's audio file, or click it to save a copy. REX2 loops come out as a WAV.
 - **REPORT AN ISSUE** in SET → General opens a bug report on GitHub with your INTERSECT version, OS, plugin format and DAW already filled in. Nothing is sent until you submit it.
@@ -16,6 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **SET BPM** opens a small box like the remove prompt: pick the length from a dropdown, see the BPM it gives, then press **SET** (or Return). **CANCEL**, Esc or a click outside leaves everything as it was.
 
 ### Fixed
+- Two slices on the same key (or with overlapping note ranges) in the same mute group cut each other off, so only one of them played.
 - Ctrl+Z (undo), Ctrl+V (paste a link) and Ctrl+F (search the file browser) did nothing on Linux.
 - Slice loop points were lost when you saved a project whose sample was missing and opened it again; relinking the sample didn't bring them back.
 - Loading a preset (or your DAW reloading a project) while audio was playing could crash INTERSECT.

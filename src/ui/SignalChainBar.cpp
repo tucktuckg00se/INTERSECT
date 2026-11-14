@@ -1,6 +1,8 @@
 #include "SignalChainBar.h"
 #include "IntersectLookAndFeel.h"
 #include "SetBpmCallout.h"
+#include "ValueFormat.h"
+#include "GroupUi.h"
 #include "../Constants.h"
 #include "../PluginProcessor.h"
 #include "../audio/GrainEngine.h"
@@ -37,60 +39,7 @@ struct RowCellSpec
     int gapAfter = 0;
 };
 
-juce::String formatTrimmed (float value, int decimals)
-{
-    juce::String text (value, decimals);
-    if (text.containsChar ('.'))
-    {
-        while (text.endsWithChar ('0'))
-            text = text.dropLastCharacters (1);
-        if (text.endsWithChar ('.'))
-            text = text.dropLastCharacters (1);
-    }
-    return text;
-}
-
-juce::String formatSigned (float value, int decimals, const juce::String& suffix)
-{
-    return (value >= 0.0f ? "+" : "") + formatTrimmed (value, decimals) + suffix;
-}
-
-juce::String formatBool (bool on)
-{
-    return on ? "ON" : "OFF";
-}
-
-juce::String formatMs (float valueMs)
-{
-    return juce::String (juce::roundToInt (valueMs)) + "ms";
-}
-
-juce::String formatPercent (float valuePercent, int decimals = 0)
-{
-    return formatTrimmed (valuePercent, decimals) + "%";
-}
-
-juce::String formatGain (float valueDb)
-{
-    return (valueDb >= 0.0f ? "+" : "") + formatTrimmed (valueDb, 1) + "dB";
-}
-
-juce::String formatHz (float valueHz)
-{
-    if (valueHz >= 1000.0f)
-        return formatTrimmed (valueHz / 1000.0f, 2) + "k";
-    return formatTrimmed (valueHz, 0);
-}
-
-juce::String getChoiceName (int value, const juce::StringArray& names)
-{
-    return names[juce::jlimit (0, names.size() - 1, value)];
-}
-
-juce::String midiNoteName (int note, int middleCOctave)
-{
-    return juce::MidiMessage::getMidiNoteName (note, true, true, middleCOctave);
-}
+using namespace ValueFormat;
 
 juce::Rectangle<int> toIntBounds (juce::Rectangle<float> bounds)
 {
@@ -247,8 +196,15 @@ std::array<uint64_t, 14> getModuleBits (SignalChainBar::Module module)
 }
 } // namespace
 
-SignalChainBar::SignalChainBar (IntersectProcessor& p) : processor (p)
+SignalChainBar::SignalChainBar (IntersectProcessor& p) : processor (p), membersButton (p)
 {
+    addChildComponent (membersButton);
+}
+
+bool SignalChainBar::selectedSampleIsGrouped() const
+{
+    const auto& ui = processor.getUiSliceSnapshot();
+    return ui.sampleGroups.groupWith (ui.selectedSessionSampleId) != nullptr;
 }
 
 float SignalChainBar::getDesiredHeight() const
@@ -676,6 +632,8 @@ void SignalChainBar::rebuildContextBar (const LayoutInput& input)
         : "SLICE";
     const int sliceTabWidth = input.hasValidSlice ? 76 : 56;
 
+    membersButton.setVisible (false);
+
     // Reserve space for expand toggle at right edge
     auto contextArea = contextBounds;
     expandToggleBounds = contextArea.removeFromRight (kExpandToggleWidth);
@@ -783,6 +741,15 @@ void SignalChainBar::rebuildContextBar (const LayoutInput& input)
             contextRow.items.add (juce::FlexItem().withWidth (hasRange ? kContextRangeNoteNameWidth
                                                                         : kContextNoteNameWidth));
 
+            const bool groupSlice = membersButton.setSlice (input.selectedSliceIndex);
+            int membersItemIndex = -1;
+            if (groupSlice)
+            {
+                contextRow.items.add (juce::FlexItem().withWidth (10.0f));
+                membersItemIndex = contextRow.items.size();
+                contextRow.items.add (juce::FlexItem().withWidth ((float) membersButton.getPreferredWidth()));
+            }
+
             contextRow.items.add (juce::FlexItem().withFlex (1.0f));
             const int statusItemIndex = contextRow.items.size();
             contextRow.items.add (juce::FlexItem().withWidth (90.0f));
@@ -805,6 +772,11 @@ void SignalChainBar::rebuildContextBar (const LayoutInput& input)
             addVoicesContextCell (toIntBounds (contextRow.items[voicesItemIndex].currentBounds));
 
             addNoteRangeToggleCell (toIntBounds (contextRow.items[toggleItemIndex].currentBounds), hasRange);
+            if (membersItemIndex >= 0)
+            {
+                membersButton.setBounds (toIntBounds (contextRow.items[membersItemIndex].currentBounds));
+                membersButton.setVisible (true);
+            }
 
             if (hasRange)
             {
@@ -921,19 +893,33 @@ void SignalChainBar::rebuildContextBar (const LayoutInput& input)
         contextRow.items.add (juce::FlexItem().withWidth (hasRange ? kContextRangeNoteNameWidth
                                                                     : kContextNoteNameWidth));
 
+        int membersItemIndex = -1;
+        if (membersButton.setSlice (input.selectedSliceIndex))   // MEMBERS after the note, for a group slice
+        {
+            contextRow.items.add (juce::FlexItem().withWidth (10.0f));
+            membersItemIndex = contextRow.items.size();
+            contextRow.items.add (juce::FlexItem().withWidth ((float) membersButton.getPreferredWidth()));
+        }
+
         contextRow.items.add (juce::FlexItem().withFlex (1.0f));
         const int statusItemIndex = contextRow.items.size();
         contextRow.items.add (juce::FlexItem().withWidth (90.0f));
 
         contextRow.performLayout (contextArea.toFloat());
 
-        addTabCell (toIntBounds (contextRow.items[0].currentBounds), "SAMPLE", TabTarget::Sample, ! input.sliceScope, true);
+        addTabCell (toIntBounds (contextRow.items[0].currentBounds), selectedSampleIsGrouped() ? "GROUP" : "SAMPLE",
+                    TabTarget::Sample, ! input.sliceScope, true);
         addTabCell (toIntBounds (contextRow.items[2].currentBounds), sliceTabText, TabTarget::Slice, input.sliceScope, input.hasValidSlice);
 
         contextInfoBounds = toIntBounds (contextRow.items[timeItemIndex].currentBounds);
         contextStatusBounds = toIntBounds (contextRow.items[statusItemIndex].currentBounds);
 
         addNoteRangeToggleCell (toIntBounds (contextRow.items[toggleItemIndex].currentBounds), hasRange);
+        if (membersItemIndex >= 0)
+        {
+            membersButton.setBounds (toIntBounds (contextRow.items[membersItemIndex].currentBounds));
+            membersButton.setVisible (true);
+        }
 
         if (hasRange)
         {
@@ -987,7 +973,8 @@ void SignalChainBar::rebuildContextBar (const LayoutInput& input)
     contextRow.items.add (juce::FlexItem().withWidth (10.0f));  // trailing pad
     contextRow.performLayout (contextArea.toFloat());
 
-    addTabCell (toIntBounds (contextRow.items[0].currentBounds), "SAMPLE", TabTarget::Sample, ! input.sliceScope, true);
+    addTabCell (toIntBounds (contextRow.items[0].currentBounds), selectedSampleIsGrouped() ? "GROUP" : "SAMPLE",
+                    TabTarget::Sample, ! input.sliceScope, true);
     addTabCell (toIntBounds (contextRow.items[2].currentBounds), sliceTabText, TabTarget::Slice, input.sliceScope, input.hasValidSlice);
 
     contextInfoBounds = toIntBounds (contextRow.items[infoItemIndex].currentBounds);
@@ -1768,7 +1755,7 @@ void SignalChainBar::paint (juce::Graphics& g)
         {
             g.setFont (IntersectLookAndFeel::makeFont (7.0f, true));
             g.setColour (getTheme().text0.withAlpha (0.4f));
-            g.drawText (isSliceStrip ? "SLICE" : "SAMPLE",
+            g.drawText (isSliceStrip ? "SLICE" : (selectedSampleIsGrouped() ? "GROUP" : "SAMPLE"),
                         stripBounds.getX() + 2, stripBounds.getY() + 1, 36, 10,
                         juce::Justification::centredLeft);
         }

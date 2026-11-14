@@ -381,6 +381,7 @@ juce::String stemExportModeToString (StemExportMode mode)
     {
         case StemExportMode::combine:  return "Combine";
         case StemExportMode::separate: return "Separate";
+        case StemExportMode::group:    return "Group";
     }
 
     return "Combine";
@@ -390,6 +391,8 @@ StemExportMode stemExportModeFromString (const juce::String& text)
 {
     if (text.trim().equalsIgnoreCase ("separate"))
         return StemExportMode::separate;
+    if (text.trim().equalsIgnoreCase ("group"))
+        return StemExportMode::group;
 
     return StemExportMode::combine;
 }

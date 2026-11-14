@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "WaveformCache.h"
+#include "GroupLanes.h"
 
 class IntersectProcessor;
 
@@ -42,6 +43,9 @@ public:
     void showOverlayHint (const juce::String& text, int durationMs, bool stickyUntilAction = false);
     void clearOverlayHint();
 
+    /** The group lane controls drawn over the waveform (the editor wires their callbacks). */
+    GroupLaneControls& getGroupControls() noexcept { return groupControls; }
+
     bool altModeActive = false;
     bool shiftPreviewActive = false;
     std::vector<int> transientPreviewPositions;
@@ -60,12 +64,13 @@ private:
     std::vector<PlaceholderSlot> getPlaceholderSlots (const SampleData::SnapshotPtr& sampleSnap) const;
     const PlaceholderSlot* findPlaceholderAt (const std::vector<PlaceholderSlot>& slots, int x) const;
     void paintPlaceholders (juce::Graphics& g, const SampleData::SnapshotPtr& sampleSnap);
+    // The timeline (group members hidden) and the part of it on screen; frames in and out of the
+    // view's conversions are kit frames.
     struct ViewState
     {
-        int numFrames = 0;
-        int visibleStart = 0;
-        int visibleLen = 0;
-        int width = 0;
+        TimelineMap map;
+        TimelineMap::View view;
+        int numFrames = 0;            // kit buffer frames
         float samplesPerPixel = 1.0f;
         bool valid = false;
     };
@@ -103,13 +108,16 @@ private:
     // Aggregates all cache-invalidation inputs; rebuild is skipped when unchanged.
     struct CacheKey
     {
-        int visibleStart = 0, visibleLen = 0, width = 0, numFrames = 0;
+        int visibleStart = 0, visibleLen = 0, width = 0, numFrames = 0, timelineFrames = 0;
+        juce::int64 layout = 0;   // where the visible slots sit (changes when groups do)
         const void* samplePtr = nullptr;
         bool operator== (const CacheKey&) const = default;
     };
 
     IntersectProcessor& processor;
     WaveformCache cache;
+    GroupLanePainter groupLanes;
+    GroupLaneControls groupControls;
     CacheKey prevCacheKey;
     bool sliceDrawMode = false;
     mutable ViewState cachedPaintViewState;   // valid only between paint() start and end

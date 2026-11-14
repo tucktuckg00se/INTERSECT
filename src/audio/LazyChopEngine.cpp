@@ -3,14 +3,16 @@
 #include "AudioAnalysis.h"
 #include <cmath>
 
-void LazyChopEngine::start (int sampleLen, SliceManager& sliceMgr,
+void LazyChopEngine::start (int rangeStartIn, int rangeEnd, SliceManager& sliceMgr,
                             const PreviewStretchParams& params,
-                            bool snap, const juce::AudioBuffer<float>* buf)
+                            bool snap, const juce::AudioBuffer<float>* buf, const GroupMix& mix)
 {
     active = true;
     playing = false;
-    chopPos = 0;
-    sampleLength = sampleLen;
+    rangeStart = juce::jmax (0, rangeStartIn);
+    chopPos = rangeStart;
+    sampleLength = juce::jmax (rangeStart + 1, rangeEnd);
+    groupMix = mix;
     lastNote = -1;
     cachedParams = params;
     snapEnabled = snap;
@@ -30,7 +32,12 @@ void LazyChopEngine::start (int sampleLen, SliceManager& sliceMgr,
 void LazyChopEngine::startPreview (VoicePool& voicePool, int fromPos)
 {
     auto& v = voicePool.getVoice (getPreviewVoiceIndex());
-    VoicePool::initPreviewVoiceCommon (v, fromPos, 0, sampleLength, true, 1.0f);
+    VoicePool::initPreviewVoiceCommon (v, fromPos, rangeStart, sampleLength, true, 1.0f);
+    // A group: the preview voice mixes its members as notes do.
+    v.numMemberTaps = groupMix.isActive() ? groupMix.numTaps : 0;
+    v.groupAnchorStart = groupMix.anchorStart;
+    for (int t = 0; t < v.numMemberTaps; ++t)
+        v.memberTaps[(size_t) t] = groupMix.taps[(size_t) t];
 
     // Apply stretch from cached sample-level params
     const auto& p = cachedParams;
@@ -73,8 +80,8 @@ int LazyChopEngine::onNote (int note, VoicePool& voicePool, SliceManager& sliceM
     // First unassigned note — start playback from beginning
     if (! playing)
     {
-        startPreview (voicePool, 0);
-        chopPos = 0;
+        startPreview (voicePool, rangeStart);
+        chopPos = rangeStart;
         lastNote = note;
         playing = true;
         return -1;
@@ -91,7 +98,9 @@ int LazyChopEngine::onNote (int note, VoicePool& voicePool, SliceManager& sliceM
     auto& v = voicePool.getVoice (getPreviewVoiceIndex());
     int playhead = (int) std::floor (v.position);
 
-    if (snapEnabled && sampleBuffer != nullptr)
+    if (snapEnabled && groupMix.isActive())
+        playhead = groupMix.findNearestZeroCrossing (playhead);
+    else if (snapEnabled && sampleBuffer != nullptr)
         playhead = AudioAnalysis::findNearestZeroCrossing (*sampleBuffer, playhead);
 
     // After audition, first unassigned note just sets a new start point
@@ -119,7 +128,7 @@ int LazyChopEngine::onNote (int note, VoicePool& voicePool, SliceManager& sliceM
                 resultIdx = idx;
             }
         }
-        chopPos = 0;
+        chopPos = rangeStart;
     }
 
     // Create slice from chopPos to playhead (min slice length)

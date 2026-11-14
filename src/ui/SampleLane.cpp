@@ -2,6 +2,8 @@
 #include "IntersectLookAndFeel.h"
 #include "Callout.h"
 #include "browser/BrowserTypes.h"
+#include "GroupUi.h"
+#include "TimelineMap.h"
 #include "../PluginProcessor.h"
 #include <algorithm>
 #include <array>
@@ -42,38 +44,42 @@ std::vector<SampleLane::VisibleSample> SampleLane::buildVisibleSamples() const
         return out;
 
     const auto& ui = processor.getUiSliceSnapshot();
-    const float z = std::max (1.0f, processor.zoom.load());
-    const float sc = processor.scroll.load();
-    const int visLen = juce::jlimit (1, numFrames, (int) ((float) numFrames / z));
-    const int maxStart = juce::jmax (0, numFrames - visLen);
-    const int visStart = juce::jlimit (0, maxStart, (int) (sc * (float) maxStart));
+    const TimelineMap map (ui, numFrames);
+    const auto view = map.viewFor (processor, getWidth());
     const int w = getWidth();
     const int selectedId = ui.selectedSessionSampleId;
 
     out.reserve ((size_t) ui.numSessionSamples);
     for (int i = 0; i < ui.numSessionSamples; ++i)
     {
+        // Grouped samples show as their group's one block, where the anchor sits.
         const auto& sample = ui.sessionSamples[(size_t) i];
-        const int start = sample.startSample;
-        const int end = sample.startSample + sample.numFrames;
-        int x1 = (int) ((float) (start - visStart) / (float) visLen * (float) w);
-        int x2 = (int) ((float) (end - visStart) / (float) visLen * (float) w);
+        const auto* segment = map.segmentFor (sample.sampleId);
+        if (segment == nullptr || segment->sampleId != sample.sampleId)
+            continue;
+        int x1 = map.timelineToPixel (view, segment->timelineStart);
+        int x2 = map.timelineToPixel (view, segment->timelineStart + segment->numFrames);
         x1 = juce::jlimit (0, w, x1);
         x2 = juce::jlimit (0, w, x2);
         if (x2 - x1 < 2)
             continue;
 
+        const auto* group = ui.sampleGroups.groupAnchoredBy (sample.sampleId);
         VisibleSample visible;
         visible.sampleId = sample.sampleId;
         visible.index = i;
         visible.x1 = x1;
         visible.x2 = x2;
         visible.selected = sample.sampleId == selectedId;
-        visible.missing = sample.isPlaceholder();
+        visible.isGroup = group != nullptr;
+        visible.missing = sample.isPlaceholder() && group == nullptr;
         visible.colour = visible.missing ? getTheme().color5
+                       : visible.isGroup ? getTheme().color1.brighter (0.3f)
                                          : getTheme().slicePalette[(15 - (i % 16) + 16) % 16];
-        visible.label = visible.missing ? "! " + sample.fileName.toString() : sample.fileName.toString();
-        const bool jobRunning = isStemJobRunningForSample (ui, sample.sampleId);
+        visible.label = visible.missing ? "! " + sample.fileName.toString()
+                      : visible.isGroup ? GroupUi::groupName (ui, *group)
+                                        : sample.fileName.toString();
+        const bool jobRunning = ! visible.isGroup && isStemJobRunningForSample (ui, sample.sampleId);
         const int blockW = x2 - x1;
         const int buttonH = juce::jmax (12, getHeight() - 6);
         const int buttonY = (getHeight() - buttonH) / 2;
@@ -85,14 +91,26 @@ std::vector<SampleLane::VisibleSample> SampleLane::buildVisibleSamples() const
         int right = x2 - 3;
         visible.deleteBounds = { right - deleteW, buttonY, deleteW, buttonH };
         right = visible.deleteBounds.getX() - 2;
-        visible.stemsBounds = { right - stemsW, buttonY, stemsW, buttonH };
-        right = visible.stemsBounds.getX() - 2;
-        visible.midiBounds = { right - midiW, buttonY, midiW, buttonH };
-        right = visible.midiBounds.getX() - 2;
+        if (visible.isGroup)
+        {
+            // A group: AUDIO (the group mix), MIX, MIDI, X. No STEMS.
+            visible.midiBounds = { right - midiW, buttonY, midiW, buttonH };
+            right = visible.midiBounds.getX() - 2;
+            visible.mixBounds = { right - midiW, buttonY, midiW, buttonH };
+            right = visible.mixBounds.getX() - 2;
+        }
+        else
+        {
+            visible.stemsBounds = { right - stemsW, buttonY, stemsW, buttonH };
+            right = visible.stemsBounds.getX() - 2;
+            visible.midiBounds = { right - midiW, buttonY, midiW, buttonH };
+            right = visible.midiBounds.getX() - 2;
+        }
         visible.audioBounds = { right - audioW, buttonY, audioW, buttonH };
         const juce::Rectangle<int> inner { x1 + 1, buttonY, juce::jmax (1, blockW - 2), buttonH };
         visible.deleteBounds = visible.deleteBounds.getIntersection (inner);
         visible.stemsBounds = visible.stemsBounds.getIntersection (inner);
+        visible.mixBounds = visible.mixBounds.getIntersection (inner);
         visible.midiBounds = visible.midiBounds.getIntersection (inner);
         // The newest chip yields first: on a block too narrow for all of them, AUDIO is left out
         // rather than squeezing the others.
@@ -175,11 +193,21 @@ void SampleLane::paint (juce::Graphics& g)
         }
 
         const int buttonsLeft = ! sample.audioBounds.isEmpty() ? sample.audioBounds.getX()
+                              : ! sample.mixBounds.isEmpty()   ? sample.mixBounds.getX()
                               : ! sample.midiBounds.isEmpty()  ? sample.midiBounds.getX()
                               : ! sample.stemsBounds.isEmpty() ? sample.stemsBounds.getX()
                                                                : sample.deleteBounds.getX();
         const int maxLabelRight = juce::jmin (buttonsLeft - 2, getWidth());
         const int availableLabelW = juce::jmax (1, maxLabelRight - labelX - 2);
+        if (availableLabelW >= 8 && sample.isGroup)
+        {
+            // The group icon: two overlapping squares.
+            const auto icon = juce::Rectangle<float> ((float) labelX, (float) h * 0.5f - 4.0f, 8.0f, 8.0f);
+            g.setColour (sample.selected ? getTheme().text2.withAlpha (0.9f) : sample.colour.withAlpha (0.8f));
+            g.drawRect (icon.withSize (5.5f, 5.5f), 1.0f);
+            g.drawRect (icon.translated (2.5f, 2.5f).withSize (5.5f, 5.5f), 1.0f);
+            labelX += 11;
+        }
         if (availableLabelW >= 8)
         {
             g.setColour (sample.selected ? getTheme().text2.withAlpha (0.9f)
@@ -209,6 +237,10 @@ void SampleLane::paint (juce::Graphics& g)
         {
             // No audio: only removal applies; clicking the chip itself relinks.
         }
+        else if (sample.isGroup)
+        {
+            // A group has no STEMS; its MIX chip is drawn with the export chips.
+        }
         else if (jobRunning)
         {
             drawButton (sample.stemsBounds,
@@ -223,6 +255,11 @@ void SampleLane::paint (juce::Graphics& g)
                         getTheme().surface4.withAlpha (0.92f),
                         getTheme().text2.withAlpha (0.92f));
         }
+        if (! sample.mixBounds.isEmpty())
+            drawButton (sample.mixBounds,
+                        sample.mixBounds.getWidth() < 24 ? "MX" : "MIX",
+                        getTheme().surface4.withAlpha (0.92f),
+                        getTheme().text2.withAlpha (0.92f));
         if (! sample.midiBounds.isEmpty())
             drawButton (sample.midiBounds,
                         sample.midiBounds.getWidth() < 24 ? "M" : "MIDI",
@@ -307,6 +344,27 @@ void SampleLane::mouseDown (const juce::MouseEvent& e)
 
     if (onInteraction != nullptr)
         onInteraction();
+
+    if (it != visible.end() && e.mods.isPopupMenu())
+    {
+        processor.selectedSessionSampleId.store (hitId, std::memory_order_relaxed);
+        processor.markUiSnapshotDirty();
+        const juce::Rectangle<int> block (it->x1, 0, it->x2 - it->x1, getHeight());
+        const auto area = juce::Rectangle<int> (pos.x, 0, 1, getHeight()).getIntersection (block);
+        if (it->isGroup && onGroupMenuRequested != nullptr)
+            onGroupMenuRequested (hitId, area);
+        else if (! it->isGroup && onSampleMenuRequested != nullptr)
+            onSampleMenuRequested (hitId, area);
+        repaint();
+        return;
+    }
+
+    if (it != visible.end() && it->mixBounds.contains (pos))
+    {
+        if (onGroupMixRequested != nullptr)
+            onGroupMixRequested (hitId, it->mixBounds);
+        return;
+    }
 
     if (it != visible.end() && it->deleteBounds.contains (pos))
     {
@@ -486,6 +544,17 @@ void SampleLane::requestRemoveSample (int sampleId, bool skipConfirm)
 {
     if (sampleId < 0)
         return;
+
+    // A group's block stands for all its samples: removing it removes the group.
+    if (processor.getUiSliceSnapshot().sampleGroups.groupAnchoredBy (sampleId) != nullptr && onGroupRemoveRequested != nullptr)
+    {
+        const auto visible = buildVisibleSamples();
+        const auto it = std::find_if (visible.begin(), visible.end(),
+                                      [sampleId] (const VisibleSample& sample) { return sample.sampleId == sampleId; });
+        onGroupRemoveRequested (sampleId, it != visible.end() && ! it->deleteBounds.isEmpty() ? it->deleteBounds : getLocalBounds(),
+                                skipConfirm);
+        return;
+    }
 
     if (skipConfirm)
     {

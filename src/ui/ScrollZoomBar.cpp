@@ -1,4 +1,5 @@
 #include "ScrollZoomBar.h"
+#include "TimelineMap.h"
 #include "UIHelpers.h"
 #include "IntersectLookAndFeel.h"
 #include "../PluginProcessor.h"
@@ -21,7 +22,7 @@ void ScrollZoomBar::paint (juce::Graphics& g)
     g.drawHorizontalLine (0, 0.0f, (float) w);
 
     auto sampleSnap = processor.sampleData.getSnapshot();
-    int numFrames = sampleSnap ? sampleSnap->buffer.getNumSamples() : 0;
+    const int numFrames = sampleSnap ? TimelineMap::fromProcessor (processor).getTotalFrames() : 0;
     if (numFrames <= 0 || w <= 0)
         return;
 

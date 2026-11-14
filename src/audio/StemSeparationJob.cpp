@@ -1036,7 +1036,7 @@ void StemSeparationJob::run()
         state.store (StemJobState::writing, std::memory_order_release);
 
         juce::String writeError;
-        if (jobExportMode == StemExportMode::separate)
+        if (jobExportMode != StemExportMode::combine)   // Separate and Group: one file per stem
         {
             for (size_t i = 0; i < stemBuffers.size(); ++i)
             {

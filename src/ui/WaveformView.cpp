@@ -6,6 +6,7 @@
 #include "../Constants.h"
 #include "../PluginProcessor.h"
 #include "../audio/AudioAnalysis.h"
+#include "../audio/GroupMix.h"
 
 namespace
 {
@@ -120,8 +121,16 @@ void paintHintBanner (juce::Graphics& g, const juce::String& text, int component
 }
 } // namespace
 
-WaveformView::WaveformView (IntersectProcessor& p) : processor (p)
+// Zero-crossing snap: inside a group's slot it listens to the group's mix, as the group plays.
+static int snapToZeroCrossing (const IntersectProcessor& processor, const SampleData::SnapshotPtr& snap, int pos)
 {
+    return GroupMix::at (processor.getUiSliceSnapshot().sampleGroups, snap->sessionSamples, snap->buffer, pos)
+               .findNearestZeroCrossing (pos);
+}
+
+WaveformView::WaveformView (IntersectProcessor& p) : processor (p), groupControls (p)
+{
+    addAndMakeVisible (groupControls);   // lane headers, in-slice M's, + ADD SAMPLE, + GROUP (hit-tested)
     if (Intersect::LinuxDesktopSupport::shouldUseWaylandDndFallbackMessaging())
     {
         waylandHintHideTimeMs = juce::Time::getMillisecondCounterHiRes() + 5000.0;
@@ -214,17 +223,12 @@ WaveformView::ViewState WaveformView::buildViewState (const SampleData::Snapshot
     if (numFrames <= 0 || width <= 0)
         return state;
 
-    const float z = std::max (1.0f, processor.zoom.load());
-    const float sc = processor.scroll.load();
-    const int visibleLen = juce::jlimit (1, numFrames, (int) (numFrames / z));
-    const int maxStart = juce::jmax (0, numFrames - visibleLen);
-    const int visibleStart = juce::jlimit (0, maxStart, (int) (sc * (float) maxStart));
-
+    state.map.build (processor.getUiSliceSnapshot(), numFrames);
+    if (state.map.getTotalFrames() <= 0)
+        return state;
+    state.view = state.map.viewFor (processor, width);
     state.numFrames = numFrames;
-    state.visibleStart = visibleStart;
-    state.visibleLen = visibleLen;
-    state.width = width;
-    state.samplesPerPixel = (float) visibleLen / (float) width;
+    state.samplesPerPixel = (float) state.view.framesPerPixel();
     state.valid = true;
     return state;
 }
@@ -232,30 +236,19 @@ WaveformView::ViewState WaveformView::buildViewState (const SampleData::Snapshot
 int WaveformView::pixelToSample (int px) const
 {
     if (paintViewStateActive && cachedPaintViewState.valid)
-    {
-        return cachedPaintViewState.visibleStart
-            + (int) ((float) px / (float) cachedPaintViewState.width * cachedPaintViewState.visibleLen);
-    }
+        return cachedPaintViewState.map.pixelToKit (cachedPaintViewState.view, px);
 
     const auto state = buildViewState (processor.sampleData.getSnapshot());
-    if (! state.valid)
-        return 0;
-    return state.visibleStart + (int) ((float) px / (float) state.width * state.visibleLen);
+    return state.valid ? state.map.pixelToKit (state.view, px) : 0;
 }
 
 int WaveformView::sampleToPixel (int sample) const
 {
     if (paintViewStateActive && cachedPaintViewState.valid)
-    {
-        return (int) ((float) (sample - cachedPaintViewState.visibleStart)
-                      / (float) cachedPaintViewState.visibleLen
-                      * (float) cachedPaintViewState.width);
-    }
+        return cachedPaintViewState.map.kitToPixel (cachedPaintViewState.view, sample);
 
     const auto state = buildViewState (processor.sampleData.getSnapshot());
-    if (! state.valid)
-        return 0;
-    return (int) ((float) (sample - state.visibleStart) / (float) state.visibleLen * (float) state.width);
+    return state.valid ? state.map.kitToPixel (state.view, sample) : 0;
 }
 
 void WaveformView::rebuildCacheIfNeeded()
@@ -265,12 +258,22 @@ void WaveformView::rebuildCacheIfNeeded()
     if (! view.valid)
         return;
 
-    const CacheKey key { view.visibleStart, view.visibleLen, view.width, view.numFrames, sampleSnap.get() };
+    juce::int64 layout = 0;
+    for (const auto& segment : view.map.getSegments())
+        layout = layout * 1000003 + segment.kitStart * 31 + segment.timelineStart * 7 + (segment.isGroup ? 1 : 0);
+
+    const CacheKey key { view.view.start, view.view.length, view.view.width, view.numFrames,
+                         view.map.getTotalFrames(), layout, sampleSnap.get() };
     if (key == prevCacheKey)
         return;
 
-    cache.rebuild (sampleSnap->buffer, sampleSnap->peakMipmaps,
-                   view.numFrames, processor.zoom.load(), processor.scroll.load(), view.width);
+    // Group slots are drawn as member lanes (GroupLanePainter); this row leaves them empty.
+    const auto map = view.map;
+    cache.rebuild (sampleSnap->buffer, sampleSnap->peakMipmaps, view.view, [map] (int t)
+    {
+        const auto* segment = map.segmentAt (t);
+        return segment == nullptr || segment->isGroup ? -1 : map.timelineToKit (t);
+    });
     prevCacheKey = key;
 }
 
@@ -292,13 +295,12 @@ void WaveformView::paint (juce::Graphics& g)
         paintViewStateActive = cachedPaintViewState.valid;
         if (cachedPaintViewState.valid)
         {
-            for (size_t i = 0; i < sampleSnap->sessionSamples.size(); ++i)
+            const auto& segments = cachedPaintViewState.map.getSegments();
+            for (size_t i = 0; i < segments.size(); ++i)
             {
-                const auto& sample = sampleSnap->sessionSamples[i];
-                int x1 = (int) ((float) (sample.startFrame - cachedPaintViewState.visibleStart)
-                                / (float) cachedPaintViewState.visibleLen * (float) getWidth());
-                int x2 = (int) ((float) (sample.startFrame + sample.numFrames - cachedPaintViewState.visibleStart)
-                                / (float) cachedPaintViewState.visibleLen * (float) getWidth());
+                const auto& view = cachedPaintViewState.view;
+                int x1 = cachedPaintViewState.map.timelineToPixel (view, segments[i].timelineStart);
+                int x2 = cachedPaintViewState.map.timelineToPixel (view, segments[i].timelineStart + segments[i].numFrames);
                 x1 = juce::jlimit (0, getWidth(), x1);
                 x2 = juce::jlimit (0, getWidth(), x2);
                 if (x2 > x1)
@@ -310,8 +312,17 @@ void WaveformView::paint (juce::Graphics& g)
         }
         rebuildCacheIfNeeded();
         drawWaveform (g);
+        if (cachedPaintViewState.valid)
+            groupLanes.paintLanes (g, getLocalBounds(), processor.getUiSliceSnapshot(), *sampleSnap,
+                                   cachedPaintViewState.map, cachedPaintViewState.view);
         paintPlaceholders (g, sampleSnap);
         drawSlices (g);
+        if (cachedPaintViewState.valid)
+        {
+            groupLanes.paintOverlays (g, getLocalBounds(), processor.getUiSliceSnapshot(),
+                                      cachedPaintViewState.map, cachedPaintViewState.view);
+            groupControls.refresh (cachedPaintViewState.map, cachedPaintViewState.view);
+        }
         drawFadeRegions (g);
         paintDrawSlicePreview (g);
         paintLazyChopOverlay (g);
@@ -347,18 +358,14 @@ std::vector<WaveformView::PlaceholderSlot> WaveformView::getPlaceholderSlots (co
         return slots;
 
     const int w = getWidth();
-    auto toPixel = [&] (int frame)
-    {
-        return (int) ((float) (frame - view.visibleStart) / (float) view.visibleLen * (float) w);
-    };
-
     for (const auto& sample : sampleSnap->sessionSamples)
     {
-        if (! sample.isPlaceholder())
+        const auto* segment = view.map.segmentFor (sample.sampleId);
+        if (! sample.isPlaceholder() || segment == nullptr || segment->isGroup || segment->sampleId != sample.sampleId)
             continue;
 
-        const int x1 = juce::jlimit (0, w, toPixel (sample.startFrame));
-        const int x2 = juce::jlimit (0, w, toPixel (sample.startFrame + sample.numFrames));
+        const int x1 = juce::jlimit (0, w, view.map.timelineToPixel (view.view, segment->timelineStart));
+        const int x2 = juce::jlimit (0, w, view.map.timelineToPixel (view.view, segment->timelineStart + segment->numFrames));
         if (x2 <= x1)
             continue;
 
@@ -549,105 +556,10 @@ void WaveformView::paintOverlayHint (juce::Graphics& g)
 
 void WaveformView::drawWaveform (juce::Graphics& g)
 {
-    int cy = getHeight() / 2;
-    float scale = getHeight() * UILayout::waveformVerticalScale;
-
-    auto& peaks = cache.getPeaks();
-    int numPeaks = std::min (cache.getNumPeaks(), getWidth());
-
-    if (numPeaks <= 0)
-        return;
-
-    float samplesPerPixel = 1.0f;
-    if (paintViewStateActive && cachedPaintViewState.valid)
-    {
-        samplesPerPixel = cachedPaintViewState.samplesPerPixel;
-    }
-    else
-    {
-        const auto view = buildViewState (processor.sampleData.getSnapshot());
-        if (view.valid)
-            samplesPerPixel = view.samplesPerPixel;
-    }
-
-    if (samplesPerPixel < 1.0f)
-    {
-        // Sub-sample zoom: draw connected lines between sample points
-        g.setColour (getTheme().waveform.withAlpha (0.9f));
-        juce::Path path;
-        bool pathStarted = false;
-
-        for (int px = 0; px < numPeaks; ++px)
-        {
-            float y = (float) cy - peaks[(size_t) px].maxVal * scale;
-            if (! pathStarted)
-            {
-                path.startNewSubPath ((float) px, y);
-                pathStarted = true;
-            }
-            else
-            {
-                path.lineTo ((float) px, y);
-            }
-        }
-
-        g.strokePath (path, juce::PathStrokeType (1.5f));
-
-        // Draw sample dots when zoomed in very far (> 8 pixels per sample)
-        if (samplesPerPixel < 0.125f)
-        {
-            float dotR = 2.5f;
-            for (int px = 0; px < numPeaks; ++px)
-            {
-                float exactPos = (float) pixelToSample (0) + px * samplesPerPixel;
-                float fractional = exactPos - std::floor (exactPos);
-                if (fractional < samplesPerPixel)
-                {
-                    float y = (float) cy - peaks[(size_t) px].maxVal * scale;
-                    g.fillEllipse ((float) px - dotR, y - dotR, dotR * 2.0f, dotR * 2.0f);
-                }
-            }
-        }
-    }
-    else
-    {
-        // Normal zoom: filled path waveform
-        g.setColour (getTheme().waveform);
-
-        juce::Path fillPath;
-
-        // Top envelope (max peaks, left to right)
-        fillPath.startNewSubPath (0.0f, (float) cy - peaks[0].maxVal * scale);
-        for (int px = 1; px < numPeaks; ++px)
-        {
-            fillPath.lineTo ((float) px, (float) cy - peaks[(size_t) px].maxVal * scale);
-        }
-
-        // Bottom envelope (min peaks, right to left)
-        for (int px = numPeaks - 1; px >= 0; --px)
-        {
-            fillPath.lineTo ((float) px, (float) cy - peaks[(size_t) px].minVal * scale);
-        }
-
-        fillPath.closeSubPath();
-        g.fillPath (fillPath);
-
-        // When zoomed in close (few samples per pixel), the fill becomes
-        // sub-pixel thin and disappears. Draw a centre-line to keep the
-        // waveform visible through the transition zone.
-        if (samplesPerPixel < 8.0f)
-        {
-            juce::Path midPath;
-            float midY0 = (float) cy - (peaks[0].maxVal + peaks[0].minVal) * 0.5f * scale;
-            midPath.startNewSubPath (0.0f, midY0);
-            for (int px = 1; px < numPeaks; ++px)
-            {
-                float mid = (peaks[(size_t) px].maxVal + peaks[(size_t) px].minVal) * 0.5f;
-                midPath.lineTo ((float) px, (float) cy - mid * scale);
-            }
-            g.strokePath (midPath, juce::PathStrokeType (1.5f));
-        }
-    }
+    const auto view = paintViewStateActive && cachedPaintViewState.valid
+                    ? cachedPaintViewState : buildViewState (processor.sampleData.getSnapshot());
+    if (view.valid)
+        cache.paint (g, getLocalBounds(), getTheme().waveform, view.view, UILayout::waveformVerticalScale);
 }
 
 void WaveformView::drawSlices (juce::Graphics& g)
@@ -863,6 +775,7 @@ void WaveformView::drawPlaybackCursors (juce::Graphics& g)
 void WaveformView::resized()
 {
     prevCacheKey = {};  // force cache rebuild
+    groupControls.setBounds (getLocalBounds());
 }
 
 void WaveformView::syncAltStateFromMods (const juce::ModifierKeys& mods)
@@ -884,6 +797,7 @@ void WaveformView::syncAltStateFromMods (const juce::ModifierKeys& mods)
 
 void WaveformView::mouseMove (const juce::MouseEvent& e)
 {
+    groupControls.setPointer (e.getPosition());
     syncAltStateFromMods (e.mods);
 
     auto sampleSnap = processor.sampleData.getSnapshot();
@@ -960,9 +874,11 @@ void WaveformView::mouseMove (const juce::MouseEvent& e)
 
 void WaveformView::mouseEnter (const juce::MouseEvent& e) { mouseMove (e); }
 
-void WaveformView::mouseExit (const juce::MouseEvent&)
+void WaveformView::mouseExit (const juce::MouseEvent& e)
 {
     if (hoveredHandle != HoveredHandle::None) { hoveredHandle = HoveredHandle::None; repaint(); }
+    if (! getLocalBounds().contains (e.getPosition()))   // not onto a lane control: they keep the pointer
+        groupControls.setPointer ({ -1, -1 });
 }
 
 void WaveformView::modifierKeysChanged (const juce::ModifierKeys& mods)
@@ -1217,7 +1133,7 @@ void WaveformView::mouseDrag (const juce::MouseEvent& e)
     {
         const auto& s = ui.slices[(size_t) dragSliceIdx];
         if (processor.snapToZeroCrossing.load())
-            samplePos = AudioAnalysis::findNearestZeroCrossing (sampleSnap->buffer, samplePos);
+            samplePos = snapToZeroCrossing (processor, sampleSnap, samplePos);
         if (const auto* owner = findSessionSampleById (sampleSnap, s.sampleId))
             samplePos = juce::jlimit (owner->startFrame, dragPreviewEnd - kMinSliceLengthSamples, samplePos);
         dragPreviewStart = std::min (samplePos, dragPreviewEnd - kMinSliceLengthSamples);
@@ -1226,7 +1142,7 @@ void WaveformView::mouseDrag (const juce::MouseEvent& e)
     {
         const auto& s = ui.slices[(size_t) dragSliceIdx];
         if (processor.snapToZeroCrossing.load())
-            samplePos = AudioAnalysis::findNearestZeroCrossing (sampleSnap->buffer, samplePos);
+            samplePos = snapToZeroCrossing (processor, sampleSnap, samplePos);
         if (const auto* owner = findSessionSampleById (sampleSnap, s.sampleId))
             samplePos = juce::jlimit (dragPreviewStart + kMinSliceLengthSamples, owner->startFrame + owner->numFrames, samplePos);
         dragPreviewEnd = std::max (samplePos, dragPreviewStart + kMinSliceLengthSamples);
@@ -1235,14 +1151,14 @@ void WaveformView::mouseDrag (const juce::MouseEvent& e)
     {
         const auto& s = ui.slices[(size_t) dragSliceIdx];
         if (processor.snapToZeroCrossing.load())
-            samplePos = AudioAnalysis::findNearestZeroCrossing (sampleSnap->buffer, samplePos);
+            samplePos = snapToZeroCrossing (processor, sampleSnap, samplePos);
         dragLoopPreviewStart = juce::jlimit (s.startSample, dragLoopPreviewEnd - 1, samplePos);
     }
     else if (dragMode == DragLoopRight && dragSliceIdx >= 0 && dragSliceIdx < ui.numSlices)
     {
         const auto& s = ui.slices[(size_t) dragSliceIdx];
         if (processor.snapToZeroCrossing.load())
-            samplePos = AudioAnalysis::findNearestZeroCrossing (sampleSnap->buffer, samplePos);
+            samplePos = snapToZeroCrossing (processor, sampleSnap, samplePos);
         dragLoopPreviewEnd = juce::jlimit (dragLoopPreviewStart + 1, s.endSample, samplePos);
     }
     else if (dragMode == MoveSlice && dragSliceIdx >= 0)
@@ -1329,8 +1245,8 @@ void WaveformView::mouseUp (const juce::MouseEvent& e)
         }
         if (sampleSnap != nullptr && processor.snapToZeroCrossing.load())
         {
-            drawStart = AudioAnalysis::findNearestZeroCrossing (sampleSnap->buffer, drawStart);
-            endPos = AudioAnalysis::findNearestZeroCrossing (sampleSnap->buffer, endPos);
+            drawStart = snapToZeroCrossing (processor, sampleSnap, drawStart);
+            endPos = snapToZeroCrossing (processor, sampleSnap, endPos);
         }
         if (std::abs (endPos - drawStart) >= kMinSliceLengthSamples)
         {
@@ -1399,7 +1315,7 @@ void WaveformView::mouseUp (const juce::MouseEvent& e)
     {
         if (sampleSnap != nullptr && processor.snapToZeroCrossing.load())
         {
-            ghostStart = AudioAnalysis::findNearestZeroCrossing (sampleSnap->buffer, ghostStart);
+            ghostStart = snapToZeroCrossing (processor, sampleSnap, ghostStart);
             ghostEnd   = ghostStart + dragSliceLen;
         }
         if (sampleSnap != nullptr && dragSliceIdx >= 0 && dragSliceIdx < ui.numSlices)

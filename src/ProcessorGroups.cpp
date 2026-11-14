@@ -172,6 +172,10 @@ void IntersectProcessor::addGroupMembers (int groupMemberId, const int* memberId
     for (int i = 0; i < numJoining; ++i)
         group.addMember (joining[(size_t) i]);
 
+    // The SAMPLE tab edits the group's settings: a selected member hands the selection to the anchor.
+    if (containsId (joining.data(), numJoining, selectedSessionSampleId.load (std::memory_order_relaxed)))
+        selectedSessionSampleId.store (anchorId, std::memory_order_relaxed);
+
     // Members play the group's slices from now on; their own go (the UI asked first).
     for (int i = sliceManager.getNumSlices() - 1; i >= 0; --i)
         if (containsId (joining.data(), numJoining, sliceManager.getSlice (i).sampleId))
@@ -385,5 +389,104 @@ void IntersectProcessor::startGroupSliceVoices (const SampleGroup& group, int sl
 
         const int voiceIdx = voicePool.allocate();
         voicePool.startVoice (voiceIdx, p, sliceManager, sampleData);
+    }
+}
+
+// The editor's timeline (TimelineMap) as the audio thread sees it: the kit's samples side by side,
+// group members other than the anchor hidden. MIDI-edit zoom works in these frames. Allocation-free.
+int IntersectProcessor::timelineTotalFrames() const
+{
+    const auto& samples = sampleData.getSessionSamples();
+    if (samples.empty())
+        return sampleData.getNumFrames();
+
+    int total = 0;
+    for (const auto& sample : samples)
+        if (! sampleGroups.isHiddenMember (sample.sampleId))
+            total += sample.numFrames;
+    return total;
+}
+
+int IntersectProcessor::kitToTimelineFrame (int kitFrame) const
+{
+    const auto& samples = sampleData.getSessionSamples();
+    if (samples.empty())
+        return kitFrame;
+
+    const auto timelineStartOf = [this, &samples] (int sampleId)
+    {
+        int timeline = 0;
+        for (const auto& sample : samples)
+        {
+            if (sample.sampleId == sampleId)
+                return timeline;
+            if (! sampleGroups.isHiddenMember (sample.sampleId))
+                timeline += sample.numFrames;
+        }
+        return timeline;
+    };
+
+    for (const auto& sample : samples)
+    {
+        if (kitFrame < sample.startFrame || kitFrame >= sample.startFrame + sample.numFrames)
+            continue;
+        // A hidden member is drawn in its group's slot, at the same offset.
+        const auto* group = sampleGroups.groupWith (sample.sampleId);
+        const int shownId = group != nullptr ? group->anchorId() : sample.sampleId;
+        return timelineStartOf (shownId) + (kitFrame - sample.startFrame);
+    }
+    return timelineTotalFrames();
+}
+
+// After a kit addition landed (audio thread): STEMS in Group mode groups the new stems, starting with
+// a copy of the source's slices; Duplicate sample copies the source's settings and slices.
+void IntersectProcessor::applyPendingKitAddition (const PendingStemImport& pending)
+{
+    const auto& samples = sampleData.getSessionSamples();
+    const int numSamples = (int) samples.size();
+
+    if (pending.groupStems)
+    {
+        const int numStems = juce::jmin ((int) pending.metas.size(), numSamples, SampleGroup::kMaxMembers);
+        std::array<int, SampleGroup::kMaxMembers> stems {};
+        for (int i = 0; i < numStems; ++i)
+            stems[(size_t) i] = samples[(size_t) (numSamples - numStems + i)].sampleId;
+        if (numStems >= 2)
+        {
+            addGroupMembers (stems[0], stems.data() + 1, numStems - 1);
+            if (sampleGroups.groupAnchoredBy (stems[0]) != nullptr)
+            {
+                int sourceSlices = 0;
+                for (int i = 0; i < sliceManager.getNumSlices(); ++i)
+                    if (sliceManager.getSlice (i).sampleId == pending.parentSourceSampleId)
+                        ++sourceSlices;
+                if (sourceSlices <= SliceManager::kMaxSlices - sliceManager.getNumSlices())
+                    copySlicesToSample (pending.parentSourceSampleId, stems[0]);
+                else
+                    setUiStatusMessage (statusText ("No room for a copy of the source's slices (128 at most): the group starts empty"), true);
+                selectedSessionSampleId.store (stems[0], std::memory_order_relaxed);
+            }
+        }
+    }
+
+    if (pending.duplicateOf >= 0 && numSamples > 0)
+    {
+        const int copyId = samples.back().sampleId;
+        const auto* group = sampleGroups.groupWith (pending.duplicateOf);
+        const int settingsFrom = group != nullptr ? group->anchorId() : pending.duplicateOf;
+        if (copyId == pending.duplicateOf)
+            return;
+        sampleParams.set (copyId, paramsForSample (settingsFrom));
+        setStemMeta (copyId, getStemMeta (pending.duplicateOf));
+
+        int sourceSlices = 0;
+        for (int i = 0; i < sliceManager.getNumSlices(); ++i)
+            if (sliceManager.getSlice (i).sampleId == settingsFrom)
+                ++sourceSlices;
+        if (sourceSlices <= SliceManager::kMaxSlices - sliceManager.getNumSlices())
+            copySlicesToSample (settingsFrom, copyId);
+        else
+            setUiStatusMessage (statusText ("No room for a copy of the slices (128 at most): the copy has none"), true);
+        selectedSessionSampleId.store (copyId, std::memory_order_relaxed);
     }
 }

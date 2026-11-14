@@ -8,6 +8,8 @@
 #include "PluginProcessor.h"
 #include "audio/SliceEdits.h"
 #include "state/SessionState.h"
+#include "ui/TimelineMap.h"
+#include "audio/GroupMix.h"
 
 #include <atomic>
 #include <cmath>
@@ -1044,6 +1046,165 @@ void slicesOnOneNoteDoNotCutEachOther()
              "two slices on one note in one mute group both play");
 }
 
+void timelineHidesGroupMembers()
+{
+    TempDir temp;
+    const int n = (int) kRate;
+    const auto a = writeTone (temp.dir.getChildFile ("a.wav"), n, 109.0, 0.4f);
+    const auto b = writeTone (temp.dir.getChildFile ("b.wav"), n, 61.0, 0.4f);
+    const auto c = writeTone (temp.dir.getChildFile ("c.wav"), n / 2, 83.0, 0.4f);
+
+    Host host;
+    const auto ids = loadSamples (host, { a, b, c });
+    const int cStart = host.ui().sessionSamples[2].startSample;
+    pushGroup (host, IntersectProcessor::CmdGroupCreate, ids[0], { ids[1] });
+    host.runUntil ([&] { return host.ui().sampleGroups.count == 1; }, "the group");
+
+    const TimelineMap map (host.ui(), 2 * n + n / 2);
+    require (map.getTotalFrames() == n + n / 2, "the timeline leaves out the hidden member");
+    require (map.getSegments().size() == 2 && map.getSegments()[0].isGroup, "a group slot and the standalone sample");
+    require (map.kitToTimeline (n + 100) == 100, "a member's frame is drawn in its group's slot");
+    require (map.timelineToKit (n + 5) == cStart + 5, "the sample after the group follows it on the timeline");
+    require (map.segmentFor (ids[1]) == &map.getSegments()[0], "a member shows in its group's slot");
+
+    const auto view = map.viewFor (1.0f, 0.0f, 300);
+    require (view.length == n + n / 2 && map.kitToPixel (view, cStart) == map.timelineToPixel (view, n),
+             "pixels follow the timeline");
+}
+
+void removingAGroupRemovesItsSamples()
+{
+    TempDir temp;
+    const int n = (int) kRate;
+    const auto a = writeTone (temp.dir.getChildFile ("a.wav"), n, 109.0, 0.4f);
+    const auto b = writeTone (temp.dir.getChildFile ("b.wav"), n, 61.0, 0.4f);
+    const auto c = writeTone (temp.dir.getChildFile ("c.wav"), n / 2, 83.0, 0.4f);
+
+    Host host;
+    const auto ids = loadSamples (host, { a, b, c });
+    host.push (IntersectProcessor::CmdCreateSlice, 0, n / 2);
+    pushGroup (host, IntersectProcessor::CmdGroupCreate, ids[0], { ids[1] });
+    host.runUntil ([&] { return host.ui().sampleGroups.count == 1 && host.ui().numSlices == 1; }, "the group");
+
+    host.processor.deleteSessionSamplesAsync ({ ids[0], ids[1] });
+    host.runUntil ([&] { return host.ui().numSessionSamples == 1; }, "the group's samples to go");
+    require (host.ui().sessionSamples[0].sampleId == ids[2] && host.ui().sampleGroups.count == 0 && host.ui().numSlices == 0,
+             "removing a group removes its samples and slices in one step");
+
+    host.push (IntersectProcessor::CmdUndo);
+    host.runUntil ([&] { return host.ui().numSessionSamples == 3 && host.ui().sampleGroups.count == 1; }, "the undo");
+    require (host.ui().numSlices == 1, "one undo brings the group back");
+}
+
+void groupMixReadsTheMembers()
+{
+    TempDir temp;
+    const int n = (int) kRate;
+    const auto a = writeTone (temp.dir.getChildFile ("a.wav"), n, 109.0, 0.4f);
+    const auto b = writeTone (temp.dir.getChildFile ("b.wav"), n, 61.0, 0.4f);
+
+    Host host;
+    const auto ids = loadSamples (host, { a, b });
+    pushGroup (host, IntersectProcessor::CmdGroupCreate, ids[0], { ids[1] });
+    pushGroup (host, IntersectProcessor::CmdSetMemberGain, ids[1], {}, 0, -6.0f);
+    host.runUntil ([&] { return host.ui().sampleGroups.count == 1 && host.ui().sampleGroups.groups[0].gainDb[1] < -5.0f; },
+                   "the group");
+
+    const auto snapshot = host.processor.sampleData.getSnapshot();
+    const auto mix = GroupMix::at (host.ui().sampleGroups, snapshot->sessionSamples, snapshot->buffer, 1000);
+    require (mix.isActive() && mix.numTaps == 2, "the group's slot reads both members");
+    const float half = std::pow (10.0f, -6.0f / 20.0f);
+    for (int frame : { 100, 4321, 30000 })
+    {
+        const float expected = snapshot->buffer.getSample (0, frame) + half * snapshot->buffer.getSample (0, n + frame);
+        require (std::abs (mix.sample (0, frame) - expected) < 1.0e-5f, "the mix is the members at their levels");
+    }
+    require (! GroupMix::at (host.ui().sampleGroups, snapshot->sessionSamples, snapshot->buffer, n + 10).covers (n + 10),
+             "a hidden member's own frames are not a group slot");
+}
+
+void lazyChopPlaysTheGroupMix()
+{
+    TempDir temp;
+    const int n = (int) kRate;
+    const auto a = writeTone (temp.dir.getChildFile ("a.wav"), n, 109.0, 0.4f);
+    const auto b = writeTone (temp.dir.getChildFile ("b.wav"), n, 61.0, 0.4f);
+
+    Host host;
+    const auto ids = loadSamples (host, { a, b });
+    pushGroup (host, IntersectProcessor::CmdGroupCreate, ids[0], { ids[1] });
+    host.runUntil ([&] { return host.ui().sampleGroups.count == 1; }, "the group");
+    host.processor.selectedSessionSampleId.store (ids[0]);
+
+    host.push (IntersectProcessor::CmdLazyChopStart);
+    host.renderBlock();
+    const auto out = playNote (host, 60);   // the first note starts the preview from the group's start
+    require (correlation (out, 109.0, 512) > 0.5 && correlation (out, 61.0, 512) > 0.5,
+             "LAZY on a group plays its members' mix");
+    host.push (IntersectProcessor::CmdLazyChopStop);
+    host.renderBlock();
+}
+
+void duplicateSampleCopiesSettingsAndSlices()
+{
+    TempDir temp;
+    const int n = (int) kRate;
+    const auto a = writeTone (temp.dir.getChildFile ("a.wav"), n, 109.0, 0.4f);
+    const auto b = writeTone (temp.dir.getChildFile ("b.wav"), n, 61.0, 0.4f);
+
+    Host host;
+    const auto ids = loadSamples (host, { a, b });
+    host.push (IntersectProcessor::CmdCreateSlice, 0, n / 2);
+    host.push (IntersectProcessor::CmdCreateSlice, n / 2, n);
+    host.push (IntersectProcessor::CmdSetSampleParam, ids[0], IntersectProcessor::FieldBpm, 96.0f);
+    host.runUntil ([&] { return host.ui().numSlices == 2 && juce::exactlyEqual (sampleBpm (host.ui(), ids[0]), 96.0f); }, "the kit");
+
+    host.processor.duplicateSessionSampleAsync (ids[0]);
+    host.runUntil ([&] { return host.ui().numSessionSamples == 3 && host.ui().numSlices == 4; }, "the copy");
+    const int copy = host.ui().sessionSamples[2].sampleId;
+    require (slicesOf (host.ui(), copy) == 2 && juce::exactlyEqual (sampleBpm (host.ui(), copy), 96.0f),
+             "the copy has the sample's settings and a copy of its slices");
+    require (host.ui().slices[2].midiNote != host.ui().slices[0].midiNote, "the copies are on new keys");
+
+    // A group member's copy plays standalone with the group's slices and settings.
+    pushGroup (host, IntersectProcessor::CmdGroupCreate, ids[0], { ids[1] });
+    host.runUntil ([&] { return host.ui().sampleGroups.count == 1; }, "the group");
+    host.processor.duplicateSessionSampleAsync (ids[1]);
+    host.runUntil ([&] { return host.ui().numSessionSamples == 4; }, "the member's copy");
+    const int memberCopy = host.ui().sessionSamples[3].sampleId;
+    require (slicesOf (host.ui(), memberCopy) == 2 && juce::exactlyEqual (sampleBpm (host.ui(), memberCopy), 96.0f)
+                 && host.ui().sampleGroups.groups[0].numMembers == 2,
+             "a member's copy gets the group's slices and settings; the group is unchanged");
+}
+
+void stemsInGroupModeBecomeAGroup()
+{
+    TempDir temp;
+    const int n = (int) kRate;
+    const auto song = writeTone (temp.dir.getChildFile ("song.wav"), n, 97.0, 0.4f);
+    const auto vocals = writeTone (temp.dir.getChildFile ("vocals.wav"), n, 109.0, 0.4f);
+    const auto drums = writeTone (temp.dir.getChildFile ("drums.wav"), n + 3, 61.0, 0.4f);   // a few frames long
+
+    Host host;
+    const auto ids = loadSamples (host, { song });
+    host.push (IntersectProcessor::CmdCreateSlice, 0, n / 2);
+    host.push (IntersectProcessor::CmdCreateSlice, n / 2, n);
+    host.runUntil ([&] { return host.ui().numSlices == 2; }, "the source's slices");
+
+    host.processor.addStemsToKit (ids[0], { vocals, drums }, { "vocals", "drums" }, true);
+    host.runUntil ([&] { return host.ui().numSessionSamples == 3 && host.ui().sampleGroups.count == 1; }, "the stems");
+    const auto& group = host.ui().sampleGroups.groups[0];
+    const int anchor = host.ui().sessionSamples[1].sampleId;
+    require (group.numMembers == 2 && group.anchorId() == anchor, "the stems are a group, the first stem first");
+    require (slicesOf (host.ui(), anchor) == 2 && slicesOf (host.ui(), ids[0]) == 2,
+             "the group starts with a copy of the source's slices; the source keeps its own");
+    require (host.ui().sessionSamples[1].stemParentId == ids[0], "the stems remember their source");
+
+    host.processor.addStemsToKit (ids[0], { vocals }, { "vocals" }, true);
+    host.runUntil ([&] { return host.ui().numSessionSamples == 4; }, "one stem");
+    require (host.ui().sampleGroups.count == 1, "one stem in Group mode is a plain sample");
+}
+
 int main (int argc, char* argv[])
 {
     const juce::ScopedJuceInitialiser_GUI juceInit;
@@ -1084,6 +1245,12 @@ int main (int argc, char* argv[])
         run ("missing members: the rest still plays", missingMembersStillPlay);
         run ("member outputs get their own voices", memberOutputsGetTheirOwnVoices);
         run ("slices on one note don't cut each other", slicesOnOneNoteDoNotCutEachOther);
+        run ("the timeline hides group members", timelineHidesGroupMembers);
+        run ("removing a group removes its samples", removingAGroupRemovesItsSamples);
+        run ("the group mix reads the members", groupMixReadsTheMembers);
+        run ("LAZY plays a group's mix", lazyChopPlaysTheGroupMix);
+        run ("duplicate sample copies settings and slices", duplicateSampleCopiesSettingsAndSlices);
+        run ("stems in Group mode become a group", stemsInGroupModeBecomeAGroup);
     }
     else if (group == "stress")
     {

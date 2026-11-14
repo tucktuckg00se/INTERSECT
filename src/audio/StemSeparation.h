@@ -37,6 +37,7 @@ enum class StemExportMode
 {
     combine = 0,
     separate,
+    group,      // one file per stem, and the new stems become a sample group
 };
 
 enum class StemJobState
