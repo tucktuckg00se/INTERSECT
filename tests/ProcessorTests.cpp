@@ -408,6 +408,49 @@ void sliceFieldEditsSaveExpectedBytes()
     requireExpectedBytes (replacePath (host.save(), temp.dir.getFullPathName() + "/", "/kit/"), "slice-fields.bin", "slice field edits");
 }
 
+// The slice commands that create or reshape slices: set bounds, duplicate, split into equal parts
+// and chop at transients. Pinned byte for byte by expected/slice-commands.bin.
+void sliceCommandsSaveExpectedBytes()
+{
+    TempDir temp;
+    const auto wav = writeSine (temp.dir.getChildFile ("commands.wav"), (int) kRate * 4);
+
+    Host host;
+    host.loadKit (wav, 3);   // 0-1.33 s, 1.33-2.67 s, 2.67-4 s
+    const auto run = [&host] (IntersectProcessor::Command cmd, int expectedSlices, const char* what)
+    {
+        host.processor.pushCommand (cmd);
+        host.runUntil ([&] { return host.ui().numSlices == expectedSlices; }, what);
+    };
+    const auto make = [] (IntersectProcessor::CommandType type, int slice)
+    {
+        IntersectProcessor::Command cmd;
+        cmd.type = type;
+        cmd.sliceIdx = slice;
+        return cmd;
+    };
+
+    auto bounds = make (IntersectProcessor::CmdSetSliceBounds, -1);
+    bounds.intParam1 = 0;
+    bounds.intParam2 = 1000;
+    bounds.positions[0] = 50000;
+    bounds.numPositions = 1;
+    host.processor.pushCommand (bounds);
+    host.runUntil ([&] { return host.ui().slices[0].startSample == 1000 && host.ui().slices[0].endSample == 50000; }, "new bounds");
+
+    run (make (IntersectProcessor::CmdDuplicateSlice, 0), 4, "the duplicate");
+    auto split = make (IntersectProcessor::CmdSplitSlice, 1);
+    split.intParam1 = 3;
+    run (split, 6, "the split");
+    auto chop = make (IntersectProcessor::CmdTransientChop, 0);
+    chop.positions[0] = 10000;
+    chop.positions[1] = 30000;
+    chop.numPositions = 2;
+    run (chop, 8, "the transient chop");
+
+    requireExpectedBytes (replacePath (host.save(), temp.dir.getFullPathName() + "/", "/kit/"), "slice-commands.bin", "slice commands");
+}
+
 // SliceEdits on its own: values, lock bits (the sample's own value unlocks), clamping, and the
 // MIDI-map rebuild flag for note fields.
 void sliceEditsOnTheirOwn()
@@ -663,6 +706,7 @@ int main (int argc, char* argv[])
         run ("a rich kit saves the expected bytes", richKitSavesExpectedBytes);
         run ("slice field edits save the expected bytes", sliceFieldEditsSaveExpectedBytes);
         run ("slice edits on their own", sliceEditsOnTheirOwn);
+        run ("slice commands save the expected bytes", sliceCommandsSaveExpectedBytes);
         run ("a damaged state changes nothing", damagedStateChangesNothing);
         run ("a missing sample keeps its slices' loops", missingSampleKeepsLoopPoints);
         run ("notes play their slices, note-off ends them", notesPlayTheirSlices);
