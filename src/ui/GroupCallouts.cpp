@@ -424,13 +424,23 @@ public:
         heading = "SLICE " + juce::String (sliceIdx + 1);
 
         groupMix.setButtonText ("Group mix");
-        groupMix.setRadioGroupId (1);
+        groupMix.setTooltip ("On: the slice follows the group's mutes. Off: it keeps its own members.");
         groupMix.onClick = [this]
         {
-            if (own)
-                GroupUi::followGroupMix (processor, sliceIdx);
-            own = false;
-            played = group.unmutedMask();
+            if (groupMix.getToggleState())
+            {
+                if (own)
+                    GroupUi::followGroupMix (processor, sliceIdx);
+                own = false;
+                played = group.unmutedMask();
+            }
+            else if (! own)
+            {
+                // Its own members, starting from what it plays now (a slice plays at least one member).
+                played = group.unmutedMask() != 0 ? group.unmutedMask() : group.allMembersMask();
+                own = true;
+                GroupUi::setSliceMembers (processor, sliceIdx, played);
+            }
             refresh();
         };
         SettingsUi::styleButton (unmuteAll);
