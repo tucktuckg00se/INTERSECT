@@ -13,6 +13,8 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <utility>
+#include <vector>
 
 namespace
 {
@@ -129,6 +131,15 @@ struct Host
         cmd.sliceIdx = slice;
         cmd.intParam1 = field;
         cmd.floatParam1 = value;
+        processor.pushCommand (cmd);
+    }
+
+    void toggleLock (int slice, uint64_t lockBit)
+    {
+        IntersectProcessor::Command cmd;
+        cmd.type = IntersectProcessor::CmdToggleLock;
+        cmd.sliceIdx = slice;
+        cmd.lockBitParam = lockBit;
         processor.pushCommand (cmd);
     }
 
@@ -333,6 +344,67 @@ void richKitSavesExpectedBytes()
 
     const auto folder = temp.dir.getFullPathName() + "/";
     requireExpectedBytes (replacePath (host.save(), folder, "/kit/"), "rich-kit.bin", "rich kit");
+}
+
+// Every slice field set through CmdSetSliceParam, out-of-range values (clamping), a value equal to
+// the sample's own (which clears that field's lock) and lock toggles, pinned byte for byte by
+// expected/slice-fields.bin. Guards the slice-edit code when it moves.
+void sliceFieldEditsSaveExpectedBytes()
+{
+    TempDir temp;
+    const auto wav = writeSine (temp.dir.getChildFile ("fields.wav"), (int) kRate * 2);
+
+    Host host;
+    host.loadKit (wav, 3);
+    using P = IntersectProcessor;
+    const std::vector<std::pair<int, float>> everyField {
+        { P::FieldBpm, 140.0f }, { P::FieldPitch, 3.0f }, { P::FieldAlgorithm, 1.0f }, { P::FieldRepitchMode, 1.0f },
+        { P::FieldAttack, 0.05f }, { P::FieldDecay, 0.3f }, { P::FieldSustain, 0.6f }, { P::FieldRelease, 0.4f },
+        { P::FieldMuteGroup, 3.0f }, { P::FieldMidiNote, 50.0f }, { P::FieldStretchEnabled, 1.0f }, { P::FieldTonality, 400.0f },
+        { P::FieldFormant, 2.0f }, { P::FieldFormantComp, 1.0f }, { P::FieldGrainMode, 1.0f }, { P::FieldVolume, -6.0f },
+        { P::FieldReleaseTail, 1.0f }, { P::FieldReverse, 1.0f }, { P::FieldOutputBus, 2.0f }, { P::FieldLoop, 1.0f },
+        { P::FieldOneShot, 1.0f }, { P::FieldCentsDetune, 12.0f }, { P::FieldFilterEnabled, 1.0f }, { P::FieldFilterType, 2.0f },
+        { P::FieldFilterSlope, 1.0f }, { P::FieldFilterCutoff, 2000.0f }, { P::FieldFilterReso, 30.0f }, { P::FieldFilterDrive, 20.0f },
+        { P::FieldFilterKeyTrack, 50.0f }, { P::FieldFilterEnvAttack, 0.1f }, { P::FieldFilterEnvDecay, 0.2f },
+        { P::FieldFilterEnvSustain, 0.5f }, { P::FieldFilterEnvRelease, 0.3f }, { P::FieldFilterEnvAmount, 12.0f },
+        { P::FieldFilterAsym, 25.0f }, { P::FieldCrossfade, 10.0f }, { P::FieldLoopStart, 500.0f }, { P::FieldLoopLength, 4000.0f },
+        { P::FieldHighNote, 55.0f }, { P::FieldSliceRootNote, 52.0f },
+    };
+    int pushed = 0;
+    const auto settle = [&host, &pushed]
+    {
+        if (++pushed % 8 == 0)
+            host.renderBlock();   // keep well inside the command FIFO
+    };
+
+    for (const auto& [field, value] : everyField)
+    {
+        host.setSliceParam (0, field, value);
+        settle();
+    }
+
+    // Slice 1: out-of-range values, then a value equal to the sample's own (unlocks that field).
+    const float sampleBpm = host.ui().sampleParamsFor (host.ui().slices[1].sampleId).getField (P::FieldBpm);
+    for (const auto& [field, value] : std::vector<std::pair<int, float>> {
+             { P::FieldPitch, 99.0f }, { P::FieldVolume, 100.0f }, { P::FieldMuteGroup, 999.0f },
+             { P::FieldFilterCutoff, 1.0e6f }, { P::FieldMidiNote, 200.0f }, { P::FieldBpm, 180.0f }, { P::FieldBpm, sampleBpm } })
+    {
+        host.setSliceParam (1, field, value);
+        settle();
+    }
+
+    // Slice 2: locks switched on (copying the sample's value) and one switched on and off again.
+    for (const uint64_t bit : { (uint64_t) kLockPitch, (uint64_t) kLockAttack, (uint64_t) kLockFilterCutoff,
+                                (uint64_t) kLockVolume, (uint64_t) kLockVolume })
+    {
+        host.toggleLock (2, bit);
+        settle();
+    }
+
+    int blocks = 0;
+    host.runUntil ([&] { return ++blocks > 8; }, "the edits");
+    require (host.ui().slices[0].crossfadePct > 9.0f && (host.ui().slices[2].lockMask & kLockPitch) != 0, "the edits landed");
+    requireExpectedBytes (replacePath (host.save(), temp.dir.getFullPathName() + "/", "/kit/"), "slice-fields.bin", "slice field edits");
 }
 
 // A damaged state is rejected before anything is applied, and says why. (It used to reset the
@@ -555,6 +627,7 @@ int main (int argc, char* argv[])
         run ("state round trip", stateRoundTrips);
         run ("saved-state fixtures load", fixturesLoad);
         run ("a rich kit saves the expected bytes", richKitSavesExpectedBytes);
+        run ("slice field edits save the expected bytes", sliceFieldEditsSaveExpectedBytes);
         run ("a damaged state changes nothing", damagedStateChangesNothing);
         run ("a missing sample keeps its slices' loops", missingSampleKeepsLoopPoints);
         run ("notes play their slices, note-off ends them", notesPlayTheirSlices);
