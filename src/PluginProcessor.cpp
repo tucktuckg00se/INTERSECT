@@ -452,6 +452,7 @@ const IntersectProcessor::UiStatusMessage& IntersectProcessor::getUiStatusMessag
 void IntersectProcessor::timerCallback()
 {
     retiredObjects.clear();
+    startRequestedLoads();
 }
 
 void IntersectProcessor::retire (RetiredObjects&& objects) noexcept
@@ -823,9 +824,7 @@ void IntersectProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 
 void IntersectProcessor::releaseResources() {}
 
-int IntersectProcessor::requestSampleLoad (const std::vector<juce::File>& files, LoadKind kind,
-                                           const std::vector<int>* sampleIds,
-                                           const std::vector<int>* importSliceSampleIds)
+int IntersectProcessor::beginSampleLoad (LoadKind kind) noexcept
 {
     const int token = nextLoadToken.fetch_add (1, std::memory_order_relaxed) + 1;
     latestLoadToken.store (token, std::memory_order_release);
@@ -835,15 +834,61 @@ int IntersectProcessor::requestSampleLoad (const std::vector<juce::File>& files,
         clearPendingSliceTimelineRemap();
     else if (pendingSliceTimelineRemap.active.load (std::memory_order_acquire))
         pendingSliceTimelineRemap.expectedLoadToken.store (token, std::memory_order_release);
+    return token;
+}
 
-    // Keep only the latest completed decode payload.
-    auto* oldDecoded = completedLoadData.exchange (nullptr, std::memory_order_acq_rel);
-    delete oldDecoded;
-    auto* oldFailure = completedLoadFailure.exchange (nullptr, std::memory_order_acq_rel);
-    delete oldFailure;
+int IntersectProcessor::requestSampleLoad (const std::vector<juce::File>& files, LoadKind kind,
+                                           const std::vector<int>* sampleIds,
+                                           const std::vector<int>* importSliceSampleIds)
+{
+    const int token = beginSampleLoad (kind);
 
+    // Keep only the latest completed decode payload (processBlock also skips stale ones).
+    delete completedLoadData.exchange (nullptr, std::memory_order_acq_rel);
+    delete completedLoadFailure.exchange (nullptr, std::memory_order_acq_rel);
+
+    startSampleLoad (token, kind, files, sampleIds, importSliceSampleIds);
+    return token;
+}
+
+void IntersectProcessor::startRequestedLoads()
+{
+    LoadRequest request;
+    while (loadRequests.pop (request))
+    {
+        if (request.updatesPendingStateFile)
+        {
+            if (request.numSamples > 0)
+                setPendingStateFile (juce::File (request.paths[0]));
+            else
+                clearPendingStateFile();
+        }
+
+        // Nothing to load, or a newer load has started since the audio thread asked.
+        if (request.numSamples == 0 || request.token != latestLoadToken.load (std::memory_order_acquire))
+            continue;
+
+        std::vector<juce::File> files;
+        std::vector<int> sampleIds;
+        std::vector<int> importIds;
+        for (int i = 0; i < request.numSamples; ++i)
+        {
+            files.emplace_back (request.paths[(size_t) i]);
+            sampleIds.push_back (request.sampleIds[(size_t) i]);
+        }
+        for (int i = 0; i < request.numImportIds; ++i)
+            importIds.push_back (request.importIds[(size_t) i]);
+
+        startSampleLoad (request.token, request.kind, files, &sampleIds, &importIds);
+    }
+}
+
+void IntersectProcessor::startSampleLoad (int token, LoadKind kind, const std::vector<juce::File>& files,
+                                          const std::vector<int>* sampleIds,
+                                          const std::vector<int>* importSliceSampleIds)
+{
     if (files.empty())
-        return token;
+        return;
 
     const double sr = currentSampleRate > 0.0 ? currentSampleRate : 44100.0;
     std::vector<int> copiedSampleIds;
@@ -889,7 +934,6 @@ int IntersectProcessor::requestSampleLoad (const std::vector<juce::File>& files,
 
     fileLoadPool.addJob (new SampleDecodeJob (files, copiedSampleIds, std::move (copiedImportIds),
                                               sr, token, kind, onSuccess, onFailure), true);
-    return token;
 }
 
 void IntersectProcessor::loadFileAsync (const juce::File& file)
@@ -2079,17 +2123,17 @@ void IntersectProcessor::captureSnapshot()
 
 void IntersectProcessor::restoreSnapshot (const UndoManager::Snapshot& snap)
 {
-    std::vector<juce::File> files;
-    files.reserve ((size_t) snap.numSessionSamples);
-    std::vector<int> sampleIds;
-    sampleIds.reserve ((size_t) snap.numSessionSamples);
-    for (int i = 0; i < snap.numSessionSamples; ++i)
+    // Audio thread: the reload is started on the message thread (LoadRequest, timerCallback).
+    LoadRequest reload;
+    reload.updatesPendingStateFile = true;
+    for (int i = 0; i < juce::jmin (snap.numSessionSamples, SampleData::kMaxSessionSamples); ++i)
     {
         const auto& sample = snap.sessionSamples[(size_t) i];
         if (sample.filePath.isNotEmpty())
         {
-            files.emplace_back (sample.filePath);
-            sampleIds.push_back (sample.sampleId);
+            reload.paths[(size_t) reload.numSamples] = sample.filePath;
+            reload.sampleIds[(size_t) reload.numSamples] = sample.sampleId;
+            ++reload.numSamples;
         }
     }
 
@@ -2104,13 +2148,13 @@ void IntersectProcessor::restoreSnapshot (const UndoManager::Snapshot& snap)
     midiSelectsSlice.store (snap.midiSelectsSlice);
     snapToZeroCrossing.store (snap.snapToZeroCrossing);
 
-    if (! files.empty())
+    if (reload.numSamples > 0)
     {
         syncAllSliceAbsolutePositions();
         sliceManager.rebuildMidiMap();
         pendingStateRestoreToken.store (0, std::memory_order_release);
-        setPendingStateFile (files.front());
-        requestSampleLoad (files, LoadKindPreserveSlices, &sampleIds);
+        reload.kind = LoadKindPreserveSlices;
+        reload.token = beginSampleLoad (reload.kind);
     }
     else
     {
@@ -2119,9 +2163,9 @@ void IntersectProcessor::restoreSnapshot (const UndoManager::Snapshot& snap)
         unloaded.sample = sampleData.clear();
         retire (std::move (unloaded));
         updateSampleMissingState();
-        clearPendingStateFile();
         sliceManager.rebuildMidiMap();
     }
+    loadRequests.push (std::move (reload));   // also clears the pending state file when there is no sample
 
     uiSnapshotDirty.store (true, std::memory_order_release);
 
@@ -3164,7 +3208,7 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             std::unique_ptr<CompletedLoad> load (rawLoad);
             const auto& decoded = load->sample;
             const int currentToken = latestLoadToken.load (std::memory_order_acquire);
-            const auto currentLoadKind = (LoadKind) latestLoadKind.load (std::memory_order_acquire);
+            const auto currentLoadKind = load->kind;
             const bool isStateRestoreLoad = pendingStateRestoreToken.load (std::memory_order_acquire) == currentToken;
 
             const bool needsSampleRateRetry = decoded->filePath.isNotEmpty()
@@ -3172,19 +3216,30 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 && decoded->decodedSampleRate > 0.0
                 && std::abs (decoded->decodedSampleRate - currentSampleRate) > 0.01;
 
-            if (needsSampleRateRetry)
+            if (load->token != currentToken)
             {
-                std::vector<juce::File> files;
-                std::vector<int> sampleIds;
+                // A newer load started after this one finished decoding: drop it.
+            }
+            else if (needsSampleRateRetry)
+            {
+                // Decode again at the current rate; the message thread starts it (timerCallback).
+                LoadRequest retry;
+                retry.kind = currentLoadKind;
                 for (const auto& sample : decoded->sessionSamples)
                 {
-                    files.emplace_back (sample.filePath);
-                    sampleIds.push_back (sample.sampleId);
+                    if (retry.numSamples == SampleData::kMaxSessionSamples)
+                        break;
+                    retry.paths[(size_t) retry.numSamples] = sample.filePath;
+                    retry.sampleIds[(size_t) retry.numSamples] = sample.sampleId;
+                    ++retry.numSamples;
                 }
-                const int retryToken = requestSampleLoad (files, currentLoadKind, &sampleIds,
-                                                          &decoded->importSliceSampleIds);
+                for (const int id : decoded->importSliceSampleIds)
+                    if (retry.numImportIds < SampleData::kMaxSessionSamples)
+                        retry.importIds[(size_t) retry.numImportIds++] = id;
+                retry.token = beginSampleLoad (currentLoadKind);
                 if (isStateRestoreLoad)
-                    pendingStateRestoreToken.store (retryToken, std::memory_order_release);
+                    pendingStateRestoreToken.store (retry.token, std::memory_order_release);
+                loadRequests.push (std::move (retry));
             }
             else
             {

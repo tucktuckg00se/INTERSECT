@@ -517,9 +517,33 @@ private:
     void setMidiBoundaryPreviewState (int sliceIdx, int startSample, int endSample, bool isStart);
     void commitMidiSliceBoundaryGestureIfIdle (int blockSamples);
     void clearMidiEditGestureState();
+    // Message thread: starts a load and returns its token (beginSampleLoad + startSampleLoad).
     int requestSampleLoad (const std::vector<juce::File>& files, LoadKind kind,
                            const std::vector<int>* sampleIds = nullptr,
                            const std::vector<int>* importSliceSampleIds = nullptr);
+    // Any thread, atomics only: makes a load of `kind` the newest, so older loads' results are
+    // dropped, and returns its token.
+    int beginSampleLoad (LoadKind kind) noexcept;
+    // Message thread: queues the decode for a token from beginSampleLoad.
+    void startSampleLoad (int token, LoadKind kind, const std::vector<juce::File>& files,
+                          const std::vector<int>* sampleIds, const std::vector<int>* importSliceSampleIds);
+
+    // A reload the audio thread needs (undo/redo, a sample-rate retry). It calls beginSampleLoad
+    // itself; timerCallback starts the decode. Paths are ref-counted strings copied into cleared
+    // slots, so building a request allocates and frees nothing on the audio thread.
+    struct LoadRequest
+    {
+        int token = 0;
+        LoadKind kind = LoadKindPreserveSlices;
+        bool updatesPendingStateFile = false;   // undo/redo: the first path (or none) is the pending state file
+        int numSamples = 0;
+        std::array<int, SampleData::kMaxSessionSamples> sampleIds {};
+        std::array<juce::String, SampleData::kMaxSessionSamples> paths;
+        int numImportIds = 0;
+        std::array<int, SampleData::kMaxSessionSamples> importIds {};
+    };
+    SpscQueue<LoadRequest, 32> loadRequests;   // roomy: stale requests are skipped, a dropped one would lose a reload
+    void startRequestedLoads();   // message thread
     void clearVoicesBeforeSampleSwap();
     void clampSlicesToSampleBounds();
     void deleteSessionSample (int sampleId);
