@@ -8,6 +8,14 @@
 #include "Constants.h"
 #include "RtText.h"
 #include "audio/SampleData.h"
+
+// RealtimeSanitizer builds (-DINTERSECT_SANITIZE=realtime, Clang 20+) mark processBlock as
+// nonblocking, so RTSan reports any allocation, free or lock reached from it at run time.
+#if defined (INTERSECT_RTSAN)
+ #define INTERSECT_NONBLOCKING [[clang::nonblocking]]
+#else
+ #define INTERSECT_NONBLOCKING
+#endif
 #include "audio/SliceManager.h"
 #include "audio/VoicePool.h"
 #include "audio/LazyChopEngine.h"
@@ -36,7 +44,7 @@ public:
     using juce::AudioProcessor::processBlock;
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
     void releaseResources() override;
-    void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+    void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) INTERSECT_NONBLOCKING override;
 
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }

@@ -1,6 +1,6 @@
 // Processor-level tests: the real IntersectProcessor, driven the way a host and the editor drive it.
 //
-//   IntersectProcessorTests state    save/restore round trip + every saved-state fixture
+//   IntersectProcessorTests state    save/restore round trip, every saved-state fixture, kit edits while playing
 //   IntersectProcessorTests stress   restores (preset/project loads) while audio is rendering
 //
 // The main thread is the message thread. Fixtures live in tests/fixtures (see extract_state.py).
@@ -241,6 +241,45 @@ void fixturesLoad()
     }
 }
 
+// Adding, removing, undoing and redoing samples while voices play. RealtimeSanitizer builds
+// (-DINTERSECT_SANITIZE=realtime) also check that none of it allocates, frees or locks in processBlock.
+void kitEditsWhilePlaying()
+{
+    TempDir temp;
+    const auto first = writeSine (temp.dir.getChildFile ("first.wav"), (int) kRate);
+    const auto second = writeSine (temp.dir.getChildFile ("second.wav"), (int) kRate / 2);
+
+    Host host;
+    host.loadKit (first, 2);
+    const auto playNotes = [&host]
+    {
+        for (int note = 36; note < 38; ++note)
+            host.midi.addEvent (juce::MidiMessage::noteOn (1, note, 0.8f), 0);
+    };
+
+    playNotes();
+    host.processor.addFilesToKit ({ second });
+    host.runUntil ([&] { return host.ui().numSessionSamples == 2; }, "the second sample to be added");
+    const int secondId = host.ui().sessionSamples[1].sampleId;
+    require (host.ui().sessionSamples[1].fileName.toString() == "second.wav", "added at the end");
+
+    playNotes();
+    host.processor.deleteSessionSampleAsync (secondId);
+    host.runUntil ([&] { return host.ui().numSessionSamples == 1; }, "the second sample to be removed");
+    require (host.ui().numSlices == 2, "the first sample keeps its slices");
+    require (host.ui().sessionSamples[0].fileName.toString() == "first.wav", "the first sample stays");
+
+    playNotes();
+    host.push (IntersectProcessor::CmdUndo);
+    host.runUntil ([&] { return host.ui().numSessionSamples == 2; }, "undo to bring the sample back");
+    require (host.ui().sessionSamples[1].sampleId == secondId, "undo brings back the same sample");
+
+    playNotes();
+    host.push (IntersectProcessor::CmdRedo);
+    host.runUntil ([&] { return host.ui().numSessionSamples == 1; }, "redo to remove it again");
+    require (host.ui().numSlices == 2, "redo keeps the first sample's slices");
+}
+
 // A host restore or preset load while audio plays must not race the audio thread. The audio
 // thread does what JUCE's plug-in wrappers do around each block: take the callback lock and
 // skip processBlock while suspended. Run under TSan to see races; plain builds only catch crashes.
@@ -315,6 +354,7 @@ int main (int argc, char* argv[])
     {
         run ("state round trip", stateRoundTrips);
         run ("saved-state fixtures load", fixturesLoad);
+        run ("add, remove, undo and redo samples while playing", kitEditsWhilePlaying);
     }
     else if (group == "stress")
     {

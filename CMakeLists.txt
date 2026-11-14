@@ -35,6 +35,12 @@ set(INTERSECT_SANITIZE "" CACHE STRING "Sanitizers for a test build, e.g. addres
 if(INTERSECT_SANITIZE)
     add_compile_options(-fsanitize=${INTERSECT_SANITIZE} -fno-omit-frame-pointer)
     add_link_options(-fsanitize=${INTERSECT_SANITIZE})
+    # realtime (Clang 20+): processBlock becomes [[clang::nonblocking]] (see PluginProcessor.h).
+    # The compile-time effect analysis would flag every JUCE call, so only the run-time check is on.
+    if(INTERSECT_SANITIZE MATCHES "realtime")
+        add_compile_definitions(INTERSECT_RTSAN=1)
+        add_compile_options(-Wno-function-effects -Wno-perf-constraint-implies-noexcept)
+    endif()
 endif()
 
 set(INTERSECT_ORT_VERSION "1.24.2" CACHE STRING "ONNX Runtime version the plugin is compiled against")

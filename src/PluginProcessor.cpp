@@ -3099,7 +3099,7 @@ static inline float sanitiseSample (float x)
 }
 
 void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
-                                            juce::MidiBuffer& midi)
+                                            juce::MidiBuffer& midi) INTERSECT_NONBLOCKING
 {
     juce::ScopedNoDenormals noDenormals;
     lastProcessBlockMs.store (juce::Time::getMillisecondCounter(), std::memory_order_relaxed);
