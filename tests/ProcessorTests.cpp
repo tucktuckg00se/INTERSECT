@@ -100,6 +100,16 @@ struct Host
         processor.pushCommand (cmd);
     }
 
+    void setSliceParam (int slice, int field, float value)
+    {
+        IntersectProcessor::Command cmd;
+        cmd.type = IntersectProcessor::CmdSetSliceParam;
+        cmd.sliceIdx = slice;
+        cmd.intParam1 = field;
+        cmd.floatParam1 = value;
+        processor.pushCommand (cmd);
+    }
+
     juce::MemoryBlock save()
     {
         juce::MemoryBlock block;
@@ -286,19 +296,10 @@ void richKitSavesExpectedBytes()
     host.runUntil ([&] { return host.ui().numSessionSamples == 2; }, "the second sample");
     const int secondId = host.ui().sessionSamples[1].sampleId;
 
-    const auto setSliceParam = [&host] (int slice, int field, float value)
-    {
-        IntersectProcessor::Command cmd;
-        cmd.type = IntersectProcessor::CmdSetSliceParam;
-        cmd.sliceIdx = slice;
-        cmd.intParam1 = field;
-        cmd.floatParam1 = value;
-        host.processor.pushCommand (cmd);
-    };
     host.push (IntersectProcessor::CmdSetSampleParam, firstId, IntersectProcessor::FieldBpm, 96.0f);
     host.push (IntersectProcessor::CmdSetSampleParam, secondId, IntersectProcessor::FieldPitch, -5.0f);
-    setSliceParam (0, IntersectProcessor::FieldPitch, 7.0f);
-    setSliceParam (2, IntersectProcessor::FieldBpm, 140.0f);
+    host.setSliceParam (0, IntersectProcessor::FieldPitch, 7.0f);
+    host.setSliceParam (2, IntersectProcessor::FieldBpm, 140.0f);
     host.push (IntersectProcessor::CmdSetRootNote, 48);
     host.push (IntersectProcessor::CmdSelectSlice, 1);
     host.runUntil ([&]
@@ -310,6 +311,43 @@ void richKitSavesExpectedBytes()
 
     const auto folder = temp.dir.getFullPathName() + "/";
     requireExpectedBytes (replacePath (host.save(), folder, "/kit/"), "rich-kit.bin", "rich kit");
+}
+
+// A slice's loop survives saving and reopening a project whose sample is missing. The missing
+// file comes back as a 2 s placeholder, so a slice past its end is parked at a stub of absolute
+// bounds; the next load used to clamp the loop to that stub, losing it even after a relink.
+void missingSampleKeepsLoopPoints()
+{
+    TempDir temp;
+    const auto wav = writeSine (temp.dir.getChildFile ("long.wav"), (int) kRate * 5);
+
+    Host host;
+    host.processor.loadFilesAsync ({ wav }, false);
+    host.runUntil ([&] { return host.ui().sampleLoaded; }, "the sample to load");
+    host.push (IntersectProcessor::CmdCreateSlice, (int) kRate * 3, (int) kRate * 4);
+    host.runUntil ([&] { return host.ui().numSlices == 1; }, "the slice");
+    host.setSliceParam (0, IntersectProcessor::FieldLoopStart, 1000.0f);
+    host.setSliceParam (0, IntersectProcessor::FieldLoopLength, 2000.0f);
+    host.runUntil ([&] { return host.ui().slices[0].loopStartOffset == 1000 && host.ui().slices[0].loopLength == 2000; },
+                   "the loop edit");
+    const auto saved = host.save();
+    require (wav.deleteFile(), "could not delete the sample");
+
+    const auto reopen = [] (const juce::MemoryBlock& state, Host& into)
+    {
+        into.restore (state);
+        into.runUntil ([&] { return into.ui().numMissingSessionSamples == 1 && into.ui().numSlices == 1; },
+                       "the project with its missing sample");
+    };
+    Host missing;
+    reopen (saved, missing);
+    require (missing.ui().slices[0].parked, "the slice past the placeholder is parked");
+
+    Host reopened;
+    reopen (missing.save(), reopened);
+    require (reopened.ui().slices[0].loopStartOffset == 1000 && reopened.ui().slices[0].loopLength == 2000,
+             "the loop is kept (got " + std::to_string (reopened.ui().slices[0].loopStartOffset) + "+"
+                 + std::to_string (reopened.ui().slices[0].loopLength) + ")");
 }
 
 // Adding, removing, undoing and redoing samples while voices play. RealtimeSanitizer builds
@@ -426,6 +464,7 @@ int main (int argc, char* argv[])
         run ("state round trip", stateRoundTrips);
         run ("saved-state fixtures load", fixturesLoad);
         run ("a rich kit saves the expected bytes", richKitSavesExpectedBytes);
+        run ("a missing sample keeps its slices' loops", missingSampleKeepsLoopPoints);
         run ("add, remove, undo and redo samples while playing", kitEditsWhilePlaying);
     }
     else if (group == "stress")

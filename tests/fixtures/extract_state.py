@@ -53,12 +53,18 @@ def from_reaper(data, index):
         sys.exit('no INTERSECT state found in this chunk')
     start = xml - 4
     # JUCE's VST3 wrapper appends: int64 0, private ValueTree, int64 tree size, "JUCEPrivateData".
+    # The tree's own type name is also "JUCEPrivateData", so only accept an occurrence whose
+    # surrounding bytes match that layout (a size that points back to an int64 0 before the tree).
     ident = raw.find(JUCE_PRIVATE_ID, start)
-    if ident < 0:
-        sys.exit('no JUCE private-data trailer found')
-    tree_size, = struct.unpack_from('<q', raw, ident - 8)
-    end = ident - 8 - tree_size - 8
-    return raw[start:end]
+    while ident >= 0:
+        tree_size, = struct.unpack_from('<q', raw, ident - 8)
+        tree_start = ident - 8 - tree_size
+        if tree_size > 0 and tree_start - 8 >= start \
+                and struct.unpack_from('<q', raw, tree_start - 8)[0] == 0 \
+                and raw[tree_start:tree_start + len(JUCE_PRIVATE_ID)] == JUCE_PRIVATE_ID:
+            return raw[start:tree_start - 8]
+        ident = raw.find(JUCE_PRIVATE_ID, ident + 1)
+    sys.exit('no JUCE private-data trailer found')
 
 
 def neutralise_paths(blob):
