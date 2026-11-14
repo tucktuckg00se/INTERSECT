@@ -37,6 +37,19 @@ jobs:
       - name: Build
         run: cmake --build build --config Release --target Intersect_All
 
+      # pluginval at strictness 5 (no GUI tests): host-compatibility checks (state, buses,
+      # parameters, threading) on what this job ships. pluginval has native builds for Windows x64,
+      # Linux x64 and macOS only, so the Windows and Linux ARM64 jobs don't run it.
+      - name: pluginval
+        run: |
+          ART_ROOT=build/Intersect_artefacts
+          if [ -d "$ART_ROOT/Release" ]; then
+            ART_ROOT="$ART_ROOT/Release"
+          fi
+          curl -sSfL -o pluginval.zip https://github.com/Tracktion/pluginval/releases/download/v1.0.4/pluginval_Windows.zip
+          7z x -y -opluginval pluginval.zip > /dev/null
+          ./pluginval/pluginval.exe --strictness-level 5 --skip-gui-tests --validate-in-process --timeout-ms 600000 --validate "$ART_ROOT/VST3/INTERSECT.vst3"
+
       - name: Package
         run: |
           ART_ROOT=build/Intersect_artefacts
@@ -140,6 +153,20 @@ jobs:
           fi
           bash .github/scripts/audit-linux-abi.sh "$ART_ROOT"
 
+      # pluginval at strictness 5 (no GUI tests): host-compatibility checks (state, buses,
+      # parameters, threading) on what this job ships. pluginval has native builds for Windows x64,
+      # Linux x64 and macOS only, so the Windows and Linux ARM64 jobs don't run it.
+      - name: pluginval
+        shell: bash
+        run: |
+          ART_ROOT=build/Intersect_artefacts
+          if [ -d "$ART_ROOT/Release" ]; then
+            ART_ROOT="$ART_ROOT/Release"
+          fi
+          curl -sSfL -o pluginval.zip https://github.com/Tracktion/pluginval/releases/download/v1.0.4/pluginval_Linux.zip
+          unzip -q -o pluginval.zip -d pluginval
+          ./pluginval/pluginval --strictness-level 5 --skip-gui-tests --validate-in-process --timeout-ms 600000 --validate "$ART_ROOT/VST3/INTERSECT.vst3"
+
       - name: Package
         run: |
           ART_ROOT=build/Intersect_artefacts
@@ -242,6 +269,25 @@ jobs:
           codesign --force --deep --sign - "$ART_ROOT/VST3/INTERSECT.vst3"
           codesign --force --deep --sign - "$ART_ROOT/Standalone/INTERSECT.app"
 
+      # pluginval at strictness 5 (no GUI tests): host-compatibility checks (state, buses,
+      # parameters, threading) on what this job ships. pluginval has native builds for Windows x64,
+      # Linux x64 and macOS only, so the Windows and Linux ARM64 jobs don't run it.
+      - name: pluginval
+        run: |
+          ART_ROOT=build/Intersect_artefacts
+          if [ -d "$ART_ROOT/Release" ]; then
+            ART_ROOT="$ART_ROOT/Release"
+          fi
+          curl -sSfL -o pluginval.zip https://github.com/Tracktion/pluginval/releases/download/v1.0.4/pluginval_macOS.zip
+          unzip -q -o pluginval.zip -d pluginval
+          PLUGINVAL=./pluginval/pluginval.app/Contents/MacOS/pluginval
+          "$PLUGINVAL" --strictness-level 5 --skip-gui-tests --validate-in-process --timeout-ms 600000 --validate "$ART_ROOT/VST3/INTERSECT.vst3"
+          # Audio Units are found through the system registry: install the component, then validate it.
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R "$ART_ROOT/AU/INTERSECT.component" ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar 2>/dev/null || true
+          "$PLUGINVAL" --strictness-level 5 --skip-gui-tests --validate-in-process --timeout-ms 600000 --validate ~/Library/Audio/Plug-Ins/Components/INTERSECT.component
+
       - name: Package
         run: |
           ART_ROOT=build/Intersect_artefacts
@@ -290,6 +336,25 @@ jobs:
           codesign --force --deep --sign - "$ART_ROOT/AU/INTERSECT.component"
           codesign --force --deep --sign - "$ART_ROOT/VST3/INTERSECT.vst3"
           codesign --force --deep --sign - "$ART_ROOT/Standalone/INTERSECT.app"
+
+      # pluginval at strictness 5 (no GUI tests): host-compatibility checks (state, buses,
+      # parameters, threading) on what this job ships. pluginval has native builds for Windows x64,
+      # Linux x64 and macOS only, so the Windows and Linux ARM64 jobs don't run it.
+      - name: pluginval
+        run: |
+          ART_ROOT=build/Intersect_artefacts
+          if [ -d "$ART_ROOT/Release" ]; then
+            ART_ROOT="$ART_ROOT/Release"
+          fi
+          curl -sSfL -o pluginval.zip https://github.com/Tracktion/pluginval/releases/download/v1.0.4/pluginval_macOS.zip
+          unzip -q -o pluginval.zip -d pluginval
+          PLUGINVAL=./pluginval/pluginval.app/Contents/MacOS/pluginval
+          "$PLUGINVAL" --strictness-level 5 --skip-gui-tests --validate-in-process --timeout-ms 600000 --validate "$ART_ROOT/VST3/INTERSECT.vst3"
+          # Audio Units are found through the system registry: install the component, then validate it.
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R "$ART_ROOT/AU/INTERSECT.component" ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar 2>/dev/null || true
+          "$PLUGINVAL" --strictness-level 5 --skip-gui-tests --validate-in-process --timeout-ms 600000 --validate ~/Library/Audio/Plug-Ins/Components/INTERSECT.component
 
       - name: Package
         run: |
