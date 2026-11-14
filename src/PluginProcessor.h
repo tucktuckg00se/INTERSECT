@@ -504,6 +504,11 @@ private:
 
     void drainCommands();
     void handleCommand (const Command& cmd);
+    // handleCommand's larger cases (audio thread, ProcessorCommands.cpp).
+    void setSliceBounds (const Command& cmd);
+    void duplicateSlice (const Command& cmd);
+    void splitSlice (const Command& cmd);
+    void transientChop (const Command& cmd);
 
     // MIDI edit settings sampled once per block so every event in the block sees one value
     struct MidiEditBlockSettings

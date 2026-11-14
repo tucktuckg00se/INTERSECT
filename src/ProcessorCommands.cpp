@@ -548,212 +548,20 @@ void IntersectProcessor::handleCommand (const Command& cmd)
         }
 
         case CmdSetSliceBounds:
-        {
-            int idx = cmd.intParam1;
-            if (idx >= 0 && idx < sliceManager.getNumSlices())
-            {
-                const int maxLen = sampleData.getNumFrames();
-                if (maxLen <= 1)
-                    break;
-
-                auto& s = sliceManager.getSlice (idx);
-                int requestedEnd = (cmd.numPositions > 0) ? cmd.positions[0] : (int) cmd.floatParam1;
-                int start = juce::jmin (cmd.intParam2, requestedEnd);
-                int end = juce::jmax (cmd.intParam2, requestedEnd);
-                start = juce::jlimit (0, juce::jmax (0, maxLen - 1), start);
-                end = juce::jlimit (start + 1, juce::jmax (start + 1, maxLen), end);
-                if (end - start < kMinSliceLengthSamples)
-                    end = juce::jmin (maxLen, start + kMinSliceLengthSamples);
-                s.startSample = start;
-                s.endSample = end;
-                syncSliceOwnershipFromAbsolute (s);
-                // Clamp loop fields to new slice length
-                const int newLen = end - start;
-                s.loopStartOffset = juce::jlimit (0, juce::jmax (0, newLen - 1), s.loopStartOffset);
-                if (s.loopLength > 0)
-                    s.loopLength = juce::jlimit (1, juce::jmax (1, newLen - s.loopStartOffset), s.loopLength);
-                sliceManager.rebuildMidiMap();
-            }
+            setSliceBounds (cmd);
             break;
-        }
 
         case CmdDuplicateSlice:
-        {
-            int sel = cmd.sliceIdx >= 0 ? cmd.sliceIdx : sliceManager.selectedSlice.load();
-            if (sel >= 0 && sel < sliceManager.getNumSlices())
-            {
-                bool wasAtLimit = sliceManager.nextMidiNote() == kMaxMidiNote
-                                  && ! sliceManager.midiNoteToSlices (kMaxMidiNote).empty();
-                const auto& src = sliceManager.getSlice (sel);
-                int newIdx = sliceManager.createSlice (src.startSample, src.endSample);
-                if (newIdx >= 0)
-                {
-                    auto& dst = sliceManager.getSlice (newIdx);
-                    int savedNote = dst.midiNote;  // assigned by createSlice
-                    dst = src;                     // copy all params, lockMask, colour
-                    dst.midiNote      = savedNote; // restore unique MIDI note
-                    dst.highNote      = savedNote; // reset to single-note
-                    dst.sliceRootNote = savedNote;
-                    if (cmd.intParam1 >= 0)        // ctrl-drag: use explicit position
-                    {
-                        dst.startSample = cmd.intParam1;
-                        dst.endSample   = cmd.intParam2;
-                        syncSliceOwnershipFromAbsolute (dst);
-                        // Clamp loop fields to new slice length
-                        const int dLen = dst.endSample - dst.startSample;
-                        dst.loopStartOffset = juce::jlimit (0, juce::jmax (0, dLen - 1), dst.loopStartOffset);
-                        if (dst.loopLength > 0)
-                            dst.loopLength = juce::jlimit (1, juce::jmax (1, dLen - dst.loopStartOffset), dst.loopLength);
-                    }
-                    else
-                    {
-                        dst.sampleId = src.sampleId;
-                        dst.startInSample = src.startInSample;
-                        dst.endInSample = src.endInSample;
-                    }
-                    // else (intParam1 == -1): inherit src.startSample/endSample as-is
-                    sliceManager.selectedSlice = newIdx;
-                    selectedSessionSampleId.store (dst.sampleId, std::memory_order_relaxed);
-                    if (wasAtLimit)
-                        setUiStatusMessage ("MIDI note limit - slice " + juce::String (newIdx + 1)
-                            + " has no unique MIDI note",
-                            true, UiStatusMessage::Source::midiLimit);
-                }
-            }
+            duplicateSlice (cmd);
             break;
-        }
 
         case CmdSplitSlice:
-        {
-            int sel = cmd.sliceIdx >= 0 ? cmd.sliceIdx : sliceManager.selectedSlice.load();
-            if (sel >= 0 && sel < sliceManager.getNumSlices())
-            {
-                Slice srcCopy = sliceManager.getSlice (sel);
-                int startS = srcCopy.startSample;
-                int endS = srcCopy.endSample;
-                int count = juce::jlimit (2, 128, cmd.intParam1);
-                int len = endS - startS;
-                // Notes for sub-slices start one past the highest note any existing
-                // slice has, so no existing note is disturbed.
-                int baseNote = sliceManager.nextMidiNote();
-
-                sliceManager.deleteSlice (sel);
-
-                bool doSnap = snapToZeroCrossing.load() && sampleData.isLoaded();
-                int firstNew = -1;
-                for (int i = 0; i < count; ++i)
-                {
-                    int s = startS + i * len / count;
-                    int e = startS + (i + 1) * len / count;
-                    if (doSnap)
-                    {
-                        if (i > 0)
-                            s = AudioAnalysis::findNearestZeroCrossing (sampleData.getBuffer(), s);
-                        if (i < count - 1)
-                            e = AudioAnalysis::findNearestZeroCrossing (sampleData.getBuffer(), e);
-                    }
-                    if (e - s < kMinSliceLengthSamples) e = s + kMinSliceLengthSamples;
-                    int idx = sliceManager.createSlice (s, e);
-                    if (idx >= 0)
-                    {
-                        auto& dst = sliceManager.getSlice (idx);
-                        juce::Colour savedColour = dst.colour;
-                        dst = srcCopy;
-                        dst.startSample = s;
-                        dst.endSample   = e;
-                        syncSliceOwnershipFromAbsolute (dst);
-                        dst.midiNote      = juce::jlimit (0, kMaxMidiNote, baseNote + i);
-                        dst.highNote      = dst.midiNote;
-                        dst.sliceRootNote = dst.midiNote;
-                        dst.colour      = savedColour;
-                        dst.active      = true;
-                        dst.loopStartOffset = 0;
-                        dst.loopLength      = 0;
-                    }
-                    if (i == 0) firstNew = idx;
-                }
-
-                sliceManager.rebuildMidiMap();
-                if (firstNew >= 0)
-                {
-                    sliceManager.selectedSlice = firstNew;
-                    selectedSessionSampleId.store (sliceManager.getSlice (firstNew).sampleId, std::memory_order_relaxed);
-                }
-                if (baseNote + count - 1 > kMaxMidiNote)
-                {
-                    int firstOverflow = firstNew + (kMaxMidiNote - baseNote + 1);
-                    setUiStatusMessage ("MIDI note limit - slices " + juce::String (firstOverflow + 1)
-                        + "+ have no unique MIDI note",
-                        true, UiStatusMessage::Source::midiLimit);
-                }
-            }
+            splitSlice (cmd);
             break;
-        }
 
         case CmdTransientChop:
-        {
-            int sel = cmd.sliceIdx >= 0 ? cmd.sliceIdx : sliceManager.selectedSlice.load();
-            if (sel >= 0 && sel < sliceManager.getNumSlices() && cmd.numPositions > 0)
-            {
-                Slice srcCopy = sliceManager.getSlice (sel);
-                int startS = srcCopy.startSample;
-                int endS = srcCopy.endSample;
-                int baseNote = sliceManager.nextMidiNote();
-
-                // Build fixed-size boundary list: [startS, ...positions..., endS]
-                int bounds[SliceManager::kMaxSlices + 2];
-                int numBounds = 0;
-                bounds[numBounds++] = startS;
-                for (int bi = 0; bi < cmd.numPositions; ++bi)
-                    bounds[numBounds++] = cmd.positions[(size_t) bi];
-                bounds[numBounds++] = endS;
-
-                sliceManager.deleteSlice (sel);
-
-                int firstNew = -1;
-                int subIdx = 0;
-                for (int i = 0; i + 1 < numBounds; ++i)
-                {
-                    int s = bounds[i];
-                    int e = bounds[i + 1];
-                    if (e - s < kMinSliceLengthSamples) continue;
-                    int idx = sliceManager.createSlice (s, e);
-                    if (idx >= 0)
-                    {
-                        auto& dst = sliceManager.getSlice (idx);
-                        juce::Colour savedColour = dst.colour;
-                        dst = srcCopy;
-                        dst.startSample = s;
-                        dst.endSample   = e;
-                        syncSliceOwnershipFromAbsolute (dst);
-                        dst.midiNote      = juce::jlimit (0, kMaxMidiNote, baseNote + subIdx);
-                        dst.highNote      = dst.midiNote;
-                        dst.sliceRootNote = dst.midiNote;
-                        dst.colour      = savedColour;
-                        dst.active      = true;
-                        dst.loopStartOffset = 0;
-                        dst.loopLength      = 0;
-                    }
-                    if (firstNew < 0) firstNew = idx;
-                    ++subIdx;
-                }
-
-                sliceManager.rebuildMidiMap();
-                if (firstNew >= 0)
-                {
-                    sliceManager.selectedSlice = firstNew;
-                    selectedSessionSampleId.store (sliceManager.getSlice (firstNew).sampleId, std::memory_order_relaxed);
-                }
-                if (baseNote + subIdx - 1 > kMaxMidiNote)
-                {
-                    int firstOverflow = firstNew + (kMaxMidiNote - baseNote + 1);
-                    setUiStatusMessage ("MIDI note limit - slices " + juce::String (firstOverflow + 1)
-                        + "+ have no unique MIDI note",
-                        true, UiStatusMessage::Source::midiLimit);
-                }
-            }
+            transientChop (cmd);
             break;
-        }
 
         case CmdRepackMidi:
         {
@@ -815,5 +623,209 @@ void IntersectProcessor::handleCommand (const Command& cmd)
 
         case CmdNone:
             break;
+    }
+}
+
+void IntersectProcessor::setSliceBounds (const Command& cmd)
+{
+    int idx = cmd.intParam1;
+    if (idx >= 0 && idx < sliceManager.getNumSlices())
+    {
+        const int maxLen = sampleData.getNumFrames();
+        if (maxLen <= 1)
+            return;
+
+        auto& s = sliceManager.getSlice (idx);
+        int requestedEnd = (cmd.numPositions > 0) ? cmd.positions[0] : (int) cmd.floatParam1;
+        int start = juce::jmin (cmd.intParam2, requestedEnd);
+        int end = juce::jmax (cmd.intParam2, requestedEnd);
+        start = juce::jlimit (0, juce::jmax (0, maxLen - 1), start);
+        end = juce::jlimit (start + 1, juce::jmax (start + 1, maxLen), end);
+        if (end - start < kMinSliceLengthSamples)
+            end = juce::jmin (maxLen, start + kMinSliceLengthSamples);
+        s.startSample = start;
+        s.endSample = end;
+        syncSliceOwnershipFromAbsolute (s);
+        // Clamp loop fields to new slice length
+        const int newLen = end - start;
+        s.loopStartOffset = juce::jlimit (0, juce::jmax (0, newLen - 1), s.loopStartOffset);
+        if (s.loopLength > 0)
+            s.loopLength = juce::jlimit (1, juce::jmax (1, newLen - s.loopStartOffset), s.loopLength);
+        sliceManager.rebuildMidiMap();
+    }
+}
+
+void IntersectProcessor::duplicateSlice (const Command& cmd)
+{
+    int sel = cmd.sliceIdx >= 0 ? cmd.sliceIdx : sliceManager.selectedSlice.load();
+    if (sel >= 0 && sel < sliceManager.getNumSlices())
+    {
+        bool wasAtLimit = sliceManager.nextMidiNote() == kMaxMidiNote
+                          && ! sliceManager.midiNoteToSlices (kMaxMidiNote).empty();
+        const auto& src = sliceManager.getSlice (sel);
+        int newIdx = sliceManager.createSlice (src.startSample, src.endSample);
+        if (newIdx >= 0)
+        {
+            auto& dst = sliceManager.getSlice (newIdx);
+            int savedNote = dst.midiNote;  // assigned by createSlice
+            dst = src;                     // copy all params, lockMask, colour
+            dst.midiNote      = savedNote; // restore unique MIDI note
+            dst.highNote      = savedNote; // reset to single-note
+            dst.sliceRootNote = savedNote;
+            if (cmd.intParam1 >= 0)        // ctrl-drag: use explicit position
+            {
+                dst.startSample = cmd.intParam1;
+                dst.endSample   = cmd.intParam2;
+                syncSliceOwnershipFromAbsolute (dst);
+                // Clamp loop fields to new slice length
+                const int dLen = dst.endSample - dst.startSample;
+                dst.loopStartOffset = juce::jlimit (0, juce::jmax (0, dLen - 1), dst.loopStartOffset);
+                if (dst.loopLength > 0)
+                    dst.loopLength = juce::jlimit (1, juce::jmax (1, dLen - dst.loopStartOffset), dst.loopLength);
+            }
+            else
+            {
+                dst.sampleId = src.sampleId;
+                dst.startInSample = src.startInSample;
+                dst.endInSample = src.endInSample;
+            }
+            // else (intParam1 == -1): inherit src.startSample/endSample as-is
+            sliceManager.selectedSlice = newIdx;
+            selectedSessionSampleId.store (dst.sampleId, std::memory_order_relaxed);
+            if (wasAtLimit)
+                setUiStatusMessage ("MIDI note limit - slice " + juce::String (newIdx + 1)
+                    + " has no unique MIDI note",
+                    true, UiStatusMessage::Source::midiLimit);
+        }
+    }
+}
+
+void IntersectProcessor::splitSlice (const Command& cmd)
+{
+    int sel = cmd.sliceIdx >= 0 ? cmd.sliceIdx : sliceManager.selectedSlice.load();
+    if (sel >= 0 && sel < sliceManager.getNumSlices())
+    {
+        Slice srcCopy = sliceManager.getSlice (sel);
+        int startS = srcCopy.startSample;
+        int endS = srcCopy.endSample;
+        int count = juce::jlimit (2, 128, cmd.intParam1);
+        int len = endS - startS;
+        // Notes for sub-slices start one past the highest note any existing
+        // slice has, so no existing note is disturbed.
+        int baseNote = sliceManager.nextMidiNote();
+
+        sliceManager.deleteSlice (sel);
+
+        bool doSnap = snapToZeroCrossing.load() && sampleData.isLoaded();
+        int firstNew = -1;
+        for (int i = 0; i < count; ++i)
+        {
+            int s = startS + i * len / count;
+            int e = startS + (i + 1) * len / count;
+            if (doSnap)
+            {
+                if (i > 0)
+                    s = AudioAnalysis::findNearestZeroCrossing (sampleData.getBuffer(), s);
+                if (i < count - 1)
+                    e = AudioAnalysis::findNearestZeroCrossing (sampleData.getBuffer(), e);
+            }
+            if (e - s < kMinSliceLengthSamples) e = s + kMinSliceLengthSamples;
+            int idx = sliceManager.createSlice (s, e);
+            if (idx >= 0)
+            {
+                auto& dst = sliceManager.getSlice (idx);
+                juce::Colour savedColour = dst.colour;
+                dst = srcCopy;
+                dst.startSample = s;
+                dst.endSample   = e;
+                syncSliceOwnershipFromAbsolute (dst);
+                dst.midiNote      = juce::jlimit (0, kMaxMidiNote, baseNote + i);
+                dst.highNote      = dst.midiNote;
+                dst.sliceRootNote = dst.midiNote;
+                dst.colour      = savedColour;
+                dst.active      = true;
+                dst.loopStartOffset = 0;
+                dst.loopLength      = 0;
+            }
+            if (i == 0) firstNew = idx;
+        }
+
+        sliceManager.rebuildMidiMap();
+        if (firstNew >= 0)
+        {
+            sliceManager.selectedSlice = firstNew;
+            selectedSessionSampleId.store (sliceManager.getSlice (firstNew).sampleId, std::memory_order_relaxed);
+        }
+        if (baseNote + count - 1 > kMaxMidiNote)
+        {
+            int firstOverflow = firstNew + (kMaxMidiNote - baseNote + 1);
+            setUiStatusMessage ("MIDI note limit - slices " + juce::String (firstOverflow + 1)
+                + "+ have no unique MIDI note",
+                true, UiStatusMessage::Source::midiLimit);
+        }
+    }
+}
+
+void IntersectProcessor::transientChop (const Command& cmd)
+{
+    int sel = cmd.sliceIdx >= 0 ? cmd.sliceIdx : sliceManager.selectedSlice.load();
+    if (sel >= 0 && sel < sliceManager.getNumSlices() && cmd.numPositions > 0)
+    {
+        Slice srcCopy = sliceManager.getSlice (sel);
+        int startS = srcCopy.startSample;
+        int endS = srcCopy.endSample;
+        int baseNote = sliceManager.nextMidiNote();
+
+        // Build fixed-size boundary list: [startS, ...positions..., endS]
+        int bounds[SliceManager::kMaxSlices + 2];
+        int numBounds = 0;
+        bounds[numBounds++] = startS;
+        for (int bi = 0; bi < cmd.numPositions; ++bi)
+            bounds[numBounds++] = cmd.positions[(size_t) bi];
+        bounds[numBounds++] = endS;
+
+        sliceManager.deleteSlice (sel);
+
+        int firstNew = -1;
+        int subIdx = 0;
+        for (int i = 0; i + 1 < numBounds; ++i)
+        {
+            int s = bounds[i];
+            int e = bounds[i + 1];
+            if (e - s < kMinSliceLengthSamples) continue;
+            int idx = sliceManager.createSlice (s, e);
+            if (idx >= 0)
+            {
+                auto& dst = sliceManager.getSlice (idx);
+                juce::Colour savedColour = dst.colour;
+                dst = srcCopy;
+                dst.startSample = s;
+                dst.endSample   = e;
+                syncSliceOwnershipFromAbsolute (dst);
+                dst.midiNote      = juce::jlimit (0, kMaxMidiNote, baseNote + subIdx);
+                dst.highNote      = dst.midiNote;
+                dst.sliceRootNote = dst.midiNote;
+                dst.colour      = savedColour;
+                dst.active      = true;
+                dst.loopStartOffset = 0;
+                dst.loopLength      = 0;
+            }
+            if (firstNew < 0) firstNew = idx;
+            ++subIdx;
+        }
+
+        sliceManager.rebuildMidiMap();
+        if (firstNew >= 0)
+        {
+            sliceManager.selectedSlice = firstNew;
+            selectedSessionSampleId.store (sliceManager.getSlice (firstNew).sampleId, std::memory_order_relaxed);
+        }
+        if (baseNote + subIdx - 1 > kMaxMidiNote)
+        {
+            int firstOverflow = firstNew + (kMaxMidiNote - baseNote + 1);
+            setUiStatusMessage ("MIDI note limit - slices " + juce::String (firstOverflow + 1)
+                + "+ have no unique MIDI note",
+                true, UiStatusMessage::Source::midiLimit);
+        }
     }
 }
