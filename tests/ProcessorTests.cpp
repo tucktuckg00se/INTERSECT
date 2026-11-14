@@ -150,6 +150,36 @@ void requireSameBytes (const juce::MemoryBlock& actual, const juce::MemoryBlock&
                               + " bytes, first difference at byte " + std::to_string (at) + ")");
 }
 
+// Characterisation: the exact bytes today's code saves pin the file format through refactors.
+// INTERSECT_UPDATE_EXPECTED=1 rewrites tests/fixtures/expected/ instead of comparing; do that
+// only on purpose (a deliberate format change), never to make a failing test pass.
+void requireExpectedBytes (const juce::MemoryBlock& actual, const juce::String& expectedName, const std::string& what)
+{
+    const auto file = juce::File (INTERSECT_TEST_FIXTURES_DIR).getChildFile ("expected").getChildFile (expectedName);
+    if (juce::SystemStats::getEnvironmentVariable ("INTERSECT_UPDATE_EXPECTED", {}) == "1")
+    {
+        file.getParentDirectory().createDirectory();
+        require (file.replaceWithData (actual.getData(), actual.getSize()), "could not write " + expectedName.toStdString());
+        return;
+    }
+
+    juce::MemoryBlock expected;
+    require (file.loadFileAsData (expected), what + ": no " + expectedName.toStdString() + " (generate it with INTERSECT_UPDATE_EXPECTED=1)");
+    requireSameBytes (actual, expected, what + " saves the bytes in expected/" + expectedName.toStdString());
+}
+
+// Replaces every copy of `from` (a temp folder path) in a saved state, so it compares across runs.
+// JUCE strings are null-terminated with no length prefix, so the length may change.
+juce::MemoryBlock replacePath (const juce::MemoryBlock& state, const juce::String& from, const juce::String& to)
+{
+    std::string bytes (static_cast<const char*> (state.getData()), state.getSize());
+    const auto fromUtf8 = from.toStdString();
+    const auto toUtf8 = to.toStdString();
+    for (auto at = bytes.find (fromUtf8); at != std::string::npos; at = bytes.find (fromUtf8, at + toUtf8.size()))
+        bytes.replace (at, fromUtf8.size(), toUtf8);
+    return juce::MemoryBlock (bytes.data(), bytes.size());
+}
+
 bool wasRejected (const IntersectProcessor::UiSliceSnapshot& ui)
 {
     return ui.hasStatusMessage && ui.statusMessage.toString().contains ("Unsupported");
@@ -232,6 +262,7 @@ void fixturesLoad()
         require (host.ui().numMissingSessionSamples == numSamples, name + ": every sample is a placeholder");
 
         const auto resaved = host.save();
+        requireExpectedBytes (resaved, file.getFileName(), name);
         Host again;
         again.restore (resaved);
         waitFor (again, name + " re-saved, to load");
@@ -239,6 +270,46 @@ void fixturesLoad()
         requireSameBytes (again.save(), resaved, name + ": re-saving is stable");
         std::cout << "  " << name << ": " << numSamples << " sample(s), " << numSlices << " slice(s)\n";
     }
+}
+
+// A kit using most of the format: two real samples, slice overrides (with their locks),
+// per-sample params, root note and selection. Saved bytes must match expected/rich-kit.bin.
+void richKitSavesExpectedBytes()
+{
+    TempDir temp;
+    const auto first = writeSine (temp.dir.getChildFile ("first.wav"), (int) kRate);
+    const auto second = writeSine (temp.dir.getChildFile ("second.wav"), (int) kRate / 2);
+
+    Host host;
+    const int firstId = host.loadKit (first, 3);
+    host.processor.addFilesToKit ({ second });
+    host.runUntil ([&] { return host.ui().numSessionSamples == 2; }, "the second sample");
+    const int secondId = host.ui().sessionSamples[1].sampleId;
+
+    const auto setSliceParam = [&host] (int slice, int field, float value)
+    {
+        IntersectProcessor::Command cmd;
+        cmd.type = IntersectProcessor::CmdSetSliceParam;
+        cmd.sliceIdx = slice;
+        cmd.intParam1 = field;
+        cmd.floatParam1 = value;
+        host.processor.pushCommand (cmd);
+    };
+    host.push (IntersectProcessor::CmdSetSampleParam, firstId, IntersectProcessor::FieldBpm, 96.0f);
+    host.push (IntersectProcessor::CmdSetSampleParam, secondId, IntersectProcessor::FieldPitch, -5.0f);
+    setSliceParam (0, IntersectProcessor::FieldPitch, 7.0f);
+    setSliceParam (2, IntersectProcessor::FieldBpm, 140.0f);
+    host.push (IntersectProcessor::CmdSetRootNote, 48);
+    host.push (IntersectProcessor::CmdSelectSlice, 1);
+    host.runUntil ([&]
+    {
+        const auto& ui = host.ui();
+        return ui.rootNote == 48 && ui.selectedSlice == 1 && juce::exactlyEqual (ui.slices[2].bpm, 140.0f)
+            && juce::exactlyEqual (sampleBpm (ui, firstId), 96.0f);
+    }, "the edits");
+
+    const auto folder = temp.dir.getFullPathName() + "/";
+    requireExpectedBytes (replacePath (host.save(), folder, "/kit/"), "rich-kit.bin", "rich kit");
 }
 
 // Adding, removing, undoing and redoing samples while voices play. RealtimeSanitizer builds
@@ -354,6 +425,7 @@ int main (int argc, char* argv[])
     {
         run ("state round trip", stateRoundTrips);
         run ("saved-state fixtures load", fixturesLoad);
+        run ("a rich kit saves the expected bytes", richKitSavesExpectedBytes);
         run ("add, remove, undo and redo samples while playing", kitEditsWhilePlaying);
     }
     else if (group == "stress")
