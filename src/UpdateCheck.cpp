@@ -54,16 +54,20 @@ juce::String makeIssueUrl (const IssueEnvironment& environment)
     if (version.isNotEmpty() && ! version.startsWithIgnoreCase ("v"))
         version = "v" + version;
 
-    const std::pair<const char*, juce::String> fields[] {
-        { "version", version },
-        { "os", environment.os.trim() },
-        { "format", environment.format.trim() },
-        { "architecture", environment.architecture.trim() },
-        { "daw", environment.daw.trim() },
-    };
-    for (const auto& [id, value] : fields)
+    // GitHub fills only the form's text fields from a link; one with the dropdowns' ids (os, format,
+    // architecture) was refused with "406 Not Acceptable". The version field carries them as text.
+    juce::StringArray details;
+    for (const auto& value : { environment.os.trim(), environment.format.trim(), environment.architecture.trim() })
         if (value.isNotEmpty())
-            url = url.withParameter (id, value);
+            details.add (value);
+    if (details.size() > 0)
+        version = version.isNotEmpty() ? version + " (" + details.joinIntoString (", ") + ")"
+                                       : details.joinIntoString (", ");
+
+    if (version.isNotEmpty())
+        url = url.withParameter ("version", version);
+    if (environment.daw.trim().isNotEmpty())
+        url = url.withParameter ("daw", environment.daw.trim());
 
     return url.toString (true);
 }

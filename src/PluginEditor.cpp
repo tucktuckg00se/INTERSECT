@@ -194,6 +194,7 @@ IntersectEditor::IntersectEditor (IntersectProcessor& p)
     sampleLane.getAudioFileForDrag = [this] (int sampleId) { return resolveAudioExportFile (sampleId); };
     sampleLane.onAudioSaveRequested = [this] (int sampleId) { saveAudioAs (sampleId); };
     sampleLane.onRelinkRequested = [this] (int sampleId) { startRelink (sampleId); };
+    groupActions.attach (sampleLane, waveformView.getGroupControls());
     waveformView.onRelinkRequested = [this] (int sampleId) { startRelink (sampleId); };
     waveformView.onRelinkFileDropped = [this] (int sampleId, const juce::File& file) { relinkSample (sampleId, file); };
     headerBar.onRelinkRequested = [this] (int sampleId) { startRelink (sampleId); };
@@ -576,6 +577,8 @@ void IntersectEditor::saveMidiAs (int sampleId)
 
 juce::File IntersectEditor::resolveAudioExportFile (int sampleId)
 {
+    if (processor.getUiSliceSnapshot().sampleGroups.groupAnchoredBy (sampleId) != nullptr)
+        return groupActions.renderGroupMix (sampleId, getTempExportFile (sampleId, "wav"));   // the group's mix
     const auto sampleSnap = processor.sampleData.getSnapshot();
     const SampleData::SessionSample* sample = nullptr;
     if (sampleSnap != nullptr)

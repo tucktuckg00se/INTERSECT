@@ -97,6 +97,14 @@ public:
         CmdSetRootNote,
         CmdStemSeparate,
         CmdSetSampleParam,   // intParam1 = sampleId, intParam2 = field, floatParam1 = value (SAMPLE-tab units)
+        // Sample groups (ProcessorGroups.cpp). Each structural one is one undo step.
+        CmdGroupCreate,      // intParam1 = anchor sampleId, positions[0..numPositions) = members to add
+        CmdGroupAddMembers,  // intParam1 = any member of the group, positions = samples to add
+        CmdGroupRemoveMember,// intParam1 = sampleId (leaves with a copy of the group's slices)
+        CmdUngroup,          // intParam1 = any member of the group
+        CmdSetMemberGain,    // intParam1 = sampleId, floatParam1 = level in dB (coalesced like CmdSetSampleParam)
+        CmdSetMemberMute,    // intParam1 = sampleId, intParam2 = 1 muted / 0 not
+        CmdSetMemberOutput,  // intParam1 = sampleId, intParam2 = output bus, or -1 for the slice's OUT
     };
 
     enum LoadKind
@@ -168,7 +176,9 @@ public:
     std::atomic<bool> pendingEndGesture { false };
 
     void loadFileAsync (const juce::File& file);
-    void loadFilesAsync (const std::vector<juce::File>& files, bool append);
+    /** `importRexSlices` false: appended REX2 files don't bring their embedded slices (Duplicate
+        sample copies the source's slices instead). */
+    void loadFilesAsync (const std::vector<juce::File>& files, bool append, bool importRexSlices = true);
     // ADD: appends existing audio files to the session (or loads them into an empty one) as one
     // undo step. Message thread. Here rather than in the editor so a URL import that finishes
     // while the editor is closed still lands in the kit.
@@ -178,6 +188,15 @@ public:
     void relinkSessionSamplesAsync (const std::vector<std::pair<int, juce::File>>& relinks);
     void reorderSessionSampleAsync (int sourceSampleId, int targetIndex);
     void deleteSessionSampleAsync (int sampleId);
+    /** Adds the sample's file to the kit again with its settings and a copy of its slices (a group
+        member: the group's slices and settings), on new keys. One undo step. Message thread. */
+    void duplicateSessionSampleAsync (int sampleId);
+    /** Adds finished stems to the kit: each remembers its source and starts with its settings. With
+        `asGroup` and two or more stems, they become a group with a copy of the source's slices. */
+    void addStemsToKit (int sourceSampleId, const std::vector<juce::File>& files,
+                        const std::vector<juce::String>& names, bool asGroup);
+    /** Removes several session samples as one step (a whole group). Message thread. */
+    void deleteSessionSamplesAsync (const std::vector<int>& sampleIds);
     void startStemSeparation (int sampleId,
                               const StemModelId& modelId,
                               const StemSelection& stemSelection,
@@ -289,6 +308,8 @@ public:
             SampleParams params;   // this sample's own sample-level parameters
             SampleData::SessionSample::Availability availability = SampleData::SessionSample::Availability::loaded;
             int parkedSlices = 0;  // slices kept for a placeholder until it is relinked
+            RtText<64> stemName;   // a generated stem's name ("drums"); empty for other samples
+            int stemParentId = -1; // a stem's source sample
 
             bool isPlaceholder() const { return availability != SampleData::SessionSample::Availability::loaded; }
         };
@@ -314,6 +335,7 @@ public:
         float stemDownloadProgress = 0.0f;
         std::array<UiSessionSample, SampleData::kMaxSessionSamples> sessionSamples {};
         std::array<Slice, SliceManager::kMaxSlices> slices {};
+        SampleGroupTable sampleGroups;
 
         /** The sample-level parameters of a session sample (factory defaults if unknown). */
         const SampleParams& sampleParamsFor (int sampleId) const
@@ -509,6 +531,22 @@ private:
     void duplicateSlice (const Command& cmd);
     void splitSlice (const Command& cmd);
     void transientChop (const Command& cmd);
+    // Sample groups (audio thread, ProcessorGroups.cpp).
+    void handleGroupCommand (const Command& cmd);
+    void createGroup (int anchorId, const int* memberIds, int numMemberIds);
+    void addGroupMembers (int groupMemberId, const int* memberIds, int numMemberIds);
+    void removeGroupMember (int sampleId);
+    void ungroup (int groupMemberId);
+    void startGroupSliceVoices (const SampleGroup& group, int sliceIdx, VoiceStartParams p);
+    bool groupKeepsSlicesPlaying (int anchorId) const;            // a group anchor with a loaded member
+    void handOverGroupSlices (SampleGroup& group, int fromIndex); // the anchor's slices to member 1
+    void dropGroupMember (int groupIndex, int memberIndex);       // remaps slice masks, ends 1-member groups
+    int copySlicesToSample (int fromSampleId, int toSampleId);    // returns how many it copied
+    void prepareGroupsForSampleRemoval (int sampleId);
+    void pruneGroupsToSession();
+    const SampleData::SessionSample* findActiveSessionSample (int sampleId) const;
+    int timelineTotalFrames() const;             // the editor's timeline: group members hidden
+    int kitToTimelineFrame (int kitFrame) const;
 
     // MIDI edit settings sampled once per block so every event in the block sees one value
     struct MidiEditBlockSettings
@@ -564,7 +602,9 @@ private:
     // audio thread drops the removal if another load has replaced that kit since.
     struct SampleRemoval
     {
-        int sampleId = -1;
+        int sampleId = -1;                 // the first of sampleIds: CmdDeleteSessionSample names it
+        std::array<int, SampleGroup::kMaxMembers> sampleIds {};
+        int numSampleIds = 0;
         int nextSelectedSampleId = -1;
         SampleData::SnapshotPtr source;
         SampleData::SnapshotPtr rebuilt;   // null when the last sample goes
@@ -694,6 +734,7 @@ private:
         int rootNote = kDefaultRootNote;
         int selectedSessionSampleId = -1;
         SampleParamTable sampleParams;
+        SampleGroupTable sampleGroups;
         std::array<StemMetaEntry, SampleData::kMaxSessionSamples> stemMetaEntries {};
         int stemMetaEntryCount = 0;
         SampleData::SnapshotPtr sample;   // emptied by the saver before going idle, so the audio thread never frees a sample
@@ -710,6 +751,8 @@ private:
     bool takeSaveCopyFromAudioThread (SaveCopy& into);   // saving thread
 
     SampleParamTable sampleParams;   // audio-thread owned; restoreState writes it like stemMetaEntries
+    SampleGroupTable sampleGroups;   // audio-thread owned, like sampleParams
+    SampleGroups::VoicePlan groupVoicePlan;   // note-on scratch (audio thread)
     void setStemMeta (int sampleId, const StemMetadata& meta);
     StemMetadata getStemMeta (int sampleId) const;
 
@@ -718,8 +761,11 @@ private:
     {
         std::vector<StemMetadata> metas;   // one per imported file, built on the message thread
         int parentSourceSampleId = -1;
+        bool groupStems = false;           // STEMS in Group mode: the new stems become a group
+        int duplicateOf = -1;              // Duplicate sample: the new sample copies this one
     };
     std::atomic<PendingStemImport*> pendingStemImport { nullptr };
+    void applyPendingKitAddition (const PendingStemImport& pending);   // after the files landed
 
     // Heap objects the audio thread lets go of. processBlock moves them in here instead of freeing
     // them; timerCallback() frees them on the message thread.

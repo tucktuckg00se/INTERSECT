@@ -52,6 +52,12 @@ struct VoiceStartParams
     float sampleCrossfadePct        = 0.0f;
     int   rootNote = kDefaultRootNote;
     int   sliceRootNote = kDefaultRootNote;  // per-slice root for range transpose
+
+    // Group slices (see SampleGroups::planVoices): the members this voice mixes and its output.
+    int   numMemberTaps = 0;
+    int   groupAnchorStart = 0;
+    std::array<SampleGroups::MemberTap, SampleGroup::kMaxMembers> memberTaps {};
+    int   outputBusOverride = -1;            // >= 0: replaces the slice's resolved OUT
 };
 
 struct PreviewStretchParams
@@ -69,6 +75,8 @@ struct PreviewStretchParams
     double sampleRate     = 44100.0;
     const SampleData* sample = nullptr;
 };
+
+struct GroupMix;
 
 class VoicePool
 {
@@ -123,7 +131,10 @@ public:
         return voices[(size_t) idx];
     }
 
-    void startShiftPreview (int startSample, int bufferSize, const PreviewStretchParams& p);
+    /** Shift+click preview from startSample up to rangeEnd. With a group's mix it plays the
+        members as notes do (stopping at the group's end, which the caller passes as rangeEnd). */
+    void startShiftPreview (int startSample, int rangeEnd, const PreviewStretchParams& p,
+                            const GroupMix* mix = nullptr);
     void stopShiftPreview();
 
     // Public helpers so LazyChopEngine can initialise stretch on preview voice

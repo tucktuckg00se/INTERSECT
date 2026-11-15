@@ -1,7 +1,7 @@
 ---
 title: Concepts
 nav_order: 4
-description: "The mental model behind INTERSECT — sessions, slices, the inheritance/lock system, time/pitch algorithms, filter, and playback."
+description: "The mental model behind INTERSECT — sessions, slices, sample groups, the inheritance/lock system, time/pitch algorithms, filter, and playback."
 ---
 
 # Concepts
@@ -26,6 +26,9 @@ A **slice** is a region of one sample with a MIDI mapping and its own parameter 
 
 Each slice is mapped to a MIDI note. By default the first slice gets C2 (note 36) and subsequent slices receive successive notes. `RESEQ` rewrites those mappings either left-to-right (`BY POSITION`) or by creation order (`AS CREATED`).
 
+![Eight numbered slices across the first half of a sample: coloured blocks in the slice lane and matching regions on the waveform, slice 3 selected]({{ site.baseurl }}/assets/images/concepts-slices.png)
+*Slices in the slice lane (numbered blocks) and on the waveform. Click a block to select its slice.*
+
 ## Slice note ranges
 
 Each slice can respond to a single MIDI note or a range of notes:
@@ -34,6 +37,17 @@ Each slice can respond to a single MIDI note or a range of notes:
 - **Range**: `RANGE` mode. The slice covers `LOW` through `HIGH`, transposing chromatically relative to a `ROOT` note. Filter key-tracking uses the slice's `ROOT` rather than the sample root.
 
 Range mode is what turns INTERSECT from a kit-style slicer into a chromatic instrument. Range transpose is ignored when `ALGO` is `Repitch` with `STRETCH` on — those modes are trigger-zone only.
+
+## Sample groups
+
+A **group** is two or more samples of the same length (within 10 ms) that share one set of slices, like the stems of one song. A group slice plays every sample in the group together on one key, mixed by each sample's mute, level and output. The [Sample groups]({{ site.baseurl }}{% link sample-groups.md %}) guide walks through it with pictures; the rules in short:
+
+- The top sample owns the group's slices, and its sample settings are the group's (the `SAMPLE` tab reads `GROUP`).
+- A slice follows the group mix until it gets its own members; then it plays only those, at the group's levels.
+- A lane's `M` changes only the slices that follow the group mix. A sample added to the group plays only in those slices too.
+- Taking a sample out gives it a copy of the group's slices when there's room; a group left with one sample ends.
+- `AUTO`, `ZX`, `LAZY`, Shift+click preview and the `AUDIO` export use the group's mix.
+- Up to 16 samples per group and 32 groups. A missing sample plays silence while the rest of the group plays on.
 
 ## The inheritance / lock model
 
@@ -47,11 +61,14 @@ INTERSECT has three levels of settings:
 
 The signal chain bar at the bottom of the editor has two tabs: `SAMPLE` (the selected sample's settings) and `SLICE` (overrides for the selected slice).
 
-> **Example.** With no slice selected, set `SAMPLE → PITCH` to `+2`. Every slice of that sample now plays at +2 semitones; other samples in the session are unchanged. Now select one slice, click the `SLICE` tab, and drag its `PITCH` to `+7`. The parameter label highlights — that slice has a **lock** on `PITCH`. It plays at +7. All other slices still inherit `+2`.
+> **Example.** With no slice selected, set `SAMPLE → PITCH` to `+2`. Every slice of that sample now plays at +2 semitones; other samples in the session are unchanged. Now select one slice, click the `SLICE` tab, and drag its `PITCH` to `+7`. The parameter label turns orange and the bottom row counts the override — that slice has a **lock** on `PITCH`. It plays at +7. All other slices still inherit `+2`.
 >
 > Change `SAMPLE → PITCH` to `0`. The locked slice still plays at `+7`; everything else now plays at `0`.
 >
 > Right-click the locked `PITCH` value (or click the highlighted parameter label) to clear the lock. The slice re-inherits the sample default.
+
+![The signal chain on the SLICE tab: PITCH reads +11st with an orange label, and the bottom row reads 1 overrides]({{ site.baseurl }}/assets/images/concepts-lock.png)
+*A slice with a lock on `PITCH`: the orange label marks the override.*
 
 This applies to almost every signal-chain parameter, plus per-slice settings like output bus, mute group, and loop mode. The result is that defaults are cheap to set sample-wide, but anything can be locked when a slice needs to differ.
 

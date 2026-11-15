@@ -1,4 +1,5 @@
 #include "PluginProcessor.h"
+#include "audio/GroupMix.h"
 #include "PluginEditor.h"
 #include "AppFiles.h"
 #include "Constants.h"
@@ -475,21 +476,8 @@ void IntersectProcessor::handleStemJobCompletionOnMessageThread()
         auto stemResult = stemJob.consumeResult();
         if (! stemResult.stemFiles.empty())
         {
-            auto* pending = new PendingStemImport();
-            pending->parentSourceSampleId = sourceSampleId;
-            for (const auto& name : stemResult.stemNames)
-            {
-                StemMetadata meta;
-                meta.parentSourceSampleId = sourceSampleId;
-                meta.role = stemRoleFromString (name);
-                meta.isGenerated = true;
-                meta.setName (name);
-                pending->metas.push_back (meta);
-            }
-            auto* old = pendingStemImport.exchange (pending, std::memory_order_acq_rel);
-            delete old;
-
-            loadFilesAsync (stemResult.stemFiles, true);
+            addStemsToKit (sourceSampleId, stemResult.stemFiles, stemResult.stemNames,
+                           stemJob.getExportMode() == StemExportMode::group);
             setUiStatusMessage (stemResult.warningMessage.isNotEmpty()
                                     ? stemResult.warningMessage
                                     : juce::String ("Stems imported"),
@@ -779,7 +767,7 @@ void IntersectProcessor::warnIfAudioNotRunning()
                         "Choose an output device in Options > Audio/MIDI Settings.", true);
 }
 
-void IntersectProcessor::loadFilesAsync (const std::vector<juce::File>& files, bool append)
+void IntersectProcessor::loadFilesAsync (const std::vector<juce::File>& files, bool append, bool importRexSlices)
 {
     pendingStateRestoreToken.store (0, std::memory_order_release);
     if (files.empty())
@@ -814,7 +802,7 @@ void IntersectProcessor::loadFilesAsync (const std::vector<juce::File>& files, b
             newSampleIds.push_back (sampleIds.back());
         }
         setPendingStateFile (orderedFiles.front());
-        requestSampleLoad (orderedFiles, LoadKindPreserveSlices, &sampleIds, &newSampleIds);
+        requestSampleLoad (orderedFiles, LoadKindPreserveSlices, &sampleIds, importRexSlices ? &newSampleIds : nullptr);
         return;
     }
 
@@ -900,48 +888,6 @@ void IntersectProcessor::reorderSessionSampleAsync (int sourceSampleId, int targ
     files.insert (files.begin() + targetIndex, movedFile);
     sampleIds.insert (sampleIds.begin() + targetIndex, movedId);
     requestSampleLoad (files, LoadKindPreserveSlices, &sampleIds);
-}
-
-void IntersectProcessor::deleteSessionSampleAsync (int sampleId)
-{
-    if (sampleId < 0)
-        return;
-
-    // Build the shortened kit here (it copies the remaining audio), so the audio thread only swaps it in.
-    const auto source = sampleData.getSnapshot();
-    if (source == nullptr || source->sessionSamples.empty())
-        return;
-
-    const auto& samples = source->sessionSamples;
-    const auto removed = std::find_if (samples.begin(), samples.end(),
-                                       [sampleId] (const auto& sample) { return sample.sampleId == sampleId; });
-    if (removed == samples.end())
-        return;
-
-    SampleRemoval removal;
-    removal.sampleId = sampleId;
-    removal.source = source;
-    if (samples.size() > 1)
-    {
-        const auto removeIndex = (size_t) std::distance (samples.begin(), removed);
-        std::vector<SampleData::SessionSample> remaining;
-        remaining.reserve (samples.size() - 1);
-        for (size_t i = 0; i < samples.size(); ++i)
-            if (i != removeIndex)
-                remaining.push_back (samples[i]);
-
-        removal.nextSelectedSampleId = removeIndex < remaining.size() ? remaining[removeIndex].sampleId
-                                                                      : remaining.back().sampleId;
-        removal.rebuilt = SampleData::rebuildWithSessionSamples (*source, remaining);
-    }
-
-    if (! sampleRemovals.push (std::move (removal)))
-        return;   // sixteen removals already waiting for the audio thread
-
-    Command cmd;
-    cmd.type = CmdDeleteSessionSample;
-    cmd.intParam1 = sampleId;
-    pushCommand (cmd);
 }
 
 void IntersectProcessor::setStemMeta (int sampleId, const StemMetadata& meta)
@@ -1427,7 +1373,7 @@ void IntersectProcessor::syncSliceOwnershipFromAbsolute (Slice& slice, bool clam
 
     // Slices of a placeholder are parked: their in-sample positions are the only record of
     // where they sit in the real file, so the silent slot must never rewrite them.
-    if (isPlaceholderSample (slice.sampleId))
+    if (isPlaceholderSample (slice.sampleId) && ! groupKeepsSlicesPlaying (slice.sampleId))
     {
         syncSliceAbsoluteToCurrentSession (slice);
         return;
@@ -1459,7 +1405,7 @@ void IntersectProcessor::syncSliceOwnershipFromAbsolute (Slice& slice, bool clam
     }
 
     slice.sampleId = owner.sampleId;
-    slice.parked = owner.isPlaceholder();
+    slice.parked = owner.isPlaceholder() && ! groupKeepsSlicesPlaying (owner.sampleId);
     slice.startInSample = startInSample;
     slice.endInSample = endInSample;
     slice.startSample = sampleStart + startInSample;
@@ -1489,7 +1435,10 @@ void IntersectProcessor::syncSliceAbsoluteToCurrentSession (Slice& slice)
     if (owner == nullptr)
         owner = &sampleSnap->sessionSamples.front();
 
-    const bool parked = owner->isPlaceholder() && slice.endInSample > slice.startInSample;
+    // A group's slices only park when every member is missing: the anchor's silent slot keeps its
+    // length, so the other members play from the same positions.
+    const bool ownerSilent = owner->isPlaceholder() && ! groupKeepsSlicesPlaying (owner->sampleId);
+    const bool parked = ownerSilent && slice.endInSample > slice.startInSample;
     int startInSample = slice.startInSample;
     int endInSample = slice.endInSample;
     if (endInSample <= startInSample)
@@ -1504,7 +1453,7 @@ void IntersectProcessor::syncSliceAbsoluteToCurrentSession (Slice& slice)
         endInSample = juce::jmin (owner->numFrames, startInSample + kMinSliceLengthSamples);
 
     slice.sampleId = owner->sampleId;
-    slice.parked = owner->isPlaceholder();
+    slice.parked = ownerSilent;
     slice.startSample = owner->startFrame + startInSample;
     slice.endSample = owner->startFrame + endInSample;
 
@@ -1550,85 +1499,6 @@ void IntersectProcessor::clampSlicesToSampleBounds()
         s.endSample = juce::jlimit (s.startSample + 1, maxLen, s.endSample);
         syncSliceOwnershipFromAbsolute (s);
     }
-}
-
-void IntersectProcessor::deleteSessionSample (int sampleId)
-{
-    // Take the removal prepared for this sample (older ones whose command never ran are dropped).
-    SampleRemoval removal;
-    bool found = false;
-    while (! found && sampleRemovals.pop (removal))
-    {
-        found = removal.sampleId == sampleId;
-        if (! found)
-        {
-            RetiredObjects stale;
-            stale.sample = std::move (removal.source);
-            retire (std::move (stale));
-            stale.sample = std::move (removal.rebuilt);
-            retire (std::move (stale));
-        }
-    }
-
-    // Only apply it to the kit it was built from; a load that landed in between wins.
-    if (found && removal.source.get() == sampleData.getActive())
-    {
-        if (removal.rebuilt == nullptr)
-        {
-            clearVoicesBeforeSampleSwap();
-            RetiredObjects unloaded;
-            unloaded.sample = sampleData.clear();
-            retire (std::move (unloaded));
-            sampleParams.clear();
-            sliceManager.clearAll();
-            updateSampleMissingState();
-            selectedSessionSampleId.store (-1, std::memory_order_relaxed);
-            uiSnapshotDirty.store (true, std::memory_order_release);
-        }
-        else
-        {
-            const int oldSelectedSlice = sliceManager.selectedSlice.load (std::memory_order_relaxed);
-            const int oldNumSlices = sliceManager.getNumSlices();
-            int writeSlice = 0;
-            int nextSelectedSlice = -1;
-            for (int i = 0; i < oldNumSlices; ++i)
-            {
-                const auto& src = sliceManager.getSlice (i);
-                if (src.sampleId == sampleId)
-                    continue;
-
-                sliceManager.getSlice (writeSlice) = src;
-                if (i == oldSelectedSlice)
-                    nextSelectedSlice = writeSlice;
-                ++writeSlice;
-            }
-
-            for (int i = writeSlice; i < SliceManager::kMaxSlices; ++i)
-                sliceManager.getSlice (i).active = false;
-            sliceManager.setNumSlices (writeSlice);
-            sliceManager.selectedSlice.store (nextSelectedSlice, std::memory_order_relaxed);
-
-            clearVoicesBeforeSampleSwap();
-            RetiredObjects replaced;
-            replaced.sample = sampleData.applyDecodedSample (std::move (removal.rebuilt));
-            retire (std::move (replaced));
-            sampleParams.syncToSession (sampleData.getSessionSamples());
-            updateSampleMissingState();
-            selectedSessionSampleId.store (removal.nextSelectedSampleId, std::memory_order_relaxed);
-            syncAllSliceAbsolutePositions();
-            clampSlicesToSampleBounds();
-            deselectParkedSlice();
-            sliceManager.rebuildMidiMap();
-            uiSnapshotDirty.store (true, std::memory_order_release);
-        }
-    }
-
-    // Whatever the removal still holds is freed on the message thread.
-    RetiredObjects done;
-    done.sample = std::move (removal.source);
-    retire (std::move (done));
-    done.sample = std::move (removal.rebuilt);
-    retire (std::move (done));
 }
 
 void IntersectProcessor::publishUiSliceSnapshot()
@@ -1681,6 +1551,17 @@ void IntersectProcessor::publishUiSliceSnapshot()
             uiSample.numFrames = sample.numFrames;
             uiSample.fileName.assign (sample.fileName);
             uiSample.params = paramsForSample (sample.sampleId);
+            uiSample.stemName.assignAscii ("");
+            uiSample.stemParentId = -1;
+            for (int m = 0; m < stemMetaEntryCount; ++m)
+            {
+                const auto& entry = stemMetaEntries[(size_t) m];
+                if (entry.sampleId == sample.sampleId && entry.meta.isGenerated)
+                {
+                    uiSample.stemName.assignAscii (entry.meta.name.data());
+                    uiSample.stemParentId = entry.meta.parentSourceSampleId;
+                }
+            }
             uiSample.availability = sample.availability;
             uiSample.parkedSlices = 0;
             if (sample.isPlaceholder())
@@ -1704,6 +1585,7 @@ void IntersectProcessor::publishUiSliceSnapshot()
         else
             snap.slices[(size_t) i].active = false;
     }
+    snap.sampleGroups = sampleGroups;
 
     uiSliceSnapshotIndex.store (writeIndex, std::memory_order_release);
     uiSnapshotVersion.fetch_add (1, std::memory_order_release);
@@ -1760,7 +1642,7 @@ void IntersectProcessor::applyMidiEditZoomSteps (int steps)
     if (steps == 0)
         return;
 
-    const int numFrames = sampleData.getNumFrames();
+    const int numFrames = timelineTotalFrames();   // the editor's timeline (group members hidden)
     if (numFrames <= 0)
         return;
 
@@ -1780,9 +1662,9 @@ void IntersectProcessor::applyMidiEditZoomSteps (int steps)
     int anchorSample = currentViewStart + currentViewLen / 2;
     if (midiEditState.previewActive && midiEditState.activeGestureSlice >= 0)
     {
-        anchorSample = midiEditState.activeBoundaryIsStart
-                     ? liveDragBoundsStart.load (std::memory_order_relaxed)
-                     : liveDragBoundsEnd.load   (std::memory_order_relaxed);
+        anchorSample = kitToTimelineFrame (midiEditState.activeBoundaryIsStart
+                                               ? liveDragBoundsStart.load (std::memory_order_relaxed)
+                                               : liveDragBoundsEnd.load   (std::memory_order_relaxed));
     }
 
     const float newZoom = juce::jlimit (1.0f, kMidiEditZoomClampMax,
@@ -1850,7 +1732,7 @@ void IntersectProcessor::applyMidiSliceBoundarySteps (int sliceIdx, bool isStart
     if (steps == 0 || ! beginMidiSliceBoundaryGestureIfNeeded (sliceIdx, isStart))
         return;
 
-    const int numFrames = sampleData.getNumFrames();
+    const int numFrames = timelineTotalFrames();
     if (numFrames <= 0)
         return;
 
@@ -1864,7 +1746,7 @@ void IntersectProcessor::applyMidiSliceBoundarySteps (int sliceIdx, bool isStart
     {
         const int viewLen = getViewLen();
         const int maxStart = std::max (0, numFrames - viewLen);
-        const int desiredStart = juce::jlimit (0, maxStart, samplePos - viewLen / 2);
+        const int desiredStart = juce::jlimit (0, maxStart, kitToTimelineFrame (samplePos) - viewLen / 2);
         const float newScroll = (maxStart > 0) ? (float) desiredStart / (float) maxStart : 0.0f;
         scroll.store (newScroll, std::memory_order_relaxed);
     };
@@ -1887,7 +1769,8 @@ void IntersectProcessor::applyMidiSliceBoundarySteps (int sliceIdx, bool isStart
     }
 
     if (snapToZeroCrossing.load() && sampleData.isLoaded())
-        boundaryPos = AudioAnalysis::findNearestZeroCrossing (sampleData.getBuffer(), boundaryPos);
+        boundaryPos = GroupMix::at (sampleGroups, sampleData.getSessionSamples(), sampleData.getBuffer(), boundaryPos)
+                          .findNearestZeroCrossing (boundaryPos);
 
     if (isStart)
         liveDragBoundsStart.store (boundaryPos, std::memory_order_relaxed);
@@ -2013,6 +1896,19 @@ void IntersectProcessor::processMidiEvent (const juce::MidiMessage& msg,
             const float hostBpm = dawBpm.load();
 
             const auto& sliceIndices = sliceManager.midiNoteToSlices (note);
+
+            // Mute-group cuts first: slices sharing this note (and a group slice's per-output
+            // voices) start together and must not cut each other.
+            for (int sliceIdx : sliceIndices)
+            {
+                if (! juce::isPositiveAndBelow (sliceIdx, sliceManager.getNumSlices()))
+                    continue;
+                const auto& s = sliceManager.getSlice (sliceIdx);
+                const int mg = (int) sliceManager.resolveParam (sliceIdx, kLockMuteGroup, (float) s.muteGroup,
+                                                                (float) paramsForSample (s.sampleId).muteGroup);
+                voicePool.muteGroup (mg, -1);
+            }
+
             for (int sliceIdx : sliceIndices)
             {
                 if (! juce::isPositiveAndBelow (sliceIdx, sliceManager.getNumSlices()))
@@ -2027,19 +1923,19 @@ void IntersectProcessor::processMidiEvent (const juce::MidiMessage& msg,
                         uiSnapshotDirty.store (true, std::memory_order_release);
                 }
 
-                int voiceIdx = voicePool.allocate();
-
-                // Each slice inherits from its own session sample's parameters.
+                // Each slice inherits from its own session sample's parameters (a group's: the anchor's).
                 const auto& s = sliceManager.getSlice (sliceIdx);
                 auto p = makeVoiceStartParams (paramsForSample (s.sampleId), rootNote, note, velocity, hostBpm);
-
-                // Handle mute groups
-                int mg = (int) sliceManager.resolveParam (sliceIdx, kLockMuteGroup,
-                                                          (float) s.muteGroup, (float) p.sampleMuteGroup);
-                voicePool.muteGroup (mg, voiceIdx);
-
                 p.sliceIdx = sliceIdx;
                 p.sliceRootNote = s.sliceRootNote;
+
+                if (const auto* group = sampleGroups.groupAnchoredBy (s.sampleId))
+                {
+                    startGroupSliceVoices (*group, sliceIdx, p);
+                    continue;
+                }
+
+                const int voiceIdx = voicePool.allocate();
                 voicePool.startVoice (voiceIdx, p, sliceManager, sampleData);
             }
         }
@@ -2132,7 +2028,14 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         else if (req >= 0 && ! lazyChop.isActive() && sampleData.isLoaded())
         {
             const auto psp = makePreviewStretchParams (selectedSampleParams(), dawBpm.load(), currentSampleRate, &sampleData);
-            voicePool.startShiftPreview (req, sampleData.getNumFrames(), psp);
+            // In a group's slot the preview plays the members' mix and stops at the group's end
+            // (a group with every member muted has nothing to play); elsewhere it plays the kit on.
+            const auto mix = GroupMix::at (sampleGroups, sampleData.getSessionSamples(), sampleData.getBuffer(), req);
+            const int groupEnd = mix.anchorStart + mix.anchorFrames;
+            if (mix.anchorFrames <= 0 || req < mix.anchorStart || req >= groupEnd)
+                voicePool.startShiftPreview (req, sampleData.getNumFrames(), psp);
+            else if (mix.numTaps > 0)
+                voicePool.startShiftPreview (req, groupEnd, psp, &mix);
         }
     }
 
@@ -2332,6 +2235,7 @@ bool IntersectProcessor::applyCompletedLoad()
             retire (std::move (replaced));
             // New session samples start at factory defaults; removed ones lose their entry.
             sampleParams.syncToSession (sampleData.getSessionSamples());
+            pruneGroupsToSession();
             updateSampleMissingState();
             if (sampleData.getNumSessionSamples() > 0)
             {
@@ -2374,6 +2278,7 @@ bool IntersectProcessor::applyCompletedLoad()
                         const auto sourceParams = paramsForSample (pending->parentSourceSampleId);
                         sampleParams.set (stemId, sourceParams);
                     }
+                    applyPendingKitAddition (*pending);
                     RetiredObjects applied;
                     applied.stemImport = std::move (pending);
                     retire (std::move (applied));
@@ -2382,7 +2287,10 @@ bool IntersectProcessor::applyCompletedLoad()
 
             if (! isStateRestoreLoad
                 && currentLoadKind == LoadKindReplace)
+            {
                 sliceManager.clearAll();
+                sampleGroups = {};
+            }
             else
             {
                 applyPendingSliceTimelineRemap();
@@ -2483,6 +2391,7 @@ void IntersectProcessor::copyEngineState (SaveCopy& into, bool onAudioThread) no
     into.rootNote = sliceManager.rootNote.load (std::memory_order_relaxed);
     into.selectedSessionSampleId = selectedSessionSampleId.load (std::memory_order_relaxed);
     into.sampleParams = sampleParams;
+    into.sampleGroups = sampleGroups;
     into.stemMetaEntries = stemMetaEntries;
     into.stemMetaEntryCount = stemMetaEntryCount;
     // The audio thread owns the active sample; any other thread reads the published snapshot.
@@ -2607,6 +2516,12 @@ SessionState IntersectProcessor::captureSessionState()
         }
     }
     state.sampleParams = params;
+    state.sampleGroups = copy->sampleGroups;
+    state.sampleGroups.prune ([&state] (int sampleId)
+    {
+        return std::any_of (state.sessionSamples.begin(), state.sessionSamples.end(),
+                            [sampleId] (const auto& sample) { return sample.sampleId == sampleId; });
+    });
     return state;
 }
 
@@ -2783,6 +2698,13 @@ void IntersectProcessor::applySessionState (const SessionState& state, const Res
                                                          : (hasPerSample ? SampleParams::factoryDefaults() : legacy));
         }
     }
+
+    // Sample groups (extension v9): StateFormat already checked them against the state's samples.
+    sampleGroups = state.sampleGroups;
+    sampleGroups.prune ([&restoreSampleIds] (int sampleId)
+    {
+        return std::find (restoreSampleIds.begin(), restoreSampleIds.end(), sampleId) != restoreSampleIds.end();
+    });
 
     if (! restoreFiles.empty())
     {

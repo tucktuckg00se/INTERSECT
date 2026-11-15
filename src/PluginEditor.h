@@ -5,6 +5,7 @@
 #include "ui/IntersectLookAndFeel.h"
 #include "ui/HeaderBar.h"
 #include "ui/SampleLane.h"
+#include "ui/GroupActions.h"
 #include "ui/browser/BrowserView.h"
 #include "ui/stems/StemView.h"
 #include "ui/settings/SettingsHost.h"
@@ -113,6 +114,7 @@ private:
     SettingsView settingsView;
     HeaderBar       headerBar;
     SampleLane      sampleLane;
+    GroupActions    groupActions { processor };   // the sample lane's group menus
     SignalChainBar  signalChainBar;
     SliceLane       sliceLane;
     WaveformView    waveformView;

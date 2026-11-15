@@ -43,7 +43,8 @@ enum LockBit : uint64_t
     kLockLoopStart        = 0x800000000ull,
     kLockLoopLength       = 0x1000000000ull,
     kLockHighNote         = 0x2000000000ull,   // bit 37
-    kLockSliceRootNote    = 0x4000000000ull    // bit 38
+    kLockSliceRootNote    = 0x4000000000ull,   // bit 38
+    kLockMembers          = 0x8000000000ull    // bit 39: a group slice plays its own memberMask
 };
 
 inline int getMaxCrossfadeLengthSamples (int sliceLen, bool /*pingPong*/)
@@ -136,5 +137,8 @@ struct Slice
     int      loopStartOffset   = 0;    // samples from slice start (0 = slice start)
     int      loopLength        = 0;    // samples (0 = full slice length)
     uint64_t lockMask      = 0;
+    // Group slices only: bit i plays group member i (lane order). Used when kLockMembers is set;
+    // otherwise the slice plays the group's unmuted members.
+    uint32_t memberMask    = 0;
     juce::Colour colour    { 0.4f, 0.7f, 0.95f, 1.0f };
 };

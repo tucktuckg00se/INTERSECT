@@ -49,7 +49,7 @@ struct Fixture
         params.dawBpm = 60.0f;
         params.sampleRate = sampleRate;
         params.sample = &sample;
-        chop.start (sampleLength, slices, params, snap, &sample.getBuffer());
+        chop.start (0, sampleLength, slices, params, snap, &sample.getBuffer());
     }
 
     int playhead() const
@@ -173,7 +173,7 @@ void keepsSamplePrecisionForLongRecordings (int algorithm)
     LazyChopEngine chop;
     constexpr int length = 20000000;
     constexpr int expected = 16777217;
-    chop.start (length, slices, PreviewStretchParams {});
+    chop.start (0, length, slices, PreviewStretchParams {});
     chop.onNote (60, voices, slices);
     auto& voice = voices.getVoice (VoicePool::kPreviewVoiceIndex);
     if (algorithm == 0)

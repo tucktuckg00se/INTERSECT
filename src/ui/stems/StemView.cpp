@@ -1,4 +1,5 @@
 #include "StemView.h"
+#include "../CalloutMenu.h"
 #include "../IntersectLookAndFeel.h"
 #include "../FullViewBar.h"
 #include "../../PluginProcessor.h"
@@ -632,6 +633,11 @@ juce::String StemView::getStartBlockReason() const
     if (! anySelected)
         return "Select at least one stem";
 
+    const auto numChosen = (int) std::count_if (entry->outputs.begin(), entry->outputs.end(),
+                                                [&it] (const StemOutputDesc& o) { return it->second.count (o.name) > 0; });
+    if (exportMode == StemExportMode::group && numChosen > SampleGroup::kMaxMembers)
+        return "A group holds up to 16 samples: " + juce::String (numChosen) + " stems are ticked";
+
     return {};
 }
 
@@ -950,9 +956,32 @@ void StemView::mouseDown (const juce::MouseEvent& e)
     }
     else if (modeCell.bounds.contains (pos))
     {
-        exportMode = exportMode == StemExportMode::combine ? StemExportMode::separate : StemExportMode::combine;
-        modeCell.value = stemExportModeToString (exportMode);
-        repaint (modeCell.bounds);
+        juce::Component::SafePointer<StemView> safe (this);
+        const auto choose = [safe] (StemExportMode mode)
+        {
+            return [safe, mode]
+            {
+                if (safe == nullptr)
+                    return;
+                safe->exportMode = mode;
+                safe->modeCell.value = stemExportModeToString (mode);
+                safe->updateControls();
+                safe->repaint();
+            };
+        };
+        std::vector<CalloutMenu::Item> items;
+        const std::pair<StemExportMode, const char*> modes[] {
+            { StemExportMode::combine, "Combine: the chosen stems mixed into one file" },
+            { StemExportMode::separate, "Separate: one sample per stem" },
+            { StemExportMode::group, "Group: one sample per stem, as a group with the source's slices" },
+        };
+        for (const auto& [mode, text] : modes)
+        {
+            CalloutMenu::Item item { text, choose (mode) };
+            item.ticked = exportMode == mode;
+            items.push_back (std::move (item));
+        }
+        CalloutMenu::show (*this, modeCell.bounds, "MODE", std::move (items));
     }
     else if (outputCell.bounds.contains (pos))
     {

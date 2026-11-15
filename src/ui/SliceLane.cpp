@@ -1,4 +1,5 @@
 #include "SliceLane.h"
+#include "TimelineMap.h"
 #include "IntersectLookAndFeel.h"
 #include "WaveformView.h"
 #include "../PluginProcessor.h"
@@ -28,11 +29,8 @@ void SliceLane::paint (juce::Graphics& g)
         return;
 
     const auto& ui = processor.getUiSliceSnapshot();
-    const float z = std::max (1.0f, processor.zoom.load());
-    const float sc = processor.scroll.load();
-    const int visLen = juce::jlimit (1, numFrames, (int) (numFrames / z));
-    const int maxStart = juce::jmax (0, numFrames - visLen);
-    const int visStart = juce::jlimit (0, maxStart, (int) (sc * (float) maxStart));
+    const TimelineMap map (ui, numFrames);
+    const auto view = map.viewFor (processor, getWidth());
 
     int sel = ui.selectedSlice;
     int num = ui.numSlices;
@@ -45,7 +43,7 @@ void SliceLane::paint (juce::Graphics& g)
         && waveformView->getActiveSlicePreview (previewIdx, previewStart, previewEnd);
 
     // Collect visible slice info without per-frame heap allocations.
-    struct SliceInfo { int idx = 0; int x1 = 0; int x2 = 0; bool selected = false; juce::Colour col; };
+    struct SliceInfo { int idx = 0; int x1 = 0; int x2 = 0; bool selected = false; juce::Colour col; bool ownMembers = false; };
     std::array<SliceInfo, SliceManager::kMaxSlices> visibleSlices {};
     int visibleCount = 0;
 
@@ -61,14 +59,15 @@ void SliceLane::paint (juce::Graphics& g)
             endSample = previewEnd;
         }
 
-        int x1 = (int) ((float) (startSample - visStart) / visLen * w);
-        int x2 = (int) ((float) (endSample - visStart) / visLen * w);
+        int x1 = map.kitToPixel (view, startSample);
+        int x2 = map.kitToPixel (view, endSample);
         x1 = std::max (0, x1);
         x2 = std::min (w, x2);
         if (x2 - x1 < 2) continue;
 
+        const bool ownMembers = (s.lockMask & kLockMembers) != 0 && ui.sampleGroups.groupAnchoredBy (s.sampleId) != nullptr;
         if (visibleCount < SliceManager::kMaxSlices)
-            visibleSlices[(size_t) visibleCount++] = { i, x1, x2, (i == sel), s.colour };
+            visibleSlices[(size_t) visibleCount++] = { i, x1, x2, (i == sel), s.colour, ownMembers };
     }
 
     // Pass 1: Draw non-selected first, selected last (z-order) without sorting.
@@ -84,6 +83,16 @@ void SliceLane::paint (juce::Graphics& g)
             int sw = si.x2 - si.x1;
             g.setColour ((si.selected ? si.col.darker (0.78f) : si.col.darker (0.82f)).withAlpha (0.92f));
             g.fillRect (si.x1, 0, sw, h);
+
+            // A group slice with its own members: an orange corner (member dots wouldn't fit at 16).
+            if (si.ownMembers && sw >= 6)
+            {
+                juce::Path corner;
+                const float r = (float) si.x2, t = 0.0f, size = juce::jmin (7.0f, (float) sw - 1.0f);
+                corner.addTriangle (r - size, t, r, t, r, t + size);
+                g.setColour (juce::Colour (0xfff0a030));
+                g.fillPath (corner);
+            }
         }
     }
 
@@ -145,12 +154,8 @@ void SliceLane::mouseDown (const juce::MouseEvent& e)
         return;
 
     const auto& ui = processor.getUiSliceSnapshot();
-    const float z = std::max (1.0f, processor.zoom.load());
-    const float sc = processor.scroll.load();
-    const int visLen = juce::jlimit (1, numFrames, (int) (numFrames / z));
-    const int maxStart = juce::jmax (0, numFrames - visLen);
-    const int visStart = juce::jlimit (0, maxStart, (int) (sc * (float) maxStart));
-    int w = getWidth();
+    const TimelineMap map (ui, numFrames);
+    const auto view = map.viewFor (processor, getWidth());
     int num = ui.numSlices;
 
     // Collect all overlapping slice indices at click position
@@ -161,8 +166,8 @@ void SliceLane::mouseDown (const juce::MouseEvent& e)
         const auto& s = ui.slices[(size_t) i];
         if (! s.active || s.parked) continue;
 
-        int x1 = (int) ((float) (s.startSample - visStart) / visLen * w);
-        int x2 = (int) ((float) (s.endSample - visStart) / visLen * w);
+        const int x1 = map.kitToPixel (view, s.startSample);
+        const int x2 = map.kitToPixel (view, s.endSample);
 
         if (e.x >= x1 && e.x < x2)
             overlapping.push_back (i);

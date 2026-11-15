@@ -159,6 +159,9 @@ slice16: 617a66
 
 Eight themes ship with INTERSECT in [`themes/`](https://github.com/tucktuckg00se/INTERSECT/tree/main/themes) — copy any of them as a starting point.
 
+![The same kit shown in four bundled themes: dark, light, rose-pine and studio98]({{ site.baseurl }}/assets/images/themes-bundled.png)
+*Four of the bundled themes; the screenshots elsewhere in these docs use oc.intersectstyle.*
+
 | File | Style |
 | --- | --- |
 | `dark.intersectstyle` | The default dark theme |

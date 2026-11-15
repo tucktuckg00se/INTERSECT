@@ -2,6 +2,7 @@
 #include "IntersectLookAndFeel.h"
 #include "WaveformView.h"
 #include "../PluginProcessor.h"
+#include "../audio/GroupMix.h"
 #include <algorithm>
 
 AutoChopPanel::AutoChopPanel (IntersectProcessor& p, WaveformView& wv)
@@ -354,6 +355,16 @@ void AutoChopPanel::startODFComputation()
 
     // Hold onto the snapshot so the buffer stays alive for the thread
     odfBufferSnapshot = std::make_shared<juce::AudioBuffer<float>> (sampleSnap->buffer);
+
+    // A group slice is heard as its members' mix: analyse that, in place of the anchor's audio.
+    const auto mix = GroupMix::at (ui.sampleGroups, sampleSnap->sessionSamples, sampleSnap->buffer, sliceStart);
+    if (mix.covers (sliceStart))
+    {
+        const int end = juce::jmin (sliceEnd, odfBufferSnapshot->getNumSamples());
+        for (int ch = 0; ch < odfBufferSnapshot->getNumChannels(); ++ch)
+            for (int i = sliceStart; i < end; ++i)
+                odfBufferSnapshot->setSample (ch, i, mix.sample (ch, i));
+    }
     cachedSliceStart = sliceStart;
     cachedSliceEnd   = sliceEnd;
 
@@ -405,7 +416,8 @@ void AutoChopPanel::updatePreviewFromCachedODF()
         return;
 
     auto sampleSnap = processor.sampleData.getSnapshot();
-    if (sampleSnap == nullptr)
+    const auto analysed = odfBufferSnapshot;   // the audio the ODF came from (a group slice: its mix)
+    if (sampleSnap == nullptr || analysed == nullptr)
     {
         waveformView.transientPreviewPositions.clear();
         waveformView.repaint();
@@ -417,16 +429,15 @@ void AutoChopPanel::updatePreviewFromCachedODF()
     const double sampleRate = sampleSnap->decodedSampleRate > 0.0 ? sampleSnap->decodedSampleRate : 44100.0;
 
     auto positions = AudioAnalysis::pickTransientsFromODF (
-        cachedODF, sampleSnap->buffer, sens, sampleRate, minMs);
+        cachedODF, *analysed, sens, sampleRate, minMs);
 
     if (processor.snapToZeroCrossing.load())
     {
         int sliceStart = cachedSliceStart;
         int sliceEnd = cachedSliceEnd;
         std::transform (positions.begin(), positions.end(), positions.begin(),
-                        [sampleSnap, sliceStart, sliceEnd] (int p) {
-                            int snapped = AudioAnalysis::findNearestZeroCrossing (
-                                sampleSnap->buffer, p);
+                        [analysed, sliceStart, sliceEnd] (int p) {
+                            int snapped = AudioAnalysis::findNearestZeroCrossing (*analysed, p);
                             return juce::jlimit (sliceStart + 1, sliceEnd - 1, snapped);
                         });
 

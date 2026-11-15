@@ -58,7 +58,11 @@ auditionAutoPlay: true
 auditionGainDb: -6.0
 stemModelFolder: /home/you/.config/INTERSECT/stem-models
 presetFolder: /home/you/Sync/intersect-presets
-stemComputeDevice: cuda
+stemComputeDevice: GPU
+stemLastModel: scnet
+stemExportMode: Group
+stemSelections:
+  - bs-roformer-sw-6stem=bass,drums,vocals
 urlImportSaveMode: folder
 urlImportFolder: /home/you/samples/imports
 urlImportChannel: stable
@@ -66,12 +70,15 @@ urlImportFormat: wav-f32
 urlImportSampleRate: 0
 ```
 
+![SET, General page: UI SCALE, THEME and MIDDLE C]({{ site.baseurl }}/assets/images/settings-general.png)
+*SET → General writes uiScale, theme and middleC.*
+
 ## Key reference
 
 | Key | Type | Values | Purpose |
 | --- | --- | --- | --- |
 | `uiScale` | float | 0.5 to 3.0 (in 0.25 steps) | Desired editor scale factor. Mirrors the `uiScale` APVTS parameter on load. The plugin renders at the largest scale that fully fits your display, so on small monitors the on-screen size may be smaller than this value — **SET → General** then notes the scale it is shown at. |
-| `theme` | string | filename stem of a theme in your `themes/` folder | Active theme. Falls back to `dark` if the named file isn't present. |
+| `theme` | string | the `name:` of a theme in your `themes/` folder (the bundled themes use their file name) | Active theme. Falls back to `dark` if no theme has that name. |
 | `nrpnEnabled` | bool | `true` / `false` | Master toggle for NRPN slice editing. |
 | `nrpnChannel` | int | 0 to 16 (0 = omni) | MIDI channel filter for NRPN editing. |
 | `nrpnBlockCc` | bool | `true` / `false` | If true, NRPN edit CCs are stripped from MIDI output instead of passing through. |
@@ -85,7 +92,10 @@ urlImportSampleRate: 0
 | `auditionGainDb` | float | -24.0 to 6.0 | Browser audition volume in dB (`VOL`). |
 | `stemModelFolder` | string | filesystem path | Folder INTERSECT scans for ONNX stem models. |
 | `presetFolder` | string | filesystem path | Custom presets folder, listed in the browser alongside the default `presets/` folder. Omitted when none is set. |
-| `stemComputeDevice` | string | `cpu`, `cuda`, `migraphx`, `directml`, `coreml` (depends on platform) | Active stem-separation device. |
+| `stemComputeDevice` | string | `CPU` / `GPU` | The device `STEMS` starts with. `GPU` uses the installed runtime's GPU provider (CUDA, MIGraphX, DirectML or CoreML, depending on platform and bundle). |
+| `stemLastModel` | string | a model id, such as `scnet` | The model the stem view opens with. |
+| `stemExportMode` | string | `Combine` / `Separate` / `Group` | The stem view's `MODE`. Unknown values mean `Combine`; an older INTERSECT reading `Group` uses its default. |
+| `stemSelections` | list | nested list of `model-id=stem,stem,...` | The stems you last ticked, per model. |
 | `urlImportSaveMode` | string | `folder` / `ask` | Import from URL: save every import to `urlImportFolder` (default), or open a save dialog after each download. |
 | `urlImportFolder` | string | filesystem path | Where imports are saved. Omitted when it's the default, `Music/INTERSECT Downloads` (created on the first import). |
 | `urlImportChannel` | string | `stable` / `nightly` | Which yt-dlp builds to follow: tested releases (default) or nightly builds, which get site fixes sooner. |

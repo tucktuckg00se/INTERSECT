@@ -25,8 +25,9 @@ INTERSECT is a free, open-source sample slicer with stem separation built in. It
 - Runs on your own CPU or GPU (DirectML, CoreML, CUDA, MIGraphX), so your audio never leaves your machine
 - Stems land in your session as new samples, starting with their source sample's settings
 - Export one file per stem, or combine stems into one (say, everything but the vocals)
+- Or keep them together as a sample group: slice the song once and every slice plays all its stems on one key, with each stem's mute, level and output set for the whole group or per slice
 
-Docs: [Stem separation](https://tucktuckg00se.github.io/INTERSECT/stem-separation/)
+Docs: [Stem separation](https://tucktuckg00se.github.io/INTERSECT/stem-separation/), [Sample groups](https://tucktuckg00se.github.io/INTERSECT/workflow-basics/#sample-groups)
 
 </details>
 

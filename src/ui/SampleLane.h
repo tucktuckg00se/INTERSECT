@@ -27,6 +27,13 @@ public:
     std::function<void (int sampleId)> onAudioSaveRequested;
     /** A missing sample's chip was clicked: relink it. */
     std::function<void (int sampleId)> onRelinkRequested;
+    /** Right-click on a standalone sample / a group block: the group menus (GroupActions). */
+    std::function<void (int sampleId, juce::Rectangle<int> area)> onSampleMenuRequested;
+    std::function<void (int anchorId, juce::Rectangle<int> area)> onGroupMenuRequested;
+    /** MIX on a group block. */
+    std::function<void (int anchorId, juce::Rectangle<int> area)> onGroupMixRequested;
+    /** X on a group block, or Delete with it selected: remove the group and its samples. */
+    std::function<void (int anchorId, juce::Rectangle<int> area, bool skipConfirm)> onGroupRemoveRequested;
 
     /** While browsing, an empty lane explains how to add files. */
     void setShowEmptyHint (bool shouldShow);
@@ -54,11 +61,13 @@ private:
         int x2 = 0;
         bool selected = false;
         bool missing = false;   // placeholder awaiting relink: no AUDIO, MIDI or STEMS
+        bool isGroup = false;   // a group's block (sampleId = its anchor): MIX instead of STEMS
         juce::Colour colour;
         juce::String label;
         juce::Rectangle<int> audioBounds;
         juce::Rectangle<int> midiBounds;
         juce::Rectangle<int> stemsBounds;
+        juce::Rectangle<int> mixBounds;
         juce::Rectangle<int> deleteBounds;
     };
 

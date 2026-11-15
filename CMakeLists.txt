@@ -162,6 +162,8 @@ juce_add_binary_data(IntersectFonts SOURCES
 set(INTERSECT_CORE_SOURCES
     src/PluginProcessor.cpp
     src/ProcessorCommands.cpp
+    src/ProcessorGroups.cpp
+    src/ProcessorKitEdits.cpp
     src/PluginEditor.cpp
     src/PresetFile.cpp
     src/SettingsFile.cpp
@@ -173,6 +175,7 @@ set(INTERSECT_CORE_SOURCES
     src/audio/Rex2Import.cpp
     src/audio/SliceManager.cpp
     src/audio/SliceEdits.cpp
+    src/audio/SampleGroups.cpp
     src/audio/VoicePool.cpp
     src/audio/GrainEngine.cpp
     src/audio/LazyChopEngine.cpp
@@ -200,6 +203,13 @@ set(INTERSECT_CORE_SOURCES
     src/ui/browser/PlacesList.cpp
     src/ui/browser/PreviewPane.cpp
     src/ui/SampleLane.cpp
+    src/ui/CalloutMenu.cpp
+    src/ui/GroupActions.cpp
+    src/ui/GroupCallouts.cpp
+    src/ui/GroupLanes.cpp
+    src/ui/GroupUi.cpp
+    src/ui/SliceMembersButton.cpp
+    src/ui/TimelineMap.cpp
     src/ui/SignalChainBar.cpp
     src/ui/WaveformView.cpp
     src/ui/WaveformCache.cpp

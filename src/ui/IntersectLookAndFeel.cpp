@@ -96,7 +96,10 @@ void IntersectLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button
 {
     auto bounds = button.getLocalBounds().toFloat();
     const bool outlineOnly = static_cast<bool> (button.getProperties()[outlineOnlyButtonProperty]);
-    const auto baseFill = button.findColour (juce::TextButton::buttonColourId).isTransparent()
+    // A toggled-on button that sets buttonOnColourId (the group M buttons) fills with it.
+    const bool onColour = button.getToggleState() && button.isColourSpecified (juce::TextButton::buttonOnColourId);
+    const auto baseFill = onColour ? button.findColour (juce::TextButton::buttonOnColourId)
+        : button.findColour (juce::TextButton::buttonColourId).isTransparent()
         ? (outlineOnly ? juce::Colours::transparentBlack : getTheme().surface4)
         : button.findColour (juce::TextButton::buttonColourId);
     const auto textColour = button.findColour (button.getToggleState()

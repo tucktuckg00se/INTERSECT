@@ -27,6 +27,8 @@ public:
     StemJobState getState() const { return state.load (std::memory_order_acquire); }
     float getProgress() const { return progress.load (std::memory_order_acquire); }
     int getSourceSampleId() const { return sourceSampleId.load (std::memory_order_acquire); }
+    /** The mode the last job ran with (set on the message thread when it starts). */
+    StemExportMode getExportMode() const { return jobExportMode; }
 
     // Consume the result and reset to idle. Call only when state is completed or failed.
     StemJobResult consumeResult();

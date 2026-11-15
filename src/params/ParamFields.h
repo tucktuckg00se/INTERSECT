@@ -50,5 +50,6 @@ struct ParamFieldIds
         FieldLoopLength,
         FieldHighNote,
         FieldSliceRootNote,
+        FieldMemberMask,     // slice only: the members a group slice plays (sets kLockMembers)
     };
 };

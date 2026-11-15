@@ -26,8 +26,9 @@ std::optional<Release> parseLatestRelease (const juce::String& json);
 
 constexpr auto kNewIssueUrl = "https://github.com/tucktuckg00se/INTERSECT/issues/new";
 
-/** What the bug-report form can be pre-filled with. Values match the field ids and dropdown
-    options in .github/ISSUE_TEMPLATE/bug_report.yml; empty ones are left out. */
+/** What the bug-report form is pre-filled with (.github/ISSUE_TEMPLATE/bug_report.yml). GitHub
+    fills only text fields from a link, so OS, format and CPU go into the version field as text
+    ("v0.20.0 (Linux, VST3, Intel/AMD)"); empty values are left out. */
 struct IssueEnvironment
 {
     juce::String version;        // "0.20.0" or "v0.20.0"

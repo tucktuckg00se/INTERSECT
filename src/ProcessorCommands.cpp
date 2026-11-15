@@ -3,6 +3,7 @@
 // handleCommand. Everything below drainCommands runs on the audio thread (G1 in CLAUDE.md).
 
 #include "PluginProcessor.h"
+#include "audio/GroupMix.h"
 #include "ProcessorInternal.h"
 #include "Constants.h"
 #include "audio/AudioAnalysis.h"
@@ -40,6 +41,7 @@ static bool isCriticalCommand (IntersectProcessor::CommandType type)
         case IntersectProcessor::CmdFileLoadCompleted:
         case IntersectProcessor::CmdFileLoadFailed:
         case IntersectProcessor::CmdBeginGesture:
+        case IntersectProcessor::CmdSetMemberGain:   // a level drag: the next value follows
             return false;
 
         case IntersectProcessor::CmdCreateSlice:
@@ -54,6 +56,12 @@ static bool isCriticalCommand (IntersectProcessor::CommandType type)
         case IntersectProcessor::CmdSelectSlice:
         case IntersectProcessor::CmdSetRootNote:
         case IntersectProcessor::CmdStemSeparate:
+        case IntersectProcessor::CmdGroupCreate:
+        case IntersectProcessor::CmdGroupAddMembers:
+        case IntersectProcessor::CmdGroupRemoveMember:
+        case IntersectProcessor::CmdUngroup:
+        case IntersectProcessor::CmdSetMemberMute:
+        case IntersectProcessor::CmdSetMemberOutput:
             return true;
     }
 
@@ -332,6 +340,7 @@ UndoManager::Snapshot IntersectProcessor::makeSnapshot()
 
     snap.params = captureParamUndoState();
     snap.sampleParams = sampleParams;
+    snap.sampleGroups = sampleGroups;
     snap.midiSelectsSlice = midiSelectsSlice.load();
     snap.snapToZeroCrossing = snapToZeroCrossing.load();
     return snap;
@@ -365,6 +374,7 @@ void IntersectProcessor::restoreSnapshot (const UndoManager::Snapshot& snap)
     sliceManager.selectedSlice = snap.selectedSlice;
     sliceManager.rootNote.store (snap.rootNote);
     sampleParams = snap.sampleParams;
+    sampleGroups = snap.sampleGroups;
     selectedSessionSampleId.store (snap.selectedSessionSampleId, std::memory_order_relaxed);
     midiSelectsSlice.store (snap.midiSelectsSlice);
     snapToZeroCrossing.store (snap.snapToZeroCrossing);
@@ -431,6 +441,7 @@ void IntersectProcessor::handleCommand (const Command& cmd)
         case CmdSetSliceParam:
         case CmdSetSampleParam:
         case CmdSetRootNote:
+        case CmdSetMemberGain:
             if (! gestureSnapshotCaptured)
                 captureSnapshot();
             gestureSnapshotCaptured = true;
@@ -447,6 +458,12 @@ void IntersectProcessor::handleCommand (const Command& cmd)
         case CmdSplitSlice:
         case CmdTransientChop:
         case CmdRepackMidi:
+        case CmdGroupCreate:
+        case CmdGroupAddMembers:
+        case CmdGroupRemoveMember:
+        case CmdUngroup:
+        case CmdSetMemberMute:
+        case CmdSetMemberOutput:
             if (getUiStatusMessage().source == UiStatusMessage::Source::midiLimit)
                 clearUiStatusMessage();
             if (! gestureSnapshotCaptured)
@@ -486,8 +503,25 @@ void IntersectProcessor::handleCommand (const Command& cmd)
             if (sampleData.isLoaded())
             {
                 const auto psp = makePreviewStretchParams (selectedSampleParams(), dawBpm.load(), currentSampleRate, &sampleData);
-                lazyChop.start (sampleData.getNumFrames(), sliceManager, psp,
-                                snapToZeroCrossing.load(), &sampleData.getBuffer());
+                // With groups the kit buffer also holds hidden members, so LAZY plays the selected
+                // sample's own slot (a group: its mix). Kits without groups play the whole buffer.
+                int rangeStart = 0;
+                int rangeEnd = sampleData.getNumFrames();
+                GroupMix mix;
+                if (sampleGroups.count > 0)
+                {
+                    const int selectedId = selectedSessionSampleId.load (std::memory_order_relaxed);
+                    const auto* group = sampleGroups.groupWith (selectedId);
+                    if (const auto* shown = findActiveSessionSample (group != nullptr ? group->anchorId() : selectedId))
+                    {
+                        rangeStart = shown->startFrame;
+                        rangeEnd = shown->startFrame + shown->numFrames;
+                    }
+                    if (group != nullptr)
+                        mix = GroupMix::forGroup (*group, sampleData.getSessionSamples(), sampleData.getBuffer());
+                }
+                lazyChop.start (rangeStart, rangeEnd, sliceManager, psp,
+                                snapToZeroCrossing.load(), &sampleData.getBuffer(), mix);
             }
             break;
 
@@ -529,6 +563,11 @@ void IntersectProcessor::handleCommand (const Command& cmd)
 
                 if (turningOn)
                     SliceEdits::copySampleParam (s, sampleLevel, bit);
+
+                // A group slice taking its own members starts from what the group plays now.
+                if (turningOn && bit == kLockMembers)
+                    if (const auto* group = sampleGroups.groupAnchoredBy (s.sampleId))
+                        s.memberMask = group->unmutedMask();
 
                 s.lockMask ^= bit;
             }
@@ -619,6 +658,16 @@ void IntersectProcessor::handleCommand (const Command& cmd)
 
         case CmdStemSeparate:
             // Launched from message thread via startStemSeparation(); nothing to do here.
+            break;
+
+        case CmdGroupCreate:
+        case CmdGroupAddMembers:
+        case CmdGroupRemoveMember:
+        case CmdUngroup:
+        case CmdSetMemberGain:
+        case CmdSetMemberMute:
+        case CmdSetMemberOutput:
+            handleGroupCommand (cmd);
             break;
 
         case CmdNone:
@@ -725,9 +774,9 @@ void IntersectProcessor::splitSlice (const Command& cmd)
             if (doSnap)
             {
                 if (i > 0)
-                    s = AudioAnalysis::findNearestZeroCrossing (sampleData.getBuffer(), s);
+                    s = GroupMix::at (sampleGroups, sampleData.getSessionSamples(), sampleData.getBuffer(), s).findNearestZeroCrossing (s);
                 if (i < count - 1)
-                    e = AudioAnalysis::findNearestZeroCrossing (sampleData.getBuffer(), e);
+                    e = GroupMix::at (sampleGroups, sampleData.getSessionSamples(), sampleData.getBuffer(), e).findNearestZeroCrossing (e);
             }
             if (e - s < kMinSliceLengthSamples) e = s + kMinSliceLengthSamples;
             int idx = sliceManager.createSlice (s, e);

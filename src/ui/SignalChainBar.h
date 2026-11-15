@@ -3,6 +3,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "../Constants.h"
 #include "../params/SampleParams.h"
+#include "SliceMembersButton.h"
 #include <array>
 #include <functional>
 #include <vector>
@@ -196,6 +197,8 @@ private:
     int countAllEffectiveOverrides (const Slice& slice, const SampleParams& globals) const;
 
     IntersectProcessor& processor;
+    SliceMembersButton membersButton;   // MEMBERS on the bottom row, for group slices
+    bool selectedSampleIsGrouped() const;
     Scope scope = Scope::Sample;
     bool lastHadValidSlice = false;
     int lastSetBpmChoice = 4;   // SET BPM opens on the length used last (1 Bar at first)
