@@ -57,19 +57,25 @@ The right side lists the model's stems, grouped by instrument family. Click a st
 
 INTERSECT remembers your stem choice for each model.
 
+![The stem view for song.wav: the model list with SCNet selected and installed, its four stems ticked, and DEVICE, MODE and OUTPUT along the bottom]({{ site.baseurl }}/assets/images/stems-view.png)
+*The stem view: SCNet selected, all four stems ticked, MODE set to Group.*
+
 ## Step 4 — Device, mode and output
 
 - `DEVICE` toggles `CPU` / `GPU` (only when a GPU-capable runtime bundle is installed). GPU is usually 10–30× faster. If the GPU can't start, INTERSECT says so in the header instead of silently falling back.
 - `MODE`:
   - `Separate` — one WAV per selected stem.
   - `Combine` — the selected stems are summed into a single WAV (handy for "everything but vocals").
-  - `Group` — one WAV per selected stem, like `Separate`, and the new stems become a [sample group]({{ site.baseurl }}{% link workflow-basics.md %}#sample-groups) that starts with a copy of the source sample's slices. Slice the song once and each slice plays every stem; mute or rebalance stems for the whole group or per slice. The source sample stays as it was. A group holds up to 16 samples, so `START` is greyed while more than 16 stems are ticked.
-  - Click `MODE` to pick one; INTERSECT remembers your choice.
+  - `Group` — one WAV per selected stem, like `Separate`, and the new stems become a [sample group]({{ site.baseurl }}{% link sample-groups.md %}) named `STEMS · <source>` that starts with a copy of the source sample's slices. Slice the song once and each slice plays every stem; mute or rebalance stems for the whole group or per slice. The source sample stays as it was. A group holds up to 16 samples, so `START` is greyed while more than 16 stems are ticked.
+  - Click `MODE` to pick one from a small menu; INTERSECT remembers your choice.
 - `OUTPUT` — "Beside sample" writes a new folder next to the original file; `...` picks another folder, and clicking the cell goes back to "Beside sample".
+
+![The MODE menu open above the bottom bar: Combine, Separate, and Group (ticked)]({{ site.baseurl }}/assets/images/stems-mode-menu.png)
+*Clicking MODE opens its three choices.*
 
 ## Step 5 — START
 
-Press `START`. The view closes and the job runs in the background; you can keep working. The sample's lane block shows progress. When it finishes, the new WAVs are added to your session as new samples. Each one remembers which sample it came from and which stem it is, and starts with its source sample's settings (BPM, pitch, …).
+Press `START`. The view closes and the job runs in the background; you can keep working. The sample's lane block shows progress. When it finishes, the new WAVs are added to your session as new samples. Each one remembers which sample it came from and which stem it is, and starts with its source sample's settings (BPM, pitch, …). In `Group` mode they arrive as a group; the [Sample groups]({{ site.baseurl }}{% link sample-groups.md %}) guide picks up from there.
 
 ## Cancelling
 

@@ -28,6 +28,7 @@ Start with the **[Getting started]({{ site.baseurl }}{% link getting-started.md 
 ### Tutorials
 - [Getting started]({{ site.baseurl }}{% link getting-started.md %}) — your first session in ~10 minutes
 - [Stem separation]({{ site.baseurl }}{% link stem-separation.md %}) — split a sample into drums, bass, vocals, and more
+- [Sample groups]({{ site.baseurl }}{% link sample-groups.md %}) — slice a song's stems once and mix them per slice
 
 ### Concepts & interface
 - [Concepts]({{ site.baseurl }}{% link workflow-basics.md %}) — multi-sample sessions, slice creation, inheritance, algorithms

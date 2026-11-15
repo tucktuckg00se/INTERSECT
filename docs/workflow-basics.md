@@ -26,6 +26,9 @@ A **slice** is a region of one sample with a MIDI mapping and its own parameter 
 
 Each slice is mapped to a MIDI note. By default the first slice gets C2 (note 36) and subsequent slices receive successive notes. `RESEQ` rewrites those mappings either left-to-right (`BY POSITION`) or by creation order (`AS CREATED`).
 
+![Eight numbered slices across the first half of a sample: coloured blocks in the slice lane and matching regions on the waveform, slice 3 selected]({{ site.baseurl }}/assets/images/concepts-slices.png)
+*Slices in the slice lane (numbered blocks) and on the waveform. Click a block to select its slice.*
+
 ## Slice note ranges
 
 Each slice can respond to a single MIDI note or a range of notes:
@@ -37,16 +40,14 @@ Range mode is what turns INTERSECT from a kit-style slicer into a chromatic inst
 
 ## Sample groups
 
-A **group** is two or more samples of the same length that share one set of slices, like the stems of one song. A group slice plays every member together on one key, so you cut the song once and still rebalance or isolate its parts per chop.
+A **group** is two or more samples of the same length (within 10 ms) that share one set of slices, like the stems of one song. A group slice plays every sample in the group together on one key, mixed by each sample's mute, level and output. The [Sample groups]({{ site.baseurl }}{% link sample-groups.md %}) guide walks through it with pictures; the rules in short:
 
-- **Making a group.** Right-click a sample in the sample lane and choose `Group with...`, or point at a sample in the waveform and press `+ GROUP`. The list offers samples of the same length (within 10 ms); the others are greyed with the reason. STEMS can also make a group for you: see [Stem separation]({{ site.baseurl }}{% link stem-separation.md %}).
-- **Slices and settings.** The first member (the top lane) owns the group's slices, and its SAMPLE settings are the group's settings: the SAMPLE tab reads `GROUP` while a group is selected. When samples join a group, their own slices are removed; the group keeps the first member's.
-- **Lanes.** The waveform shows a group as one stretch with a lane per member, numbered from the top. Each lane header has the member's number, `M` (mute for the whole group) and, when you point at it, the name, a level slider, `x` (remove from the group) and a menu. `+ ADD SAMPLE` under the lanes adds more members. A group holds up to 16 samples.
-- **Mixing.** `MIX` on the group's block in the sample lane lists every member with its `M`, level and output (`Slice OUT` or its own bus), so you can send stems to separate DAW tracks. Level and mute changes apply from the next note.
-- **Per-slice members.** A slice follows the group mix until you give it its own members: use the `M`s inside the selected slice (when it is wide enough to show them) or `MEMBERS` on the SLICE tab's bottom row. A slice with its own members plays only those, at the group's levels, and its tab gets an orange corner. In the MEMBERS list, untick `Group mix` to give the slice its own members (starting from what it plays now), or tick it to go back to the group mix.
-- **Audio, MIDI, analysis.** `AUDIO` on the group block exports the group's mix as a WAV. `AUTO` and zero-crossing snap listen to the mix, and `LAZY` plays it.
-- **Leaving a group.** `x` on a lane header (or `Remove from group`) makes that member a standalone sample with a copy of the group's slices, if there is room for them (128 slices in all). `Ungroup` does that for every member. A group with one member left ends by itself. `Duplicate sample` adds a standalone copy of a sample, so a stem can be in a group and on its own.
-- **Missing files.** A member whose file is missing plays silence; the rest of the group still plays.
+- The top sample owns the group's slices, and its sample settings are the group's (the `SAMPLE` tab reads `GROUP`).
+- A slice follows the group mix until it gets its own members; then it plays only those, at the group's levels.
+- A lane's `M` changes only the slices that follow the group mix. A sample added to the group plays only in those slices too.
+- Taking a sample out gives it a copy of the group's slices when there's room; a group left with one sample ends.
+- `AUTO`, `ZX`, `LAZY`, Shift+click preview and the `AUDIO` export use the group's mix.
+- Up to 16 samples per group and 32 groups. A missing sample plays silence while the rest of the group plays on.
 
 ## The inheritance / lock model
 
@@ -60,11 +61,14 @@ INTERSECT has three levels of settings:
 
 The signal chain bar at the bottom of the editor has two tabs: `SAMPLE` (the selected sample's settings) and `SLICE` (overrides for the selected slice).
 
-> **Example.** With no slice selected, set `SAMPLE → PITCH` to `+2`. Every slice of that sample now plays at +2 semitones; other samples in the session are unchanged. Now select one slice, click the `SLICE` tab, and drag its `PITCH` to `+7`. The parameter label highlights — that slice has a **lock** on `PITCH`. It plays at +7. All other slices still inherit `+2`.
+> **Example.** With no slice selected, set `SAMPLE → PITCH` to `+2`. Every slice of that sample now plays at +2 semitones; other samples in the session are unchanged. Now select one slice, click the `SLICE` tab, and drag its `PITCH` to `+7`. The parameter label turns orange and the bottom row counts the override — that slice has a **lock** on `PITCH`. It plays at +7. All other slices still inherit `+2`.
 >
 > Change `SAMPLE → PITCH` to `0`. The locked slice still plays at `+7`; everything else now plays at `0`.
 >
 > Right-click the locked `PITCH` value (or click the highlighted parameter label) to clear the lock. The slice re-inherits the sample default.
+
+![The signal chain on the SLICE tab: PITCH reads +11st with an orange label, and the bottom row reads 1 overrides]({{ site.baseurl }}/assets/images/concepts-lock.png)
+*A slice with a lock on `PITCH`: the orange label marks the override.*
 
 This applies to almost every signal-chain parameter, plus per-slice settings like output bus, mute group, and loop mode. The result is that defaults are cheap to set sample-wide, but anything can be locked when a slice needs to differ.
 

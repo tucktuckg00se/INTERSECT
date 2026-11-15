@@ -57,7 +57,7 @@ Time/Pitch notes:
 | `HIGH` | Highest note in the trigger range | Shown only in range mode |
 | `ROOT` | Transposition and filter key-track reference note for the slice | Shown only in range mode |
 | Note name text | Read-only pitch name display | Appears after the numeric field(s) and is not draggable |
-| `MEMBERS` | Which group members the slice plays | Group slices only. Shows the members' numbers, then `group mix` or `own` (orange). Click for the list: `Group mix`, `UNMUTE ALL` and an `M` per member that mutes it in this slice only |
+| `MEMBERS` | Which group members the slice plays | Group slices only. Shows the members' numbers, then `group mix` or `own` (orange). Click for the list: untick `Group mix` to give the slice its own members (tick it to go back), `UNMUTE ALL`, and an `M` per member that mutes it in this slice only |
 
 ### Filter module
 
@@ -112,6 +112,9 @@ These apply to the whole plugin, not to one sample, and are exposed as APVTS par
 
 ## Action bar
 
+![The action bar: ADD, LAZY, AUTO, COPY, DEL, ZX, FM and RESEQ]({{ site.baseurl }}/assets/images/controls-action-bar.png)
+*The action bar.*
+
 | Button | Function |
 | --- | --- |
 | `ADD` | Toggle draw-slice mode (shows a waveform hint to drag and create a slice) |
@@ -148,14 +151,24 @@ All three parameter cells support drag-to-edit (drag up/down) and double-click t
 | Drag sample in sample lane | Reorder session samples |
 | Drag a sample's `MIDI` button | Drop a MIDI clip of that sample's slices into your DAW |
 | Click a sample's `MIDI` button | Save that sample's slices as a `.mid` file |
-| Click slice | Select slice |
+| Drag a sample's `AUDIO` button | Drop the sample's audio file (a group: a WAV of its mix) into your DAW or a folder |
+| Click a sample's `AUDIO` button | Save a copy of the sample's audio |
+| Right-click a sample or group in the sample lane | Menu: `Group with...`, `Add to group`, `Duplicate sample`, `Remove...`; for a group `Add sample...`, `Mix...`, `Remove from group`, `Duplicate as separate sample`, `Ungroup`, `Remove group...` |
+| Click a slice's block in the slice lane | Select slice |
 | Click empty waveform in `ADD` mode | Begin draw-slice gesture |
 | Drag `S` / `E` edge handles | Resize selected slice |
 | Drag inside selected slice | Move slice |
 | `Ctrl` + drag selected slice | Duplicate slice to new position |
 | `Alt` + drag waveform | Temporary draw-slice gesture |
 | Press `ADD` / `Shift + A` | Enters draw mode and shows an on-waveform hint |
-| `Shift` + click waveform | Preview from clicked sample position |
+| `Shift` + click waveform | Preview from clicked sample position (in a group: the group's mix, stopping at the group's end) |
+| `+ GROUP` (point at a sample in the waveform) | Group this sample with others of the same length |
+| `+ ADD SAMPLE` (under a group's lanes) | Add samples of the same length to the group |
+| Click a lane header's `M` | Mute that sample in the whole group |
+| Point at a lane header | Open it: name, level, `x` (remove from the group), `...` (menu) |
+| Drag a lane header's level / double-click it | Set the sample's level in the group / reset it to 0 dB |
+| Right-click a lane header, or click its `...` | Menu: `Mute`, `Mix...`, `Output`, `Duplicate as separate sample`, `Remove from group` |
+| Click an `M` inside the selected group slice | Mute that sample in this slice only (the slice gets its own members) |
 | Mouse wheel | Cursor-anchored zoom |
 | `Shift` + mouse wheel | Horizontal scroll |
 | Middle-button drag | Combined horizontal scroll + vertical zoom |
@@ -179,6 +192,20 @@ All three parameter cells support drag-to-edit (drag up/down) and double-click t
 | `Right Arrow` or `Tab` | Select next slice |
 | `Left Arrow` or `Shift + Tab` | Select previous slice |
 | `Esc` | Close Auto Chop panel |
+| `Ctrl/Cmd + V` | Import the link on the clipboard (see [Import from URL]({{ site.baseurl }}{% link interface.md %}#import-from-url)) |
+
+In a right-click menu (and the STEMS `MODE` menu):
+
+| Key | Action |
+| --- | --- |
+| `Up` / `Down` | Move through the items |
+| `Return` | Choose the highlighted item |
+| `Right` | Open the highlighted item's list (items with `›`) |
+| `Left` / `Backspace` | Back to the previous list |
+| `Esc` | Close the menu |
+
+![A sample's right-click menu: Group with (greyed), Add to group, Duplicate sample, and Remove]({{ site.baseurl }}/assets/images/controls-sample-menu.png)
+*Right-click a sample in the sample lane for its menu.*
 
 While the file browser is open, the editing shortcuts above are paused and these apply instead:
 

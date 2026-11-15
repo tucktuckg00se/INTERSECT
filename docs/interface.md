@@ -6,6 +6,9 @@ description: "Tour of every visible area of the INTERSECT editor — header bar,
 
 # Interface layout
 
+![The INTERSECT editor: header bar, sample lane with a sample and a group, slice lane, waveform with four stem lanes, action bar, signal chain and its bottom row]({{ site.baseurl }}/assets/images/interface-editor.png)
+*From the top: header bar, sample lane, slice lane, waveform (here a sample and a group of its stems), action bar, signal chain bar.*
+
 ## Header bar
 
 | Area | Function | Notes |
@@ -21,9 +24,9 @@ description: "Tour of every visible area of the INTERSECT editor — header bar,
 
 | Area | Function | Notes |
 | --- | --- | --- |
-| Sample lane | Compact session-sample overview above the slice lane | Reflects selection and zoom; drag to reorder samples; includes per-sample `AUDIO`, `MIDI`, `STEMS` / `CANCEL` and an `X` that removes the sample (a small question pops up first: `REMOVE` or `Return` confirms, `CANCEL` / `Esc` keeps it; hold `Shift` to skip the question). A [sample group]({{ site.baseurl }}{% link workflow-basics.md %}#sample-groups) shows as one block with `AUDIO` (the group's mix), `MIX` (each member's mute, level and output), `MIDI` and `X` (removes the whole group). Right-click a sample or group for `Group with...`, `Add to group`, `Duplicate sample`, `Ungroup` and more |
-| Slice lane | Compact slice-region overview above the waveform | Reflects selection and zoom |
-| Waveform | Main editing surface | Drag-and-drop loading/appending, slice selection, boundary editing, move/duplicate, preview. A group shows one lane per member, with a header (number, `M`, and on hover the name, level, `x` and a menu) and `+ ADD SAMPLE` under the lanes; a standalone sample shows `+ GROUP` on hover |
+| Sample lane | Compact session-sample overview above the slice lane | Reflects selection and zoom; drag to reorder samples; includes per-sample `AUDIO`, `MIDI`, `STEMS` / `CANCEL` and an `X` that removes the sample (a small question pops up first: `REMOVE` or `Return` confirms, `CANCEL` / `Esc` keeps it; hold `Shift` to skip the question). A [sample group]({{ site.baseurl }}{% link sample-groups.md %}) shows as one block with `AUDIO` (the group's mix), `MIX` (each member's mute, level and output), `MIDI` and `X` (removes the whole group). Right-click a sample or group for a menu (`Group with...`, `Add to group`, `Duplicate sample`, `Ungroup` and more) that opens in a small box like the other prompts |
+| Slice lane | Compact slice-region overview above the waveform | Click a block to select its slice. Reflects selection and zoom; a slice with its own group members gets an orange corner |
+| Waveform | Main editing surface | Drag-and-drop loading/appending, drawing slices, editing the selected slice's edges, moving/duplicating it, Shift+click preview. A group shows one lane per member, with a header (number, `M`, and on hover the name, level, `x` and a menu) and `+ ADD SAMPLE` under the lanes; a standalone sample shows `+ GROUP` on hover |
 | Overlay hints | Contextual help and action prompts | Used by `ADD`, `AUTO`, and other actions |
 | Playback cursors | Voice-position display | Shows active playheads |
 | Transient preview markers | Auto Chop preview | Dashed markers shown before applying transient split |
@@ -33,6 +36,9 @@ description: "Tour of every visible area of the INTERSECT editor — header bar,
 Click `FILES` in the header to open the browser. It takes over everything below the sample lane, so the header and the sample lane stay visible while you browse. Click `FILES` again, press `CLOSE` (bottom right) or press `Esc` to go back to the editor. The bar along the bottom shows how many items are listed and selected, search progress, and short notes such as where `FILES` will open. The browser always starts closed. By default `FILES` opens it in the last folder you browsed, in this or any other open INTERSECT, and that carries over to your next session. To have it open in the same folder every time, right-click that folder (in the list or the sidebar) and choose **Set as Default Folder**, or pick it in **SET → Files**. `SAVE` and relinking a missing file still open the browser where they need to.
 
 The browser has three columns.
+
+![The file browser: PRESETS, LOCATIONS and DRIVES on the left, a folder of WAV files in the middle with song.wav selected, and its details with PLAY, AUTO, VOL, ADD and LOAD on the right]({{ site.baseurl }}/assets/images/interface-browser.png)
+*The file browser: places, files, and a preview of the selected file.*
 
 ### Places (left)
 
@@ -130,11 +136,17 @@ Each sample also has a `MIDI` button (`M` when the sample is narrow). Drag it in
 
 Each sample in the sample lane has a `STEMS` button that opens the stem view for that sample. Like the `FILES` browser, it takes over the editing area below the sample lane: models on the left, the model's stems (grouped, with search) on the right, and device / mode / output / `START` along the bottom. While a job is running on that sample, the button reads `CANCEL`.
 
+![The stem view with SCNet selected and its four stems ticked]({{ site.baseurl }}/assets/images/stems-view.png)
+*The stem view for one sample.*
+
 For an end-to-end walkthrough — picking a model, device, and mode, then running the export — see the dedicated [Stem separation]({{ site.baseurl }}{% link stem-separation.md %}) page.
 
 ## Settings
 
 Click `SET` in the header to open the settings view. Like the browser, it takes over everything below the sample lane; click `SET` again, press `CLOSE` (bottom right) or press `Esc` to go back. The bottom bar also shows the plugin version and has `OPEN SETTINGS FOLDER`, which opens the folder holding `settings.yaml`, themes and presets. Pick a category on the left (the arrow keys also step through them). Changes apply and are saved straight away.
+
+![SET, General page: UI SCALE 1.50x with minus and plus buttons, THEME set to oc, and MIDDLE C with C3, C4 and C5]({{ site.baseurl }}/assets/images/settings-general.png)
+*SET → General.*
 
 | Page | What's there |
 | --- | --- |
@@ -174,11 +186,14 @@ The bottom bar is the main parameter editor. It has four modules: `TIME/PITCH`, 
 
 **Collapsed mode** (default): `SAMPLE` and `SLICE` tabs switch between scopes, with one parameter strip visible at a time. `SAMPLE` edits the selected sample only: every sample in the session keeps its own settings.
 
-**Expanded mode**: shows both strips simultaneously — slice on top, sample below — with no tabs. Click the chevron toggle on the right edge of the context bar to switch between modes.
+**Expanded mode**: shows both strips simultaneously — slice on top, sample below (labelled `GROUP` for a group) — with no tabs. Click the chevron toggle on the right edge of the context bar to switch between modes.
+
+![The expanded signal chain: a SLICE strip above a GROUP strip, each with TIME/PITCH, FILTER, AMP and PLAYBACK, and the bottom row with the slice range, NOTE, MEMBERS, SLICES, ROOT and VOICES]({{ site.baseurl }}/assets/images/interface-signal-chain.png)
+*Expanded mode for a group slice: the slice strip above the group strip.*
 
 **Context bar** (bottom edge):
 - `SLICES` count, the sample `ROOT` note and `VOICES` (the plugin-wide voice limit) are always visible on the right. The sample `ROOT` is editable only when no slices exist.
-- When a slice is selected: slice sample range, length, a `NOTE`/`RANGE` toggle, numeric note controls, read-only note names, and override count.
+- When a slice is selected: slice sample range, length, a `NOTE`/`RANGE` toggle, numeric note controls, read-only note names, and override count. For a slice of a group, `MEMBERS` shows which samples it plays; click it to choose (see [Sample groups]({{ site.baseurl }}{% link sample-groups.md %})).
 
 ```text
 ┌─[ Tab: SAMPLE | SLICE ]─────────[ slice range · length · NOTE/RANGE ]──────[ SLICES: 8  ROOT: C2  VOICES: 16 ]┐
@@ -190,7 +205,7 @@ The bottom bar is the main parameter editor. It has four modules: `TIME/PITCH`, 
 General behavior:
 - Drag up/down on a value to edit it.
 - Double-click a value to type it directly.
-- In `SLICE` mode, editing a field locks that field for the selected slice when it differs from the sample value. The parameter label highlights to show the lock.
+- In `SLICE` mode, editing a field locks that field for the selected slice when it differs from the sample value. The parameter label turns orange to show the lock.
 - In `SLICE` mode, clicking a locked field label or right-clicking the field clears that override and re-inherits the sample value.
 
 For each module's individual controls, see the [Controls and shortcuts reference]({{ site.baseurl }}{% link controls-reference.md %}). For the underlying mental model, see [Concepts → The inheritance / lock model]({{ site.baseurl }}{% link workflow-basics.md %}#the-inheritance--lock-model).

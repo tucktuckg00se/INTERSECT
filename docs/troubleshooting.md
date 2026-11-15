@@ -98,6 +98,26 @@ ONNX Runtime 1.24 dropped x86_64 macOS support, so stem separation isn't availab
 ### Stem export is slow on CPU
 That's expected — BS-RoFormer is compute-heavy. On a modern desktop CPU, expect minutes per minute of audio. A supported GPU bundle is dramatically faster; see [Installation → Stem separation setup]({{ site.baseurl }}{% link installation.md %}#stem-separation-setup).
 
+### START is greyed in Group mode with a lot of stems ticked
+A group holds up to 16 samples, so `START` stays greyed while more than 16 stems are ticked (MVSep Mega 53 has 53). Untick some, or use `Separate`.
+
+## Sample groups
+
+### A group slice plays only some of its stems
+Check, in this order:
+- `MEMBERS` on the `SLICE` tab's bottom row. If it reads `own` (orange), the slice has its own choice of stems; tick `Group mix` in its list to go back to the group's mix.
+- The lane headers' `M` buttons, which mute a stem in every slice that follows the group mix.
+- The levels in `MIX`: the bottom of a level slider is off (`-∞ dB`).
+- A stem whose file is missing plays silence; the header asks you to relink it.
+
+### A sample is greyed in the Group with list
+Only samples of the same length (within 10 ms) can be grouped; the list says why a sample can't join. A sample already in another group, or a full group (16), is greyed too.
+
+### I can't see the M buttons inside a slice
+They appear only when the selected slice is wide enough and the lanes tall enough. Zoom in, or use `MEMBERS` on the `SLICE` tab's bottom row, which works for any slice.
+
+See [Sample groups]({{ site.baseurl }}{% link sample-groups.md %}) for the whole picture.
+
 ## Import from URL
 
 ### "The site wants to confirm you're not a bot"

@@ -25,6 +25,9 @@ Drag your audio file from your file manager onto the waveform area. The waveform
 
 Alternative: click **FILES** in the header to open the file browser. Select a file to hear it, then double-click it to add it. Click **FILES** again to return to the editor.
 
+![INTERSECT with one sample loaded: the sample lane shows song.wav above its waveform]({{ site.baseurl }}/assets/images/gs-loaded.png)
+*One sample loaded: its block in the sample lane, its waveform below.*
+
 ## 2. Draw your first slice
 
 Press `Shift + A` (or click `ADD` in the action bar). A hint appears: "ADD mode: drag on waveform to create a slice."
@@ -32,6 +35,9 @@ Press `Shift + A` (or click `ADD` in the action bar). A hint appears: "ADD mode:
 Drag on the waveform to draw a region. When you release, you have a slice — visible as a coloured region on the waveform and a labelled block in the slice lane.
 
 The first slice gets MIDI note **C2 (note 36)** by default.
+
+![A slice drawn over the first two bars, shown as block 1 in the slice lane and selected on the SLICE tab]({{ site.baseurl }}/assets/images/gs-first-slice.png)
+*A first slice: block 1 in the slice lane, selected on the SLICE tab with its range and note on the bottom row.*
 
 ## 3. Play the slice
 
@@ -43,25 +49,31 @@ If nothing plays, see [Troubleshooting → A slice doesn't make sound]({{ site.b
 
 The bottom of the editor is the **signal chain bar**. It has two tabs: `SAMPLE` (sample-wide defaults) and `SLICE` (overrides for the selected slice).
 
-1. Click your slice on the waveform to select it.
+1. Click your slice's block in the slice lane (the strip of numbered blocks above the waveform) to select it.
 2. In the signal chain bar, click the `SLICE` tab.
 3. Find the `PITCH` parameter in the Time/Pitch module. Drag its value up to `+5`.
 
-The parameter label highlights — that means the slice has a locked override on `PITCH`. Right-click the value (or click the highlighted label) to clear the lock and inherit the sample default again.
+The parameter label turns orange and the bottom row counts the overrides — that means the slice has a locked override on `PITCH`. Right-click the value (or click the highlighted label) to clear the lock and inherit the sample default again.
 
 This is INTERSECT's core idea: edit defaults in `SAMPLE`, then lock per-slice overrides where you want them to differ.
+
+![The SLICE tab with PITCH overridden: the PITCH label is orange and the bottom row reads 1 overrides]({{ site.baseurl }}/assets/images/gs-slice-lock.png)
+*PITCH locked on the selected slice: the label turns orange and the bottom row counts the override.*
 
 ## 5. Chop the sample into even pieces
 
 Manual slicing is fine for a kit, but for a loop you usually want even subdivisions.
 
-1. Click anywhere on your existing slice to select it.
+1. Select your slice in the slice lane.
 2. Press `Shift + C` (or click `AUTO`). The Auto Chop panel appears at the bottom.
 3. Set `DIV` to `8` and click `SPLIT EQUAL`.
 
 You now have 8 slices, each assigned to successive MIDI notes starting at C2.
 
 For transient-based slicing instead, raise `SENS` until the dashed preview markers line up with the onsets in your waveform, then click `SPLIT TRANSIENTS`.
+
+![The Auto Chop panel over the bottom of the waveform, with dashed transient markers inside the selected slice]({{ site.baseurl }}/assets/images/gs-autochop.png)
+*The Auto Chop panel: dashed markers preview where SPLIT TRANSIENTS would cut.*
 
 ## 6. Resequence MIDI notes by position
 
@@ -79,3 +91,4 @@ To audition slices while editing, click `FM` (Follow MIDI). The played slice aut
 - [Interface]({{ site.baseurl }}{% link interface.md %}) — every panel and area of the editor.
 - [Controls and shortcuts]({{ site.baseurl }}{% link controls-reference.md %}) — the full reference, with keyboard shortcuts.
 - [Stem separation]({{ site.baseurl }}{% link stem-separation.md %}) — split a sample into drums, bass, vocals, etc. for layered slicing.
+- [Sample groups]({{ site.baseurl }}{% link sample-groups.md %}) — slice a song's stems once and play them together, with a mute and level per stem.

@@ -22,6 +22,9 @@ The folder sits next to `themes/` and is created the first time you open it or s
 
 You can also add a **custom presets folder**, for example one inside a synced drive, from **SET → Presets** (`CHOOSE...` next to **Custom folder**). It works alongside the default folder: both appear in the browser. `CLEAR` removes it from INTERSECT without touching the files, and `OPEN` shows it in your file manager.
 
+![The file browser on the Presets folder: a preset named Song kit with 5 samples, and its sample list in the preview column with LOAD PRESET]({{ site.baseurl }}/assets/images/presets-browser.png)
+*A saved kit in the browser's PRESETS folder, with the samples it uses.*
+
 ## Saving
 
 Click **SAVE** in the header, next to `FILES`. It works from the editor or the browser:

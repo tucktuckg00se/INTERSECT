@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-## [0.20.0] - 2026-11-14
+## [0.20.0] - 2026-11-15
 
 ### Added
 - **Sample groups**: group samples of the same length, like the stems of one song, and they share one set of slices. Each slice plays every sample in the group together on one key, so you cut the song once and can still rebalance or isolate its parts per slice. Right-click a sample → **Group with...**, or point at a sample in the waveform and press **+ GROUP**. Groups are saved with your project; an older INTERSECT opens it with the samples separate and the group's slices playing only the first one.
