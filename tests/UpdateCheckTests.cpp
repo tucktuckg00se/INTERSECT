@@ -64,14 +64,15 @@ void issueUrlIsPrefilled()
 
     require (url.startsWith (juce::String (UpdateCheck::kNewIssueUrl) + "?template=bug_report.yml"), "template first: " + url.toStdString());
     require (url.contains ("version=v0.20.0"), "version gets the template's leading v: " + url.toStdString());
-    require (url.contains ("os=Linux") && url.contains ("format=VST3"), "os and format: " + url.toStdString());
-    require (url.contains ("architecture=Intel%2FAMD"), "slash escaped: " + url.toStdString());
     require (url.contains ("daw=Bitwig") && ! url.contains ("Bitwig Studio"), "space escaped: " + url.toStdString());
 
+    // GitHub refuses (406) a link that names the dropdowns: OS, format and CPU ride in the version text.
     const auto parsed = juce::URL (url);
     const auto names = parsed.getParameterNames();
     const auto values = parsed.getParameterValues();
-    require (values[names.indexOf ("architecture")] == "Intel/AMD", "architecture round-trips");
+    require (! names.contains ("os") && ! names.contains ("format") && ! names.contains ("architecture"),
+             "no dropdown values in the link: " + url.toStdString());
+    require (values[names.indexOf ("version")] == "v0.20.0 (Linux, VST3, Intel/AMD)", "version carries the details");
     require (values[names.indexOf ("daw")] == "Bitwig Studio", "daw round-trips");
 }
 
@@ -82,6 +83,9 @@ void issueUrlSkipsEmptyFields()
     environment.format = "Standalone";
     const auto url = UpdateCheck::makeIssueUrl (environment);
     require (url.contains ("version=v0.20.0") && ! url.contains ("vv0"), "an existing v is kept once: " + url.toStdString());
+    const auto parsed = juce::URL (url);
+    require (parsed.getParameterValues()[parsed.getParameterNames().indexOf ("version")] == "v0.20.0 (Standalone)",
+             "only the details there are: " + url.toStdString());
     require (! url.contains ("daw=") && ! url.contains ("os="), "empty fields left out: " + url.toStdString());
     require (UpdateCheck::currentOsLabel().isNotEmpty(), "this OS has a label");
 }
