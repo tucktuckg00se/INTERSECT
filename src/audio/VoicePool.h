@@ -76,6 +76,8 @@ struct PreviewStretchParams
     const SampleData* sample = nullptr;
 };
 
+struct GroupMix;
+
 class VoicePool
 {
 public:
@@ -129,7 +131,10 @@ public:
         return voices[(size_t) idx];
     }
 
-    void startShiftPreview (int startSample, int bufferSize, const PreviewStretchParams& p);
+    /** Shift+click preview from startSample up to rangeEnd. With a group's mix it plays the
+        members as notes do (stopping at the group's end, which the caller passes as rangeEnd). */
+    void startShiftPreview (int startSample, int rangeEnd, const PreviewStretchParams& p,
+                            const GroupMix* mix = nullptr);
     void stopShiftPreview();
 
     // Public helpers so LazyChopEngine can initialise stretch on preview voice

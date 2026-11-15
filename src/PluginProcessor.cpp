@@ -2028,7 +2028,14 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         else if (req >= 0 && ! lazyChop.isActive() && sampleData.isLoaded())
         {
             const auto psp = makePreviewStretchParams (selectedSampleParams(), dawBpm.load(), currentSampleRate, &sampleData);
-            voicePool.startShiftPreview (req, sampleData.getNumFrames(), psp);
+            // In a group's slot the preview plays the members' mix and stops at the group's end
+            // (a group with every member muted has nothing to play); elsewhere it plays the kit on.
+            const auto mix = GroupMix::at (sampleGroups, sampleData.getSessionSamples(), sampleData.getBuffer(), req);
+            const int groupEnd = mix.anchorStart + mix.anchorFrames;
+            if (mix.anchorFrames <= 0 || req < mix.anchorStart || req >= groupEnd)
+                voicePool.startShiftPreview (req, sampleData.getNumFrames(), psp);
+            else if (mix.numTaps > 0)
+                voicePool.startShiftPreview (req, groupEnd, psp, &mix);
         }
     }
 

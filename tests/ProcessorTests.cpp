@@ -10,12 +10,15 @@
 #include "state/SessionState.h"
 #include "ui/TimelineMap.h"
 #include "audio/GroupMix.h"
+#include "ui/GroupUi.h"
+#include "params/ParamIds.h"
 
 #include <atomic>
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <random>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -1205,6 +1208,218 @@ void stemsInGroupModeBecomeAGroup()
     require (host.ui().sampleGroups.count == 1, "one stem in Group mode is a plain sample");
 }
 
+void shiftPreviewPlaysTheGroupMix()
+{
+    TempDir temp;
+    const int n = (int) kRate;
+    const auto a = writeTone (temp.dir.getChildFile ("a.wav"), n, 109.0, 0.4f);
+    const auto b = writeTone (temp.dir.getChildFile ("b.wav"), n, 61.0, 0.4f);
+
+    Host host;
+    const auto ids = loadSamples (host, { a, b });
+    pushGroup (host, IntersectProcessor::CmdGroupCreate, ids[0], { ids[1] });
+    host.runUntil ([&] { return host.ui().sampleGroups.count == 1; }, "the group");
+    host.processor.selectedSessionSampleId.store (ids[0]);
+
+    const auto capture = [&host] (int blocks)
+    {
+        std::vector<float> out;
+        for (int i = 0; i < blocks; ++i)
+        {
+            host.renderBlock();
+            for (int s = 0; s < host.buffer.getNumSamples(); ++s)
+                out.push_back (host.buffer.getSample (0, s));
+        }
+        return out;
+    };
+
+    host.processor.shiftPreviewRequest.store (109 * 61);   // both tones start a cycle here
+    const auto out = capture (18);
+    require (correlation (out, 109.0, 512) > 0.5 && correlation (out, 61.0, 512) > 0.5,
+             "Shift+click in a group previews its members' mix");
+
+    // From near the group's end it stops there, instead of running on into b's own audio.
+    host.processor.shiftPreviewRequest.store (-1);
+    capture (20);
+    host.processor.shiftPreviewRequest.store (n - 1000);
+    const auto tail = capture (30);
+    double late = 0.0;
+    for (size_t i = 4000; i < tail.size(); ++i)
+        late += (double) tail[i] * tail[i];
+    require (late < 1.0e-6, "the preview stops at the group's end");
+}
+
+// Group edits while notes play, as when a player plays a group slice from a keyboard and tries
+// mute combinations: random member masks, lock toggles, mutes, levels, outputs, membership changes
+// and undo/redo on the message thread while another thread renders random notes on the group's
+// slices. The kit, the group and the UI scale must survive, and the output must stay finite. Run
+// under ASan/UBSan, TSan (tests/tsan.supp) and RTSan.
+void groupEditsWhilePlaying()
+{
+    TempDir temp;
+    const int n = (int) kRate * 20;
+    const std::vector<juce::File> files {
+        writeTone (temp.dir.getChildFile ("drums.wav"), n, 61.0, 0.3f),
+        writeTone (temp.dir.getChildFile ("bass.wav"), n + 1, 97.0, 0.3f),      // stems can run a frame long
+        writeTone (temp.dir.getChildFile ("vocals.wav"), n + 3, 109.0, 0.3f),
+        writeTone (temp.dir.getChildFile ("other.wav"), n - 2, 83.0, 0.3f),
+    };
+
+    Host host;
+    const auto ids = loadSamples (host, files);
+    for (int s = 0; s < 16; ++s)
+        host.push (IntersectProcessor::CmdCreateSlice, s * (n / 16), (s + 1) * (n / 16));
+    pushGroup (host, IntersectProcessor::CmdGroupCreate, ids[0], { ids[1], ids[2], ids[3] });
+    host.runUntil ([&] { return host.ui().sampleGroups.count == 1 && host.ui().numSlices == 16; }, "the group");
+    const float scaleBefore = host.processor.apvts.getRawParameterValue (ParamIds::uiScale)->load();
+
+    std::atomic<bool> stop { false };
+    std::atomic<bool> nonFinite { false };
+    std::atomic<int> blocks { 0 };
+    std::thread audio ([&]
+    {
+        juce::AudioBuffer<float> buffer (host.processor.getTotalNumOutputChannels(), kBlock);
+        juce::MidiBuffer midi;
+        std::mt19937 rng (7);
+        while (! stop.load())
+        {
+            midi.clear();
+            for (int e = 0; e < 2; ++e)
+            {
+                const int note = 36 + (int) (rng() % 16);
+                if (rng() % 3 == 0)
+                    midi.addEvent (juce::MidiMessage::noteOff (1, note), (int) (rng() % kBlock));
+                else
+                    midi.addEvent (juce::MidiMessage::noteOn (1, note, 0.8f), (int) (rng() % kBlock));
+            }
+            {
+                const juce::ScopedLock lock (host.processor.getCallbackLock());
+                if (host.processor.isSuspended())
+                    buffer.clear();
+                else
+                    host.processor.processBlock (buffer, midi);
+            }
+            for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+                for (int i = 0; i < buffer.getNumSamples(); ++i)
+                    if (! std::isfinite (buffer.getSample (ch, i)))
+                        nonFinite = true;
+            blocks.fetch_add (1);
+        }
+    });
+
+    std::mt19937 rng (11);
+    const auto pick = [&rng] (int count) { return (int) (rng() % (uint32_t) count); };
+    int duplicates = 0;
+    for (int i = 0; i < 2500; ++i)
+    {
+        const auto& ui = host.ui();
+        const auto* group = ui.sampleGroups.count > 0 ? &ui.sampleGroups.groups[0] : nullptr;
+        const int slice = ui.numSlices > 0 ? pick (ui.numSlices) : -1;
+        const int member = group != nullptr ? group->memberIds[(size_t) pick (group->numMembers)] : ids[(size_t) pick (4)];
+
+        switch (pick (12))
+        {
+            case 0: case 1: case 2:   // an in-slice M or a MEMBERS row
+                if (slice >= 0)
+                    GroupUi::setSliceMembers (host.processor, slice, 1u + (uint32_t) pick (15));
+                break;
+            case 3:                   // Group mix on/off
+                if (slice >= 0)
+                {
+                    IntersectProcessor::Command cmd;
+                    cmd.type = IntersectProcessor::CmdToggleLock;
+                    cmd.sliceIdx = slice;
+                    cmd.lockBitParam = kLockMembers;
+                    host.processor.pushCommand (cmd);
+                }
+                break;
+            case 4: case 5:           // a lane header's M
+                pushGroup (host, IntersectProcessor::CmdSetMemberMute, member, {}, pick (2));
+                break;
+            case 6:                   // a level drag
+                pushGroup (host, IntersectProcessor::CmdSetMemberGain, member, {}, 0, -60.0f + (float) pick (66));
+                break;
+            case 7:                   // MIX OUT
+                pushGroup (host, IntersectProcessor::CmdSetMemberOutput, member, {}, pick (5) - 1);
+                break;
+            case 8:                   // two slices on one key
+                if (slice >= 0)
+                    host.setSliceParam (slice, IntersectProcessor::FieldMidiNote, (float) (36 + pick (16)));
+                break;
+            case 9:                   // membership changes
+                if (group != nullptr && group->numMembers > 2 && pick (2) == 0)
+                    pushGroup (host, IntersectProcessor::CmdGroupRemoveMember, group->memberIds[(size_t) (1 + pick (group->numMembers - 1))]);
+                else if (group != nullptr && group->numMembers < 4)
+                {
+                    for (int id : ids)
+                        if (group->indexOf (id) < 0 && ui.sampleGroups.groupWith (id) == nullptr)
+                        {
+                            pushGroup (host, IntersectProcessor::CmdGroupAddMembers, group->anchorId(), { id });
+                            break;
+                        }
+                }
+                else if (group != nullptr && pick (4) == 0)
+                    pushGroup (host, IntersectProcessor::CmdUngroup, group->anchorId());
+                else if (group == nullptr)
+                    pushGroup (host, IntersectProcessor::CmdGroupCreate, ids[0], { ids[1], ids[2], ids[3] });
+                break;
+            case 10:
+                host.push (pick (2) == 0 ? IntersectProcessor::CmdUndo : IntersectProcessor::CmdRedo);
+                break;
+            default:
+                if (duplicates < 2 && i % 500 == 250)
+                {
+                    host.processor.duplicateSessionSampleAsync (ids[(size_t) pick (4)]);
+                    ++duplicates;
+                }
+                break;
+        }
+
+        // What the editor does with every snapshot: the timeline, the group mix, the members played.
+        {
+            const auto& snap = host.ui();
+            if (const auto sample = host.processor.sampleData.getSnapshot())
+            {
+                const TimelineMap map (snap, sample->buffer.getNumSamples());
+                require (map.getTotalFrames() > 0 && map.getTotalFrames() <= sample->buffer.getNumSamples(), "the timeline stays inside the kit");
+                const auto view = map.viewFor (1.0f, 0.0f, 400);
+                require (std::isfinite (view.framesPerPixel()), "the view stays finite");
+                const auto mix = GroupMix::at (snap.sampleGroups, sample->sessionSamples, sample->buffer, n / 2);
+                if (mix.covers (n / 2))
+                    require (std::isfinite (mix.sample (0, n / 2)), "the group mix stays finite");
+            }
+            for (int s = 0; s < snap.numSlices; ++s)
+                if (const auto* g = snap.sampleGroups.groupAnchoredBy (snap.slices[(size_t) s].sampleId))
+                    require ((GroupUi::membersPlayed (*g, snap.slices[(size_t) s]) & ~g->allMembersMask()) == 0,
+                             "a slice plays only its group's members");
+            require (snap.numSessionSamples >= 4, "the kit keeps its samples (step " + std::to_string (i) + ")");
+        }
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (1);
+    }
+
+    // Let the duplicates land, then stop.
+    const auto start = juce::Time::getMillisecondCounter();
+    while (host.ui().numSessionSamples < 4 + duplicates && juce::Time::getMillisecondCounter() - start < 20000)
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (5);
+    stop = true;
+    audio.join();
+
+    require (blocks.load() > 100, "the audio thread rendered");
+    require (! nonFinite.load(), "the output stayed finite");
+    // An UNDO can take a copy back out (and a copy asked for while one loads is refused), so the
+    // count may fall short of 4 + duplicates; the four originals must all be there.
+    const int count = host.ui().numSessionSamples;
+    require (count >= 4 && count <= 4 + duplicates, "the kit has its samples (" + std::to_string (count) + ")");
+    for (int id : ids)
+        require (GroupUi::findSample (host.ui(), id) != nullptr, "every original sample is still in the kit");
+    require (juce::exactlyEqual (host.processor.apvts.getRawParameterValue (ParamIds::uiScale)->load(), scaleBefore),
+             "the UI scale didn't change");
+    for (int g = 0; g < host.ui().sampleGroups.count; ++g)
+        for (int m = 0; m < host.ui().sampleGroups.groups[(size_t) g].numMembers; ++m)
+            require (GroupUi::findSample (host.ui(), host.ui().sampleGroups.groups[(size_t) g].memberIds[(size_t) m]) != nullptr,
+                     "every member is in the kit");
+}
+
 int main (int argc, char* argv[])
 {
     const juce::ScopedJuceInitialiser_GUI juceInit;
@@ -1251,11 +1466,13 @@ int main (int argc, char* argv[])
         run ("LAZY plays a group's mix", lazyChopPlaysTheGroupMix);
         run ("duplicate sample copies settings and slices", duplicateSampleCopiesSettingsAndSlices);
         run ("stems in Group mode become a group", stemsInGroupModeBecomeAGroup);
+        run ("Shift+click previews a group's mix", shiftPreviewPlaysTheGroupMix);
     }
     else if (group == "stress")
     {
         run ("restore while audio renders", restoreWhilePlaying);
         run ("save while editing", saveWhileEditing);
+        run ("group edits while notes play", groupEditsWhilePlaying);
     }
     else
     {

@@ -1,4 +1,5 @@
 #include "VoicePool.h"
+#include "GroupMix.h"
 #include "../Constants.h"
 
 // Include Signalsmith Stretch
@@ -1871,13 +1872,21 @@ void VoicePool::renderRoutedRange (const SampleData& sample,
     }
 }
 
-void VoicePool::startShiftPreview (int startSample, int bufferSize,
-                                    const PreviewStretchParams& p)
+void VoicePool::startShiftPreview (int startSample, int rangeEnd,
+                                    const PreviewStretchParams& p, const GroupMix* mix)
 {
     // Shares the lazyChop preview slot; only called when lazyChop is inactive
     const int i = kPreviewVoiceIndex;
     Voice& v = voices[i];
-    initPreviewVoiceCommon (v, startSample, startSample, bufferSize, false, 0.8f);
+    initPreviewVoiceCommon (v, startSample, startSample, rangeEnd, false, 0.8f);
+    if (mix != nullptr && mix->isActive())
+    {
+        // A group: the preview mixes its members as notes do (as LazyChopEngine::startPreview).
+        v.numMemberTaps = mix->numTaps;
+        v.groupAnchorStart = mix->anchorStart;
+        for (int t = 0; t < v.numMemberTaps; ++t)
+            v.memberTaps[(size_t) t] = mix->taps[(size_t) t];
+    }
     initPreviewVoiceStretch (v, startSample, p);
 
     v.envelope.noteOn (0.002f, 0.0f, 1.0f, 0.05f, p.sampleRate);
