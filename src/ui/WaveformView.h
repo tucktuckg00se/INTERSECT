@@ -109,7 +109,7 @@ private:
     struct CacheKey
     {
         int visibleStart = 0, visibleLen = 0, width = 0, numFrames = 0, timelineFrames = 0;
-        juce::int64 layout = 0;   // where the visible slots sit (changes when groups do)
+        uint64_t layout = 0;      // a hash of where the visible slots sit (changes when groups do)
         const void* samplePtr = nullptr;
         bool operator== (const CacheKey&) const = default;
     };

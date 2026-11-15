@@ -258,9 +258,10 @@ void WaveformView::rebuildCacheIfNeeded()
     if (! view.valid)
         return;
 
-    juce::int64 layout = 0;
+    uint64_t layout = 0;   // unsigned: the hash may wrap
     for (const auto& segment : view.map.getSegments())
-        layout = layout * 1000003 + segment.kitStart * 31 + segment.timelineStart * 7 + (segment.isGroup ? 1 : 0);
+        layout = layout * 1000003u + (uint64_t) segment.kitStart * 31u + (uint64_t) segment.timelineStart * 7u
+               + (segment.isGroup ? 1u : 0u);
 
     const CacheKey key { view.view.start, view.view.length, view.view.width, view.numFrames,
                          view.map.getTotalFrames(), layout, sampleSnap.get() };

@@ -1208,6 +1208,13 @@ void stemsInGroupModeBecomeAGroup()
     require (host.ui().sampleGroups.count == 1, "one stem in Group mode is a plain sample");
 }
 
+void groupLengthsReadRight()
+{
+    require (GroupUi::formatLength (7937998, 44100.0) == "3:00.0", "a stem a few frames short of 3 minutes reads 3:00.0");
+    require (GroupUi::formatLength (44100 * 65, 44100.0) == "1:05.0", "minutes and seconds");
+    require (GroupUi::formatLength (4410, 44100.0) == "0:00.1", "tenths");
+}
+
 void shiftPreviewPlaysTheGroupMix()
 {
     TempDir temp;
@@ -1467,6 +1474,7 @@ int main (int argc, char* argv[])
         run ("duplicate sample copies settings and slices", duplicateSampleCopiesSettingsAndSlices);
         run ("stems in Group mode become a group", stemsInGroupModeBecomeAGroup);
         run ("Shift+click previews a group's mix", shiftPreviewPlaysTheGroupMix);
+        run ("group lengths read right", groupLengthsReadRight);
     }
     else if (group == "stress")
     {

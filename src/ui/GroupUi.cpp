@@ -139,8 +139,9 @@ juce::String GroupUi::formatDb (float db)
 
 juce::String GroupUi::formatLength (int numFrames, double sampleRate)
 {
-    const double seconds = sampleRate > 0.0 ? numFrames / sampleRate : 0.0;
-    const int minutes = (int) (seconds / 60.0);
-    const double rest = seconds - minutes * 60.0;
-    return juce::String (minutes) + ":" + (rest < 10.0 ? "0" : "") + juce::String (rest, 1);
+    // Round to tenths first, so 2:59.99 reads 3:00.0 rather than 2:60.0.
+    const int tenths = sampleRate > 0.0 ? juce::roundToInt (numFrames / sampleRate * 10.0) : 0;
+    const int minutes = tenths / 600;
+    const int rest = tenths % 600;
+    return juce::String (minutes) + ":" + (rest < 100 ? "0" : "") + juce::String (rest / 10) + "." + juce::String (rest % 10);
 }
