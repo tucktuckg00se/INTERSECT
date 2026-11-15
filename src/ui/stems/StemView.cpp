@@ -1,4 +1,5 @@
 #include "StemView.h"
+#include "../CalloutMenu.h"
 #include "../IntersectLookAndFeel.h"
 #include "../FullViewBar.h"
 #include "../../PluginProcessor.h"
@@ -955,24 +956,32 @@ void StemView::mouseDown (const juce::MouseEvent& e)
     }
     else if (modeCell.bounds.contains (pos))
     {
-        juce::PopupMenu menu;
-        menu.addItem (1, "Combine: the chosen stems mixed into one file", true, exportMode == StemExportMode::combine);
-        menu.addItem (2, "Separate: one sample per stem", true, exportMode == StemExportMode::separate);
-        menu.addItem (3, "Group: one sample per stem, as a group with the source's slices", true,
-                      exportMode == StemExportMode::group);
         juce::Component::SafePointer<StemView> safe (this);
-        menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this)
-                                .withTargetScreenArea (localAreaToGlobal (modeCell.bounds)),
-                            [safe] (int result)
+        const auto choose = [safe] (StemExportMode mode)
         {
-            if (safe == nullptr || result == 0)
-                return;
-            safe->exportMode = result == 1 ? StemExportMode::combine
-                             : result == 2 ? StemExportMode::separate : StemExportMode::group;
-            safe->modeCell.value = stemExportModeToString (safe->exportMode);
-            safe->updateControls();
-            safe->repaint();
-        });
+            return [safe, mode]
+            {
+                if (safe == nullptr)
+                    return;
+                safe->exportMode = mode;
+                safe->modeCell.value = stemExportModeToString (mode);
+                safe->updateControls();
+                safe->repaint();
+            };
+        };
+        std::vector<CalloutMenu::Item> items;
+        const std::pair<StemExportMode, const char*> modes[] {
+            { StemExportMode::combine, "Combine: the chosen stems mixed into one file" },
+            { StemExportMode::separate, "Separate: one sample per stem" },
+            { StemExportMode::group, "Group: one sample per stem, as a group with the source's slices" },
+        };
+        for (const auto& [mode, text] : modes)
+        {
+            CalloutMenu::Item item { text, choose (mode) };
+            item.ticked = exportMode == mode;
+            items.push_back (std::move (item));
+        }
+        CalloutMenu::show (*this, modeCell.bounds, "MODE", std::move (items));
     }
     else if (outputCell.bounds.contains (pos))
     {

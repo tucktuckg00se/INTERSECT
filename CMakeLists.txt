@@ -203,6 +203,7 @@ set(INTERSECT_CORE_SOURCES
     src/ui/browser/PlacesList.cpp
     src/ui/browser/PreviewPane.cpp
     src/ui/SampleLane.cpp
+    src/ui/CalloutMenu.cpp
     src/ui/GroupActions.cpp
     src/ui/GroupCallouts.cpp
     src/ui/GroupLanes.cpp

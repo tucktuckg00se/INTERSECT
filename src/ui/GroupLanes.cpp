@@ -1,4 +1,5 @@
 #include "GroupLanes.h"
+#include "CalloutMenu.h"
 #include "GroupCallouts.h"
 #include "GroupUi.h"
 #include "IntersectLookAndFeel.h"
@@ -500,42 +501,36 @@ void GroupLaneControls::showMemberMenu (const Header& header)
     const auto& ui = processor.getUiSliceSnapshot();
     const auto* group = ui.sampleGroups.groupWith (header.sampleId);
     const int currentOutput = group != nullptr ? group->outputBus[(size_t) header.memberIndex] : -1;
-
-    juce::PopupMenu outputs;
-    outputs.addItem (100, "Slice OUT", true, currentOutput < 0);
-    for (int bus = 0; bus < 16; ++bus)
-        outputs.addItem (101 + bus, "Out " + juce::String (bus + 1), true, currentOutput == bus);
-
-    juce::PopupMenu menu;
-    menu.addSectionHeader (header.name);
-    menu.addItem (1, header.muted ? "Unmute" : "Mute");
-    menu.addItem (2, juce::String (juce::CharPointer_UTF8 ("Mix\xe2\x80\xa6")));
-    menu.addSubMenu ("Output", outputs);
-    menu.addItem (3, "Duplicate as separate sample", onDuplicateRequested != nullptr);
-    menu.addSeparator();
-    menu.addItem (4, "Remove from group");
-
     const auto anchorArea = header.box;
     const int id = header.sampleId;
     const auto copy = header;
     juce::Component::SafePointer<GroupLaneControls> safe (this);
-    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withTargetScreenArea (localAreaToGlobal (anchorArea)),
-                        [safe, id, copy, anchorArea] (int result)
+
+    CalloutMenu::Item output;
+    output.text = "Output";
+    for (int bus = -1; bus < 16; ++bus)
     {
-        if (safe == nullptr || result == 0)
-            return;
-        auto& p = safe->processor;
-        if (result == 1)
-            safe->toggleGroupMute (copy);
-        else if (result == 2)
-            GroupCallouts::showMix (*safe, anchorArea, p, id);
-        else if (result == 3 && safe->onDuplicateRequested)
-            safe->onDuplicateRequested (id);
-        else if (result == 4)
-            GroupUi::push (p, IntersectProcessor::CmdGroupRemoveMember, id);
-        else if (result >= 100)
-            GroupUi::push (p, IntersectProcessor::CmdSetMemberOutput, id, {}, result == 100 ? -1 : result - 101);
-    });
+        CalloutMenu::Item item { bus < 0 ? juce::String ("Slice OUT") : "Out " + juce::String (bus + 1),
+                                 [safe, id, bus] { if (safe != nullptr) GroupUi::push (safe->processor, IntersectProcessor::CmdSetMemberOutput, id, {}, bus); } };
+        item.ticked = currentOutput == bus;
+        output.submenu.push_back (std::move (item));
+    }
+
+    std::vector<CalloutMenu::Item> items;
+    items.push_back ({ header.muted ? "Unmute" : "Mute", [safe, copy] { if (safe != nullptr) safe->toggleGroupMute (copy); } });
+    items.push_back ({ juce::String (juce::CharPointer_UTF8 ("Mix\xe2\x80\xa6")),
+                       [safe, id, anchorArea] { if (safe != nullptr) GroupCallouts::showMix (*safe, anchorArea, safe->processor, id); } });
+    items.push_back (std::move (output));
+    items.push_back ({ "Duplicate as separate sample",
+                       [safe, id] { if (safe != nullptr && safe->onDuplicateRequested) safe->onDuplicateRequested (id); },
+                       onDuplicateRequested != nullptr });
+    CalloutMenu::Item remove { "Remove from group",
+                               [safe, id] { if (safe != nullptr) GroupUi::push (safe->processor, IntersectProcessor::CmdGroupRemoveMember, id); } };
+    remove.destructive = true;
+    remove.separatorBefore = true;
+    items.push_back (std::move (remove));
+
+    CalloutMenu::show (*this, anchorArea, header.name, std::move (items));
 }
 
 void GroupLaneControls::mouseDown (const juce::MouseEvent& e)
