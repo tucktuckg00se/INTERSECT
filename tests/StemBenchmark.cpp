@@ -76,13 +76,14 @@ bool ensureOrtBundle (const OrtBundleCatalogEntry& bundle)
     return waitForDownload (job, "ONNX Runtime " + bundle.directoryName);
 }
 
-// The model's current file from the manifest; downloads the manifest and the model when missing.
+// The model's current file from the manifest. Downloads the manifest and the model when missing, and runs the
+// download the plugin's UPDATE button would (a newer file, or on a Mac the model's Core ML version).
 juce::File ensureModel (const StemModelId& modelId, StemModelCatalogEntry& entry)
 {
     const auto modelFolder = getDefaultStemModelFolder();
     entry = getEffectiveStemModelCatalogEntry (modelId, modelFolder);
     if (getStemModelManifestFile (modelFolder).existsAsFile() && entry.isValid()
-        && modelFolder.getChildFile (entry.fileName).existsAsFile())
+        && modelFolder.getChildFile (entry.fileName).existsAsFile() && ! isStemModelUpdateAvailable (entry, modelFolder))
         return modelFolder.getChildFile (entry.fileName);
 
     StemModelDownloadJob job;
