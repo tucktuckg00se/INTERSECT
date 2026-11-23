@@ -48,8 +48,13 @@ juce::String formatCpuTime (float realtimeFactor)
     return "~" + juce::String ((int) std::ceil (minutes)) + " min per 3-min song";
 }
 
-juce::String formatGpuAdvice (StemGpuAdvice advice)
+juce::String formatGpuAdvice ([[maybe_unused]] StemGpuAdvice advice)
 {
+   #if JUCE_MAC
+    // ONNX Runtime's CoreML provider runs these models in hundreds of small CoreML/CPU pieces, so on a
+    // Mac they finish sooner on the CPU. Only a hint: DEVICE stays the user's choice.
+    return "CPU is faster on a Mac";
+   #else
     switch (advice)
     {
         case StemGpuAdvice::notNeeded:   return "not needed";
@@ -58,6 +63,7 @@ juce::String formatGpuAdvice (StemGpuAdvice advice)
         case StemGpuAdvice::unknown:     break;
     }
     return {};
+   #endif
 }
 
 int getSystemRamGb()

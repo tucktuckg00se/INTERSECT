@@ -14,6 +14,9 @@
  #else
   #include <dlfcn.h>
  #endif
+ #if JUCE_MAC
+  #include <IOKit/pwr_mgt/IOPMLib.h>
+ #endif
  #define ORT_API_MANUAL_INIT
   #include <onnxruntime_cxx_api.h>
  #undef ORT_API_MANUAL_INIT
@@ -300,6 +303,41 @@ bool configureExecutionProvider (Ort::SessionOptions& options, StemComputeDevice
         return false;
     }
 }
+
+// Keeps the computer from going to sleep while a separation runs, which used to lose the whole job.
+// The display may still sleep, and closing a MacBook's lid still sleeps it.
+class ScopedSleepBlocker
+{
+public:
+    ScopedSleepBlocker()
+    {
+       #if JUCE_MAC
+        if (IOPMAssertionCreateWithName (kIOPMAssertionTypePreventUserIdleSystemSleep, kIOPMAssertionLevelOn,
+                                         CFSTR ("INTERSECT is separating stems"), &assertion) != kIOReturnSuccess)
+            assertion = kIOPMNullAssertionID;
+       #elif JUCE_WINDOWS
+        ::SetThreadExecutionState (ES_CONTINUOUS | ES_SYSTEM_REQUIRED);
+       #endif
+    }
+
+    ~ScopedSleepBlocker()
+    {
+       #if JUCE_MAC
+        if (assertion != kIOPMNullAssertionID)
+            IOPMAssertionRelease (assertion);
+       #elif JUCE_WINDOWS
+        ::SetThreadExecutionState (ES_CONTINUOUS);
+       #endif
+    }
+
+    ScopedSleepBlocker (const ScopedSleepBlocker&) = delete;
+    ScopedSleepBlocker& operator= (const ScopedSleepBlocker&) = delete;
+
+private:
+   #if JUCE_MAC
+    IOPMAssertionID assertion = kIOPMNullAssertionID;
+   #endif
+};
 
 // Times each model run for the log and, on the GPU, catches the silent failure: after a driver
 // reset (TDR) DirectML can return all zeros without an error; the error only comes with the next run.
@@ -838,7 +876,15 @@ bool StemSeparationJob::start (const juce::AudioBuffer<float>& sourceAudio,
     }
 
     state.store (StemJobState::preparing, std::memory_order_release);
+   #if JUCE_MAC
+    // Background QoS keeps a thread on the efficiency cores of Apple silicon, and ONNX Runtime's worker
+    // threads inherit it from the thread that creates the session: separations ran many times slower
+    // than they should. Utility is Apple's class for long work with a progress bar and can use the
+    // performance cores; the audio thread (real-time) and the UI (user-interactive) still come first.
+    startThread (juce::Thread::Priority::low);
+   #else
     startThread (juce::Thread::Priority::background);
+   #endif
     return true;
 }
 
@@ -923,6 +969,8 @@ void StemSeparationJob::run()
 
     try
     {
+        const ScopedSleepBlocker keepAwake;
+
         juce::String initError;
         if (! ensureOrtApiInitialized (initError))
             throw std::runtime_error (initError.toStdString());
