@@ -48,14 +48,15 @@ juce::String formatCpuTime (float realtimeFactor)
     return "~" + juce::String ((int) std::ceil (minutes)) + " min per 3-min song";
 }
 
-juce::String formatGpuAdvice ([[maybe_unused]] StemGpuAdvice advice)
+juce::String formatGpuAdvice (const StemModelCatalogEntry& entry)
 {
    #if JUCE_MAC
-    // ONNX Runtime's CoreML provider runs these models in hundreds of small CoreML/CPU pieces, so on a
-    // Mac they finish sooner on the CPU. Only a hint: DEVICE stays the user's choice.
-    return "CPU is faster on a Mac";
+    // A model with a native Core ML version runs whole on the GPU. ONNX Runtime's CoreML provider splits the
+    // others into hundreds of small CoreML/CPU pieces, so on a Mac they finish sooner on the CPU. Only a
+    // hint: DEVICE stays the user's choice.
+    return entry.coreml.isValid() ? "native Core ML" : "CPU is faster on a Mac";
    #else
-    switch (advice)
+    switch (entry.requirements.gpu)
     {
         case StemGpuAdvice::notNeeded:   return "not needed";
         case StemGpuAdvice::optional:    return "optional, faster";
@@ -673,8 +674,7 @@ void StemView::updateControls()
         downloadButton.setColour (juce::TextButton::buttonColourId, getTheme().accent);
         downloadButton.setColour (juce::TextButton::textColourOffId, getTheme().surface0);
         downloadButton.setColour (juce::TextButton::textColourOnId, getTheme().surface0);
-        downloadButton.setTooltip (entry->updateNote.isNotEmpty() ? entry->updateNote
-                                                                  : juce::String ("A newer version of this model is available"));
+        downloadButton.setTooltip (getStemModelUpdateNote (*entry, processor.getResolvedStemModelFolder()));
     }
     else
     {
@@ -816,7 +816,7 @@ void StemView::paint (juce::Graphics& g)
         }
         if (req.cpuRealtimeFactor > 0.0f)
             drawRequirement ("CPU", formatCpuTime (req.cpuRealtimeFactor), getTheme().text1);
-        drawRequirement ("GPU", formatGpuAdvice (req.gpu), getTheme().text1);
+        drawRequirement ("GPU", formatGpuAdvice (*entry), getTheme().text1);
 
         if (isDownloading (entry->id))
         {

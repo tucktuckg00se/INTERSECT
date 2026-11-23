@@ -364,6 +364,61 @@ void modelUpdatesResolve()
     (void) folder.deleteRecursively();
 }
 
+void coreMlAssetsParseAndResolve()
+{
+    const auto parse = [] (const juce::String& coreml)
+    {
+        const auto json = R"({
+            "model_id": "mini",
+            "artifacts": { "release_asset_name": "mini.onnx", "release_asset_url": "https://x/mini.onnx", "coreml": )" + coreml + R"( },
+            "runtime": { "stems": ["a", "b"], "chunk_size_samples": 1024 }
+        })";
+        return parseStemModelManifestEntry (parseJson (json.toRawUTF8()), {});
+    };
+
+    const auto sha = juce::String::repeatedString ("ab", 32);
+    const auto entry = parse (R"({ "release_asset_name": "mini_coreml.zip", "release_asset_url": "https://x/mini_coreml.zip",
+                                   "release_asset_bytes": 123, "sha256": ")" + sha.toUpperCase() + R"(", "package_name": "mini.mlpackage" })");
+    require (entry.isValid() && entry.coreml.isValid(), "Core ML asset parses");
+    require (entry.coreml.fileName == "mini_coreml.zip" && entry.coreml.packageName == "mini.mlpackage"
+                 && entry.coreml.downloadBytes == 123 && entry.coreml.sha256 == sha,
+             "Core ML asset fields (sha lower-cased)");
+
+    for (const auto* bad : { R"({ "release_asset_name": "a.zip", "release_asset_url": "https://x/a.zip", "package_name": "../evil.mlpackage" })",
+                             R"({ "release_asset_name": "a.zip", "release_asset_url": "https://x/a.zip", "package_name": "model.onnx" })",
+                             R"({ "release_asset_name": "a.zip", "release_asset_url": "http://x/a.zip", "package_name": "a.mlpackage" })",
+                             R"({ "release_asset_name": "sub/a.zip", "release_asset_url": "https://x/a.zip", "package_name": "a.mlpackage" })",
+                             R"({ "release_asset_name": "a.zip", "package_name": "a.mlpackage" })" })
+    {
+        const auto rejected = parse (bad);
+        require (rejected.isValid() && ! rejected.coreml.isValid(), std::string ("unsafe or incomplete Core ML asset ignored: ") + bad);
+    }
+
+    const auto folder = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                            .getChildFile ("intersect-coreml-asset-test-" + juce::String (juce::Random::getSystemRandom().nextInt64()));
+    require (folder.createDirectory(), "temp folder");
+    const auto package = folder.getChildFile ("mini.mlpackage");
+
+    require (! isStemModelUpdateAvailable (entry, folder), "nothing installed: no update");
+    require (folder.getChildFile ("mini.onnx").replaceWithText ("onnx"), "ONNX installed");
+    require (isStemModelUpdateAvailable (entry, folder) == usesNativeCoreMl(), "Core ML version missing: UPDATE only on a Mac");
+    require (getStemModelUpdateNote (entry, folder).isNotEmpty() == usesNativeCoreMl(), "the UPDATE note says why");
+
+    require (package.createDirectory() && findInstalledCoreMlPackage (entry, folder) == juce::File(),
+             "a half-unpacked package (no Manifest.json) doesn't count");
+    require (package.getChildFile ("Manifest.json").replaceWithText ("{}"), "write Manifest.json");
+    require (findInstalledCoreMlPackage (entry, folder) == package, "installed package is found");
+    require (! isStemModelUpdateAvailable (entry, folder) && getStemModelUpdateNote (entry, folder).isEmpty(),
+             "package installed: no update");
+
+    auto withoutCoreMl = entry;
+    withoutCoreMl.coreml = {};
+    require (findInstalledCoreMlPackage (withoutCoreMl, folder) == juce::File() && ! isStemModelUpdateAvailable (withoutCoreMl, folder),
+             "a model without a Core ML version never asks for one");
+
+    (void) folder.deleteRecursively();
+}
+
 int main()
 {
     int failed = 0;
@@ -398,6 +453,7 @@ int main()
     run ("GPU failures are explained", gpuFailuresAreExplained);
     run ("suspect GPU output is caught", suspectOutputIsCaught);
     run ("model updates resolve", modelUpdatesResolve);
+    run ("Core ML assets parse and resolve", coreMlAssetsParseAndResolve);
 
     std::cout << passed << " passed, " << failed << " failed\n";
     return failed == 0 ? 0 : 1;

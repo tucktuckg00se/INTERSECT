@@ -558,6 +558,27 @@ StemModelCatalogEntry parseStemModelManifestEntry (const juce::var& manifestMode
         }
         if (auto text = artifacts->getProperty ("update_note").toString().trim(); text.isNotEmpty())
             entry.updateNote = text;
+
+        // Optional native Core ML version (Macs). Same bare-name rule for the zip and the package inside it.
+        if (auto* coreml = artifacts->getProperty ("coreml").getDynamicObject())
+        {
+            const auto isBareName = [] (const juce::String& text)
+            {
+                return text.isNotEmpty() && text != "." && text != ".." && ! text.containsAnyOf ("/\\:")
+                    && juce::File::createLegalFileName (text) == text;
+            };
+            StemCoreMlAsset asset;
+            asset.fileName = coreml->getProperty ("release_asset_name").toString().trim();
+            asset.downloadUrl = coreml->getProperty ("release_asset_url").toString().trim();
+            asset.packageName = coreml->getProperty ("package_name").toString().trim();
+            if (coreml->hasProperty ("release_asset_bytes"))
+                asset.downloadBytes = (juce::int64) coreml->getProperty ("release_asset_bytes");
+            if (auto text = coreml->getProperty ("sha256").toString().trim().toLowerCase(); text.length() == 64)
+                asset.sha256 = text;
+            if (asset.isValid() && isBareName (asset.fileName) && isBareName (asset.packageName)
+                && asset.packageName.endsWithIgnoreCase (".mlpackage") && asset.downloadUrl.startsWith ("https://"))
+                entry.coreml = asset;
+        }
     }
 
     if (auto* runtime = object->getProperty ("runtime").getDynamicObject())
@@ -652,7 +673,9 @@ juce::File findInstalledStemModelFile (const StemModelCatalogEntry& entry, const
     return current;
 }
 
-bool isStemModelUpdateAvailable (const StemModelCatalogEntry& entry, const juce::File& modelFolder)
+namespace
+{
+bool isEarlierStemModelVersionOnlyInstalled (const StemModelCatalogEntry& entry, const juce::File& modelFolder)
 {
     if (! entry.isValid() || modelFolder.getChildFile (entry.fileName).existsAsFile())
         return false;
@@ -662,6 +685,55 @@ bool isStemModelUpdateAvailable (const StemModelCatalogEntry& entry, const juce:
             return true;
 
     return false;
+}
+
+bool isCoreMlPackageMissing (const StemModelCatalogEntry& entry, const juce::File& modelFolder)
+{
+    return usesNativeCoreMl() && entry.isValid() && entry.coreml.isValid()
+        && findInstalledStemModelFile (entry, modelFolder).existsAsFile()
+        && findInstalledCoreMlPackage (entry, modelFolder) == juce::File();
+}
+} // namespace
+
+bool usesNativeCoreMl()
+{
+   #if JUCE_MAC
+    return true;
+   #else
+    return false;
+   #endif
+}
+
+bool isStemModelUpdateAvailable (const StemModelCatalogEntry& entry, const juce::File& modelFolder)
+{
+    return isEarlierStemModelVersionOnlyInstalled (entry, modelFolder) || isCoreMlPackageMissing (entry, modelFolder);
+}
+
+juce::File findInstalledCoreMlPackage (const StemModelCatalogEntry& entry, const juce::File& modelFolder)
+{
+    if (! entry.coreml.isValid())
+        return {};
+    const auto package = modelFolder.getChildFile (entry.coreml.packageName);
+    return package.isDirectory() && package.getChildFile ("Manifest.json").existsAsFile() ? package : juce::File();
+}
+
+juce::String getStemModelUpdateNote (const StemModelCatalogEntry& entry, const juce::File& modelFolder)
+{
+    if (isEarlierStemModelVersionOnlyInstalled (entry, modelFolder))
+        return entry.updateNote.isNotEmpty() ? entry.updateNote : juce::String ("A newer version of this model is available");
+    if (isCoreMlPackageMissing (entry, modelFolder))
+        return "Adds the Core ML version, so DEVICE GPU runs this model fast on a Mac";
+    return {};
+}
+
+juce::File getCoreMlCacheRoot()
+{
+   #if JUCE_MAC
+    return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+        .getChildFile ("Caches").getChildFile ("INTERSECT").getChildFile ("coreml");
+   #else
+    return getDefaultStemModelFolder().getParentDirectory().getChildFile ("coreml-cache");
+   #endif
 }
 
 int removeReplacedStemModelFiles (const StemModelCatalogEntry& entry, const juce::File& modelFolder)

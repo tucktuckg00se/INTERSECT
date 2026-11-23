@@ -202,6 +202,7 @@ if(INTERSECT_HAS_ONNX_RUNTIME)
         NEEDS_CURL TRUE
     )
     target_sources(IntersectStemBench PRIVATE
+        $<$<PLATFORM_ID:Darwin>:${CMAKE_SOURCE_DIR}/src/audio/StemCoreML.mm>
         StemBenchmark.cpp
         ../src/audio/StemSeparation.cpp
         ../src/audio/StemSpectral.cpp
@@ -230,6 +231,9 @@ if(INTERSECT_HAS_ONNX_RUNTIME)
     if(WIN32)
         target_link_libraries(IntersectStemBench PRIVATE dxgi)
     endif()
+    if(APPLE)
+        target_link_libraries(IntersectStemBench PRIVATE "-framework CoreML")
+    endif()
     if(UNIX AND NOT APPLE)
         target_link_libraries(IntersectStemBench PRIVATE ${CMAKE_DL_LIBS})
     endif()
@@ -239,6 +243,11 @@ if(INTERSECT_HAS_ONNX_RUNTIME)
         juce::juce_recommended_config_flags
         juce::juce_recommended_warning_flags
     )
+endif()
+
+# The Core ML runner (macOS) is Objective-C++ with ARC; source properties don't carry over from the parent directory.
+if(APPLE AND INTERSECT_HAS_ONNX_RUNTIME)
+    set_source_files_properties("${CMAKE_SOURCE_DIR}/src/audio/StemCoreML.mm" PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
 endif()
 
 # The real processor (every plugin source but the standalone shell), driven like a host would.
@@ -280,6 +289,9 @@ else()
 endif()
 if(WIN32)
     target_link_libraries(IntersectProcessorTests PRIVATE dxgi)
+endif()
+if(APPLE AND INTERSECT_HAS_ONNX_RUNTIME)
+    target_link_libraries(IntersectProcessorTests PRIVATE "-framework CoreML")
 endif()
 if(INTERSECT_HAS_ONNX_RUNTIME AND UNIX AND NOT APPLE)
     target_link_libraries(IntersectProcessorTests PRIVATE ${CMAKE_DL_LIBS})

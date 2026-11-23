@@ -1,11 +1,14 @@
 #include "StemSeparationJob.h"
+#include "StemCoreML.h"
 #include "StemGpuInfo.h"
+#include "StemModelRunner.h"
 #include "StemSpectral.h"
 
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <algorithm>
 #include <cmath>
 #include <mutex>
+#include <optional>
 #include <stdexcept>
 
 #if INTERSECT_HAS_ONNX_RUNTIME
@@ -304,6 +307,40 @@ bool configureExecutionProvider (Ort::SessionOptions& options, StemComputeDevice
     }
 }
 
+// ONNX Runtime behind the StemModelRunner interface.
+class OrtStemRunner final : public StemModelRunner
+{
+public:
+    explicit OrtStemRunner (Ort::Session& s)
+        : session (s),
+          inputName (session.GetInputNameAllocated (0, allocator)),
+          outputName (session.GetOutputNameAllocated (0, allocator)),
+          memoryInfo (Ort::MemoryInfo::CreateCpu (OrtArenaAllocator, OrtMemTypeDefault))
+    {
+    }
+
+    void run (const float* input, size_t inputCount, const std::vector<int64_t>& inputShape,
+              const float*& output, std::vector<int64_t>& outputShape) override
+    {
+        auto tensor = Ort::Value::CreateTensor<float> (memoryInfo, const_cast<float*> (input), inputCount,
+                                                       inputShape.data(), inputShape.size());
+        const char* inputNames[] = { inputName.get() };
+        const char* outputNames[] = { outputName.get() };
+        outputs = session.Run (Ort::RunOptions { nullptr }, inputNames, &tensor, 1, outputNames, 1);
+        if (outputs.empty() || ! outputs.front().IsTensor())
+            throw std::runtime_error ("Stem model returned no output tensor");
+        outputShape = outputs.front().GetTensorTypeAndShapeInfo().GetShape();
+        output = outputs.front().GetTensorData<float>();
+    }
+
+private:
+    Ort::Session& session;
+    Ort::AllocatorWithDefaultOptions allocator;
+    Ort::AllocatedStringPtr inputName, outputName;
+    Ort::MemoryInfo memoryInfo;
+    std::vector<Ort::Value> outputs;
+};
+
 // Keeps the computer from going to sleep while a separation runs, which used to lose the whole job.
 // The display may still sleep, and closing a MacBook's lid still sleeps it.
 class ScopedSleepBlocker
@@ -382,7 +419,7 @@ std::vector<float> makeHannWindow (int size)
     return w;
 }
 
-bool runWaveformChunked (Ort::Session& session,
+bool runWaveformChunked (StemModelRunner& runner,
                          const juce::AudioBuffer<float>& sourceAudio,
                          const StemModelCatalogEntry& catalog,
                          const StemSelection& selection,
@@ -393,13 +430,6 @@ bool runWaveformChunked (Ort::Session& session,
                          StemRunMonitor& monitor,
                          juce::String& errorMessage)
 {
-    Ort::AllocatorWithDefaultOptions allocator;
-    auto inputName = session.GetInputNameAllocated (0, allocator);
-    auto outputName = session.GetOutputNameAllocated (0, allocator);
-    const char* inputNames[] = { inputName.get() };
-    const char* outputNames[] = { outputName.get() };
-    Ort::MemoryInfo memoryInfo = Ort::MemoryInfo::CreateCpu (OrtArenaAllocator, OrtMemTypeDefault);
-
     const int originalLen = sourceAudio.getNumSamples();
     const int chunkSize = catalog.chunkSize;
     const int hopSize = juce::jmax (1, (int) ((float) chunkSize * (1.0f - catalog.overlapRatio)));
@@ -423,7 +453,7 @@ bool runWaveformChunked (Ort::Session& session,
 
     // Preallocate input buffer for the model: [1, 2, chunkSize]
     std::vector<float> inputBuffer ((size_t) (2 * chunkSize));
-    const std::array<int64_t, 3> inputShape = { 1, 2, (int64_t) chunkSize };
+    const std::vector<int64_t> inputShape = { 1, 2, (int64_t) chunkSize };
 
     // Only selected stems are accumulated: a 53-stem model would otherwise need several GB
     // for a song-length sample.
@@ -452,26 +482,12 @@ bool runWaveformChunked (Ort::Session& session,
             std::copy (src, src + chunkSize, dst);
         }
 
-        auto inputTensor = Ort::Value::CreateTensor<float> (memoryInfo,
-                                                             inputBuffer.data(),
-                                                             inputBuffer.size(),
-                                                             inputShape.data(),
-                                                             inputShape.size());
-
         const double runStart = juce::Time::getMillisecondCounterHiRes();
-        auto outputValues = session.Run (Ort::RunOptions { nullptr },
-                                          inputNames, &inputTensor, 1,
-                                          outputNames, 1);
-
-        if (outputValues.empty() || ! outputValues.front().IsTensor())
-        {
-            errorMessage = "Stem model returned no output tensor";
-            return false;
-        }
+        const float* outputData = nullptr;
+        std::vector<int64_t> shape;
+        runner.run (inputBuffer.data(), inputBuffer.size(), inputShape, outputData, shape);
 
         // Expected output shape: [1, numStems, 2, chunkSize]
-        auto tensorInfo = outputValues.front().GetTensorTypeAndShapeInfo();
-        auto shape = tensorInfo.GetShape();
         if (shape.size() != 4 || shape[0] != 1 || shape[2] != 2 || shape[3] != (int64_t) chunkSize)
         {
             errorMessage = "Unexpected model output shape (expected [1, stems, 2, " + juce::String (chunkSize) + "])";
@@ -484,7 +500,6 @@ bool runWaveformChunked (Ort::Session& session,
             return false;
         }
 
-        const float* outputData = outputValues.front().GetTensorData<float>();
         const size_t stemStride = (size_t) (2 * chunkSize);
         monitor.check (outputData, (size_t) numModelStems * stemStride, inputBuffer.data(), inputBuffer.size());
         monitor.finished ((juce::Time::getMillisecondCounterHiRes() - runStart) / 1000.0);
@@ -548,7 +563,7 @@ bool runWaveformChunked (Ort::Session& session,
 //   spectralMask: [1, frames, bins * 4] (per frame and bin: L re, L im, R re, R im) in,
 //                 [1, stems, frames, maskBins, 2 channels, 2 (re, im)] masks out, multiplied onto a
 //                 maskNFft STFT of the mix
-bool runSpectralSegmented (Ort::Session& session,
+bool runSpectralSegmented (StemModelRunner& runner,
                            const juce::AudioBuffer<float>& sourceAudio,
                            const StemModelCatalogEntry& catalog,
                            const StemSelection& selection,
@@ -559,13 +574,6 @@ bool runSpectralSegmented (Ort::Session& session,
                            StemRunMonitor& monitor,
                            juce::String& errorMessage)
 {
-    Ort::AllocatorWithDefaultOptions allocator;
-    auto inputName = session.GetInputNameAllocated (0, allocator);
-    auto outputName = session.GetOutputNameAllocated (0, allocator);
-    const char* inputNames[] = { inputName.get() };
-    const char* outputNames[] = { outputName.get() };
-    Ort::MemoryInfo memoryInfo = Ort::MemoryInfo::CreateCpu (OrtArenaAllocator, OrtMemTypeDefault);
-
     const auto& params = catalog.spectral;
     const bool masked = catalog.runtimeKind == StemRuntimeKind::spectralMask;
     const int segmentSamples = params.segmentSamples;
@@ -611,8 +619,8 @@ bool runSpectralSegmented (Ort::Session& session,
     // Planar STFT of both channels: L re, L im, R re, R im.
     std::vector<float> spectrum (4 * plane);
     std::vector<float> inputBuffer (4 * plane);
-    std::array<int64_t, 4> inputShape4 = { 1, 4, (int64_t) bins, (int64_t) frames };
-    std::array<int64_t, 3> inputShape3 = { 1, (int64_t) frames, (int64_t) bins * 4 };
+    const std::vector<int64_t> inputShape = masked ? std::vector<int64_t> { 1, (int64_t) frames, (int64_t) bins * 4 }
+                                                   : std::vector<int64_t> { 1, 4, (int64_t) bins, (int64_t) frames };
 
     const int maskBins = masked ? maskStft->getNumBins() : 0;
     const size_t maskPlane = masked ? maskStft->getPlaneSize() : 0;
@@ -645,26 +653,12 @@ bool runSpectralSegmented (Ort::Session& session,
             std::copy (spectrum.begin(), spectrum.end(), inputBuffer.begin());
         }
 
-        auto inputTensor = masked
-            ? Ort::Value::CreateTensor<float> (memoryInfo, inputBuffer.data(), inputBuffer.size(),
-                                               inputShape3.data(), inputShape3.size())
-            : Ort::Value::CreateTensor<float> (memoryInfo, inputBuffer.data(), inputBuffer.size(),
-                                               inputShape4.data(), inputShape4.size());
-
         monitor.totalRuns = numSegments;
         const double runStart = juce::Time::getMillisecondCounterHiRes();
-        auto outputValues = session.Run (Ort::RunOptions { nullptr },
-                                          inputNames, &inputTensor, 1,
-                                          outputNames, 1);
+        const float* outputData = nullptr;
+        std::vector<int64_t> shape;
+        runner.run (inputBuffer.data(), inputBuffer.size(), inputShape, outputData, shape);
 
-        if (outputValues.empty() || ! outputValues.front().IsTensor())
-        {
-            errorMessage = "Stem model returned no output tensor";
-            return false;
-        }
-
-        const auto shape = outputValues.front().GetTensorTypeAndShapeInfo().GetShape();
-        const float* outputData = outputValues.front().GetTensorData<float>();
         size_t outputCount = 1;
         for (const auto d : shape)
             outputCount *= (size_t) juce::jmax<int64_t> (0, d);
@@ -747,7 +741,7 @@ bool runSpectralSegmented (Ort::Session& session,
 }
 
 // Runs the model and returns one buffer per selected output, in selection order.
-bool runStemInference (Ort::Session& session,
+bool runStemInference (StemModelRunner& runner,
                        const juce::AudioBuffer<float>& sourceAudio,
                        const StemModelCatalogEntry& catalog,
                        const StemSelection& selection,
@@ -761,11 +755,11 @@ bool runStemInference (Ort::Session& session,
     switch (catalog.runtimeKind)
     {
         case StemRuntimeKind::waveform:
-            return runWaveformChunked (session, sourceAudio, catalog, selection, stemBuffers,
+            return runWaveformChunked (runner, sourceAudio, catalog, selection, stemBuffers,
                                        shouldCancel, thread, progress, monitor, errorMessage);
         case StemRuntimeKind::spectral:
         case StemRuntimeKind::spectralMask:
-            return runSpectralSegmented (session, sourceAudio, catalog, selection, stemBuffers,
+            return runSpectralSegmented (runner, sourceAudio, catalog, selection, stemBuffers,
                                          shouldCancel, thread, progress, monitor, errorMessage);
     }
 
@@ -940,13 +934,22 @@ void StemSeparationJob::run()
     const auto providerName = monitor.gpu ? getAvailableGpuProviderName() : juce::String ("CPU");
     const auto gpuInfo = monitor.gpu ? queryStemGpuInfo() : StemGpuInfo {};
 
+    // On a Mac, GPU runs a model's native Core ML version when it's installed: ONNX Runtime's CoreML provider
+    // splits these models into hundreds of small pieces.
+    const auto coreMlPackage = monitor.gpu && usesNativeCoreMl()
+                                   ? findInstalledCoreMlPackage (jobCatalogEntry, jobModelPath.getParentDirectory())
+                                   : juce::File();
+    const bool nativeCoreMl = coreMlPackage != juce::File();
+    const juce::String deviceLabel = ! monitor.gpu ? juce::String ("CPU")
+                                   : nativeCoreMl  ? "GPU (Core ML, " + coreMlPackage.getFileName() + ")"
+                                                   : "GPU (" + providerName + ")";
+
     // Short block appended to the copied error text, so one paste tells us what ran where.
     const auto describeJob = [&]
     {
         juce::StringArray lines;
         lines.add ("INTERSECT " + juce::String (JucePlugin_VersionString) + " on " + juce::SystemStats::getOperatingSystemName()
-                   + ", ONNX Runtime " + ortVersionString() + ", device "
-                   + (monitor.gpu ? "GPU (" + providerName + ")" : juce::String ("CPU")));
+                   + ", ONNX Runtime " + ortVersionString() + ", device " + deviceLabel);
         if (gpuInfo.valid)
             lines.add (gpuInfo.describe());
         lines.add ("Model: " + jobCatalogEntry.menuLabel + " (" + jobModelPath.getFileName() + ")");
@@ -972,7 +975,7 @@ void StemSeparationJob::run()
         const ScopedSleepBlocker keepAwake;
 
         juce::String initError;
-        if (! ensureOrtApiInitialized (initError))
+        if (! nativeCoreMl && ! ensureOrtApiInitialized (initError))
             throw std::runtime_error (initError.toStdString());
 
         const double modelRate = jobCatalogEntry.sampleRate;
@@ -989,7 +992,7 @@ void StemSeparationJob::run()
         state.store (StemJobState::separating, std::memory_order_release);
 
         stemLog ("---- " + jobCatalogEntry.menuLabel + " (" + jobModelPath.getFileName() + ") on "
-                 + (monitor.gpu ? "GPU (" + providerName + ")" : juce::String ("CPU")) + ", ONNX Runtime "
+                 + deviceLabel + ", ONNX Runtime "
                  + ortVersionString() + ", INTERSECT " + juce::String (JucePlugin_VersionString) + ", "
                  + juce::SystemStats::getOperatingSystemName() + ", "
                  + juce::String (inferenceAudio.getNumSamples() / juce::jmax (1.0, modelRate), 1) + " s of audio");
@@ -1028,7 +1031,23 @@ void StemSeparationJob::run()
             stemBuffers.clear();
             inferenceError.clear();
             Ort::Session session (getOrtEnv(), modelPathStr.c_str(), options);
-            return runStemInference (session, inferenceAudio, jobCatalogEntry, jobStemSelection, stemBuffers,
+            OrtStemRunner runner (session);
+            return runStemInference (runner, inferenceAudio, jobCatalogEntry, jobStemSelection, stemBuffers,
+                                     shouldCancel, *this, progress, monitor, inferenceError);
+        };
+
+        // Compiles the Core ML package on first use (cached), then runs it. Failures throw.
+        const auto runCoreMl = [&]
+        {
+            stemBuffers.clear();
+            inferenceError.clear();
+            const double loadStart = juce::Time::getMillisecondCounterHiRes();
+            juce::String coreMlError;
+            auto runner = createCoreMlStemRunner (coreMlPackage, getCoreMlCacheRoot(), coreMlError);
+            if (runner == nullptr)
+                throw std::runtime_error (coreMlError.toStdString());
+            stemLog ("Core ML model ready in " + juce::String ((juce::Time::getMillisecondCounterHiRes() - loadStart) / 1000.0, 1) + " s");
+            return runStemInference (*runner, inferenceAudio, jobCatalogEntry, jobStemSelection, stemBuffers,
                                      shouldCancel, *this, progress, monitor, inferenceError);
         };
 
@@ -1037,10 +1056,15 @@ void StemSeparationJob::run()
             return threadShouldExit() || shouldCancel.load (std::memory_order_acquire);
         };
 
-        auto sessionOptions = makeSessionOptions();
-        juce::String providerError;
-        if (! configureExecutionProvider (sessionOptions, jobComputeDevice, providerError))
-            throw std::runtime_error (describeGpuUnavailable (providerError).toStdString());
+        // Only the ONNX Runtime path touches its API (the Core ML path never loads it).
+        std::optional<Ort::SessionOptions> sessionOptions;
+        if (! nativeCoreMl)
+        {
+            sessionOptions.emplace (makeSessionOptions());
+            juce::String providerError;
+            if (! configureExecutionProvider (*sessionOptions, jobComputeDevice, providerError))
+                throw std::runtime_error (describeGpuUnavailable (providerError).toStdString());
+        }
 
         bool inferenceOk = false;
         if (jobComputeDevice == StemComputeDevice::gpu)
@@ -1049,7 +1073,7 @@ void StemSeparationJob::run()
             // the user's behalf (a CPU run can starve the DAW's audio thread): stop and say why.
             try
             {
-                inferenceOk = openAndRun (sessionOptions);
+                inferenceOk = nativeCoreMl ? runCoreMl() : openAndRun (*sessionOptions);
             }
             catch (const std::exception& e)
             {
@@ -1064,7 +1088,7 @@ void StemSeparationJob::run()
         }
         else
         {
-            inferenceOk = openAndRun (sessionOptions);
+            inferenceOk = openAndRun (*sessionOptions);
         }
 
         if (! inferenceOk)

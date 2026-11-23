@@ -153,6 +153,20 @@ struct StemModelRequirements
     StemGpuAdvice gpu = StemGpuAdvice::unknown;
 };
 
+// A model's native Core ML version for the GPU on Macs (manifest `artifacts.coreml`): a zip holding one
+// .mlpackage, unpacked next to the ONNX file. ONNX Runtime's CoreML provider splits these models into
+// hundreds of small pieces; a native package runs them whole.
+struct StemCoreMlAsset
+{
+    juce::String fileName;      // the zip's release asset name
+    juce::String downloadUrl;
+    juce::int64 downloadBytes = 0;
+    juce::String sha256;        // lowercase hex of the zip
+    juce::String packageName;   // the .mlpackage folder inside the zip
+
+    bool isValid() const noexcept { return fileName.isNotEmpty() && downloadUrl.isNotEmpty() && packageName.isNotEmpty(); }
+};
+
 struct StemModelCatalogEntry
 {
     StemModelId id;
@@ -165,6 +179,7 @@ struct StemModelCatalogEntry
     // installed, the model keeps working with it and the stem view offers UPDATE.
     juce::StringArray replacesFileNames;
     juce::String updateNote;      // one line shown with the UPDATE button (`artifacts.update_note`)
+    StemCoreMlAsset coreml;       // native Core ML version for Macs; empty when the model has none
     juce::String license;
     juce::String attribution;
     juce::String notes;
@@ -234,8 +249,21 @@ StemModelCatalogEntry getEffectiveStemModelCatalogEntry (const StemModelId& mode
 // The installed file for a model: its current file, otherwise an earlier version listed in
 // replacesFileNames. Returns the current file's path when neither exists.
 juce::File findInstalledStemModelFile (const StemModelCatalogEntry& entry, const juce::File& modelFolder);
-// True when only an earlier version (from replacesFileNames) is installed.
+// True when only an earlier version (from replacesFileNames) is installed, or, on a Mac, when the model is
+// installed but its Core ML version (which the GPU uses there) isn't yet.
 bool isStemModelUpdateAvailable (const StemModelCatalogEntry& entry, const juce::File& modelFolder);
+
+// The installed Core ML package of a model (modelFolder/<packageName>), or an invalid File.
+juce::File findInstalledCoreMlPackage (const StemModelCatalogEntry& entry, const juce::File& modelFolder);
+
+// Whether this build downloads and runs Core ML packages (macOS) for models that have one.
+bool usesNativeCoreMl();
+
+// The UPDATE button's tooltip: the manifest's note for a newer model file, or why the Core ML version helps.
+juce::String getStemModelUpdateNote (const StemModelCatalogEntry& entry, const juce::File& modelFolder);
+
+// Where compiled Core ML models (.mlmodelc) are kept between separations (macOS: ~/Library/Caches/INTERSECT/coreml).
+juce::File getCoreMlCacheRoot();
 // Deletes the earlier versions listed in replacesFileNames from modelFolder (never the current file).
 // Returns how many files were deleted.
 int removeReplacedStemModelFiles (const StemModelCatalogEntry& entry, const juce::File& modelFolder);

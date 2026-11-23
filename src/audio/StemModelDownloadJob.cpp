@@ -213,7 +213,11 @@ void StemModelDownloadJob::run()
         }
 
         const auto targetFile = downloadFolder.getChildFile (entry.fileName);
-        if (entry.downloadUrl.isEmpty())
+        const bool needModel = ! targetFile.existsAsFile();
+        // On a Mac the GPU runs the model's native Core ML version, so it comes along when the manifest has one.
+        const bool needCoreMl = usesNativeCoreMl() && entry.coreml.isValid()
+                                && findInstalledCoreMlPackage (entry, downloadFolder) == juce::File();
+        if (needModel && entry.downloadUrl.isEmpty())
         {
             const juce::ScopedLock sl (lock);
             resultMessage = "Model downloads are not configured in this build";
@@ -221,58 +225,80 @@ void StemModelDownloadJob::run()
             return;
         }
 
-        juce::String downloadError;
-        const auto numModels = (float) requestedModels.size();
-        const auto onBytes = [this, i, numModels, expectedBytes = entry.downloadBytes] (juce::int64 received, juce::int64 total)
-        {
-            if (total <= 0)
-                total = expectedBytes;
-            const float fileFraction = total > 0 ? juce::jlimit (0.0f, 1.0f, (float) ((double) received / (double) total)) : 0.0f;
-            progress.store (((float) i + fileFraction) / numModels, std::memory_order_release);
-        };
-
-        if (! Download::downloadFileToTarget (juce::URL (entry.downloadUrl), targetFile, shouldCancel, *this,
-                                              downloadError, entry.sha256, onBytes))
+        const auto fail = [this, &entry] (const juce::String& downloadError, const juce::String& fileName)
         {
             const juce::ScopedLock sl (lock);
             if (downloadError == "cancelled")
             {
                 resultMessage = "Model download cancelled";
                 state.store (StemModelDownloadState::cancelled, std::memory_order_release);
+                return;
             }
-            else if (downloadError.startsWith ("HTTP "))
-            {
-                resultMessage = "Failed to download " + entry.menuLabel
-                              + " (" + downloadError + ")";
-                state.store (StemModelDownloadState::failed, std::memory_order_release);
-            }
+            if (downloadError.startsWith ("HTTP "))
+                resultMessage = "Failed to download " + entry.menuLabel + " (" + downloadError + ")";
             else if (downloadError == "write failed")
-            {
-                resultMessage = "Failed to write " + entry.fileName;
-                state.store (StemModelDownloadState::failed, std::memory_order_release);
-            }
+                resultMessage = "Failed to write " + fileName;
             else if (downloadError == "checksum mismatch")
-            {
                 resultMessage = "Download of " + entry.menuLabel + " was corrupted (checksum mismatch). Try again.";
-                state.store (StemModelDownloadState::failed, std::memory_order_release);
-            }
-            else if (downloadError == "install failed")
-            {
-                resultMessage = "Failed to install " + entry.menuLabel;
-                state.store (StemModelDownloadState::failed, std::memory_order_release);
-            }
+            else if (downloadError == "install failed" || downloadError.startsWith ("unpack"))
+                resultMessage = "Failed to install " + entry.menuLabel + (downloadError.startsWith ("unpack") ? " (" + downloadError + ")" : juce::String());
             else
+                resultMessage = "Failed to download " + entry.menuLabel + " (network connection failed)";
+            state.store (StemModelDownloadState::failed, std::memory_order_release);
+        };
+
+        // Progress for this model: the ONNX file first, then the Core ML zip, each its share of the model's slot.
+        const auto numModels = (float) requestedModels.size();
+        const auto makeOnBytes = [this, i, numModels] (juce::int64 expectedBytes, float from, float to)
+        {
+            return [this, i, numModels, expectedBytes, from, to] (juce::int64 received, juce::int64 total)
             {
-                resultMessage = "Failed to download " + entry.menuLabel
-                              + " (network connection failed)";
-                state.store (StemModelDownloadState::failed, std::memory_order_release);
+                if (total <= 0)
+                    total = expectedBytes;
+                const float fileFraction = total > 0 ? juce::jlimit (0.0f, 1.0f, (float) ((double) received / (double) total)) : 0.0f;
+                progress.store (((float) i + from + (to - from) * fileFraction) / numModels, std::memory_order_release);
+            };
+        };
+        const float modelShare = needModel && needCoreMl ? 0.3f : 1.0f;
+
+        juce::String downloadError;
+        if (needModel)
+        {
+            if (! Download::downloadFileToTarget (juce::URL (entry.downloadUrl), targetFile, shouldCancel, *this,
+                                                  downloadError, entry.sha256, makeOnBytes (entry.downloadBytes, 0.0f, modelShare)))
+            {
+                fail (downloadError, entry.fileName);
+                return;
             }
-            return;
+
+            // The new file is verified and installed: earlier versions of this model are no longer needed.
+            // A file still open by a running separation can't be deleted; it's simply left behind.
+            (void) removeReplacedStemModelFiles (entry, downloadFolder);
         }
 
-        // The new file is verified and installed: earlier versions of this model are no longer needed.
-        // A file still open by a running separation can't be deleted; it's simply left behind.
-        (void) removeReplacedStemModelFiles (entry, downloadFolder);
+        if (needCoreMl)
+        {
+            const auto zip = downloadFolder.getChildFile (entry.coreml.fileName);
+            const auto package = downloadFolder.getChildFile (entry.coreml.packageName);
+            if (! Download::downloadFileToTarget (juce::URL (entry.coreml.downloadUrl), zip, shouldCancel, *this, downloadError,
+                                                  entry.coreml.sha256,
+                                                  makeOnBytes (entry.coreml.downloadBytes, needModel ? modelShare : 0.0f, 1.0f)))
+            {
+                fail (downloadError, entry.coreml.fileName);
+                return;
+            }
+
+            (void) package.deleteRecursively();   // a package left half-unpacked earlier
+            juce::String unpackError;
+            const bool unpacked = Download::extractZipToFolder (zip, downloadFolder, unpackError);
+            zip.deleteFile();
+            if (! unpacked || findInstalledCoreMlPackage (entry, downloadFolder) == juce::File())
+            {
+                (void) package.deleteRecursively();
+                fail ("unpack failed" + (unpackError.isNotEmpty() ? ": " + unpackError : juce::String()), entry.coreml.fileName);
+                return;
+            }
+        }
 
         progress.store ((float) (i + 1) / (float) requestedModels.size(), std::memory_order_release);
     }

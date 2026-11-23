@@ -231,7 +231,15 @@ set(INTERSECT_CORE_SOURCES
     src/audio/StemSpectral.cpp
     src/audio/AuditionPlayer.cpp
 )
+# Native Core ML stem models: the GPU path on Macs (Objective-C++, ARC, CoreML.framework).
+if(APPLE AND INTERSECT_HAS_ONNX_RUNTIME)
+    list(APPEND INTERSECT_CORE_SOURCES src/audio/StemCoreML.mm)
+endif()
 list(TRANSFORM INTERSECT_CORE_SOURCES PREPEND "${CMAKE_CURRENT_SOURCE_DIR}/")
+if(APPLE AND INTERSECT_HAS_ONNX_RUNTIME)
+    # Source properties are per directory: tests/CMakeLists.txt sets the same for its targets.
+    set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/src/audio/StemCoreML.mm" PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+endif()
 
 target_sources(Intersect PRIVATE ${INTERSECT_CORE_SOURCES} src/StandaloneApp.cpp)
 
@@ -286,6 +294,10 @@ endif()
 if(WIN32)
     # DXGI adapter info (name, driver, compute preemption) for the stem separation log.
     target_link_libraries(Intersect PRIVATE dxgi)
+endif()
+
+if(APPLE AND INTERSECT_HAS_ONNX_RUNTIME)
+    target_link_libraries(Intersect PRIVATE "-framework CoreML")
 endif()
 
 if(INTERSECT_HAS_ONNX_RUNTIME AND UNIX AND NOT APPLE)
