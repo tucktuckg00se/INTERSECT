@@ -192,6 +192,55 @@ target_link_libraries(IntersectUrlImportE2E PRIVATE
     juce::juce_recommended_warning_flags
 )
 
+# Opt-in stem separation timing with the plugin's own job (downloads the ORT bundle and the model,
+# so it isn't an add_test). Point HOME at a scratch folder:
+#   HOME=/tmp/bench IntersectStemBench <model id> <cpu|gpu> <input.wav | gen:SECONDS> <output folder>
+if(INTERSECT_HAS_ONNX_RUNTIME)
+    juce_add_console_app(IntersectStemBench
+        PRODUCT_NAME "INTERSECT stem benchmark"
+        VERSION "${INTERSECT_VERSION}"
+        NEEDS_CURL TRUE
+    )
+    target_sources(IntersectStemBench PRIVATE
+        StemBenchmark.cpp
+        ../src/audio/StemSeparation.cpp
+        ../src/audio/StemSpectral.cpp
+        ../src/audio/StemSeparationJob.cpp
+        ../src/audio/StemGpuInfo.cpp
+        ../src/audio/StemModelDownloadJob.cpp
+        ../src/audio/OrtBundleDownloadJob.cpp
+        ../src/Download.cpp
+        ../src/HttpFetch.cpp
+    )
+    target_include_directories(IntersectStemBench PRIVATE
+        ..
+        ../src
+        "${INTERSECT_ORT_HEADERS_ROOT}/include"
+    )
+    target_compile_definitions(IntersectStemBench PRIVATE
+        JucePlugin_VersionString="${INTERSECT_VERSION}"
+        JUCE_WEB_BROWSER=0
+        INTERSECT_HAS_ONNX_RUNTIME=1
+        INTERSECT_ORT_VERSION="${INTERSECT_ORT_VERSION}"
+    )
+    # On Linux, NEEDS_CURL above defines JUCE_USE_CURL=1 and links libcurl.
+    if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        target_compile_definitions(IntersectStemBench PRIVATE JUCE_USE_CURL=0)
+    endif()
+    if(WIN32)
+        target_link_libraries(IntersectStemBench PRIVATE dxgi)
+    endif()
+    if(UNIX AND NOT APPLE)
+        target_link_libraries(IntersectStemBench PRIVATE ${CMAKE_DL_LIBS})
+    endif()
+    target_link_libraries(IntersectStemBench PRIVATE
+        juce::juce_audio_formats
+        juce::juce_cryptography
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags
+    )
+endif()
+
 # The real processor (every plugin source but the standalone shell), driven like a host would.
 # Keep the include dirs, definitions and libraries in step with the Intersect target.
 juce_add_console_app(IntersectProcessorTests
