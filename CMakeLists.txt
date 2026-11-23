@@ -63,8 +63,11 @@ endif()
 if(_intersect_ort_supported)
     if(INTERSECT_ORT_HEADERS_ROOT STREQUAL "")
         include(FetchContent)
+        # URLs are tried in order. Microsoft's release first; the intersect-tools ORT release of the same
+        # version ships the same include/ and keeps builds working when Microsoft's download is unavailable.
         set(_intersect_ort_fetch_args
             URL "https://github.com/microsoft/onnxruntime/releases/download/v${INTERSECT_ORT_VERSION}/onnxruntime-linux-x64-${INTERSECT_ORT_VERSION}.tgz"
+                "https://github.com/tucktuckg00se/intersect-tools/releases/download/ort-${INTERSECT_ORT_VERSION}/onnxruntime-linux-x64-cpu.zip"
         )
         if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.24")
             list(APPEND _intersect_ort_fetch_args DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
