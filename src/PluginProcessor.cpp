@@ -328,7 +328,7 @@ void IntersectProcessor::startUrlImport (const juce::String& url, bool allowLong
         setUiStatusMessage ("Couldn't start the URL import", true);
         return;
     }
-    setUiStatusMessage ("Importing from URL...", false);
+    setUiStatusMessage ("Importing from URL...", false, UiStatusMessage::Source::progress);
 }
 
 void IntersectProcessor::startUrlToolsUpdate()
@@ -971,7 +971,7 @@ void IntersectProcessor::startStemModelDownload (const std::vector<StemModelId>&
         return;
     }
 
-    setUiStatusMessage ("Downloading stem models...", false);
+    setUiStatusMessage ("Downloading stem models...", false, UiStatusMessage::Source::progress);
     uiSnapshotDirty.store (true, std::memory_order_release);
 }
 
@@ -1044,9 +1044,9 @@ void IntersectProcessor::startOrtBundleDownload (OrtBundleId bundleId)
     }
 
     if (const auto* entry = findOrtBundleCatalogEntry (bundleId))
-        setUiStatusMessage ("Downloading " + entry->menuLabel + "...", false);
+        setUiStatusMessage ("Downloading " + entry->menuLabel + "...", false, UiStatusMessage::Source::progress);
     else
-        setUiStatusMessage ("Downloading ONNX Runtime...", false);
+        setUiStatusMessage ("Downloading ONNX Runtime...", false, UiStatusMessage::Source::progress);
 
     uiSnapshotDirty.store (true, std::memory_order_release);
 }
@@ -2044,10 +2044,7 @@ void IntersectProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         loadStateChanged = true;
 
     {
-        const auto& status = getUiStatusMessage();
-        if ((status.isWarning || status.source == UiStatusMessage::Source::transientInfo)
-            && status.shownAtMs > 0
-            && juce::Time::currentTimeMillis() - status.shownAtMs >= 5000)
+        if (getUiStatusMessage().hasExpired (juce::Time::currentTimeMillis()))
         {
             clearUiStatusMessage();
             uiSnapshotDirty.store (true, std::memory_order_release);
@@ -2784,7 +2781,7 @@ void IntersectProcessor::savePresetAsync (const juce::File& destination, bool em
     const auto samplePaths = getStateSampleFilePaths();
 
     if (embedSamples && ! samplePaths.isEmpty())
-        setUiStatusMessage ("Saving preset with samples...", false, UiStatusMessage::Source::transientInfo);
+        setUiStatusMessage ("Saving preset with samples...", false, UiStatusMessage::Source::progress);
 
     fileLoadPool.addJob ([this, destination, embedSamples, state, samplePaths]
     {
@@ -2847,7 +2844,7 @@ void IntersectProcessor::loadPresetAsync (const juce::File& presetFile)
 void IntersectProcessor::exportPresetAsync (const juce::File& source, const juce::File& destination, bool embedSamples)
 {
     if (embedSamples)
-        setUiStatusMessage ("Exporting preset with samples...", false, UiStatusMessage::Source::transientInfo);
+        setUiStatusMessage ("Exporting preset with samples...", false, UiStatusMessage::Source::progress);
 
     const auto cacheDir = AppFiles::getPresetSampleCacheDir();
     fileLoadPool.addJob ([this, source, destination, embedSamples, cacheDir]
@@ -2910,7 +2907,7 @@ void IntersectProcessor::handlePresetJobCompletionOnMessageThread()
                                         + (job.missingSamples == 1 ? " sample" : " samples") + " not found, not embedded",
                                     true);
             else
-                setUiStatusMessage ("Exported " + name, false, UiStatusMessage::Source::transientInfo);
+                setUiStatusMessage ("Exported " + name, false);
             continue;
         }
 
@@ -2922,8 +2919,7 @@ void IntersectProcessor::handlePresetJobCompletionOnMessageThread()
 
         lastSavedPresetFile = job.presetFile;
         ++presetSaveVersion;
-        setUiStatusMessage ("Saved preset " + job.presetFile.getFileNameWithoutExtension(), false,
-                            UiStatusMessage::Source::transientInfo);
+        setUiStatusMessage ("Saved preset " + job.presetFile.getFileNameWithoutExtension(), false);
     }
 }
 
@@ -2970,7 +2966,7 @@ void IntersectProcessor::applyLoadedPreset (const PresetJobResult& job)
                                 + (job.missingSamples == 1 ? " sample" : " samples") + " not found",
                             true);
     else
-        setUiStatusMessage ("Loaded preset " + name, false, UiStatusMessage::Source::transientInfo);
+        setUiStatusMessage ("Loaded preset " + name, false);
 }
 
 void IntersectProcessor::auditionFileAsync (const juce::File& file)

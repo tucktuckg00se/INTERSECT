@@ -1208,6 +1208,28 @@ void stemsInGroupModeBecomeAGroup()
     require (host.ui().sampleGroups.count == 1, "one stem in Group mode is a plain sample");
 }
 
+// The header's status line: every message clears itself after a few seconds ("MIDI saved to..."
+// used to stay until something replaced it), except progress messages, which wait for their result.
+void statusMessagesClearThemselves()
+{
+    using Status = IntersectProcessor::UiStatusMessage;
+    Status info;
+    info.source = Status::Source::generic;
+    info.shownAtMs = 1000;
+    require (! info.hasExpired (1000 + Status::kShowMs - 1), "an info message shows for a few seconds");
+    require (info.hasExpired (1000 + Status::kShowMs), "an info message clears itself");
+
+    auto warning = info;
+    warning.isWarning = true;
+    require (warning.hasExpired (1000 + Status::kShowMs), "a warning clears itself");
+
+    auto progress = info;
+    progress.source = Status::Source::progress;
+    require (! progress.hasExpired (1000 + 60 * Status::kShowMs), "a progress message waits for its result");
+
+    require (! Status {}.hasExpired (1000000), "no message: nothing to clear");
+}
+
 void groupLengthsReadRight()
 {
     require (GroupUi::formatLength (7937998, 44100.0) == "3:00.0", "a stem a few frames short of 3 minutes reads 3:00.0");
@@ -1475,6 +1497,7 @@ int main (int argc, char* argv[])
         run ("stems in Group mode become a group", stemsInGroupModeBecomeAGroup);
         run ("Shift+click previews a group's mix", shiftPreviewPlaysTheGroupMix);
         run ("group lengths read right", groupLengthsReadRight);
+        run ("status messages clear themselves", statusMessagesClearThemselves);
     }
     else if (group == "stress")
     {

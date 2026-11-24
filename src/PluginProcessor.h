@@ -297,6 +297,32 @@ public:
     // (which embed long build paths) are not cut off when copied.
     using StatusText = RtText<2048>;
 
+    /** The header's status line (one message at a time). */
+    struct UiStatusMessage
+    {
+        enum class Source
+        {
+            none = 0,
+            generic,
+            droppedCommands,
+            midiLimit,
+            progress,   // "Downloading...": stays until the job's result replaces it
+        };
+
+        static constexpr int64_t kShowMs = 5000;
+
+        StatusText text;
+        bool isWarning = false;
+        Source source = Source::none;
+        int64_t shownAtMs = 0;
+
+        /** Every message clears kShowMs after it was shown, except progress messages. */
+        bool hasExpired (int64_t nowMs) const noexcept
+        {
+            return source != Source::progress && shownAtMs > 0 && nowMs - shownAtMs >= kShowMs;
+        }
+    };
+
     struct UiSliceSnapshot
     {
         struct UiSessionSample
@@ -461,23 +487,6 @@ private:
         int token = 0;
         LoadKind kind = LoadKindReplace;
         SampleData::SnapshotPtr sample;
-    };
-
-    struct UiStatusMessage
-    {
-        enum class Source
-        {
-            none = 0,
-            generic,
-            droppedCommands,
-            midiLimit,
-            transientInfo,   // non-warning message that clears itself like a warning
-        };
-
-        StatusText text;
-        bool isWarning = false;
-        Source source = Source::none;
-        int64_t shownAtMs = 0;
     };
 
     struct PendingSliceTimelineRemap
