@@ -91,6 +91,7 @@ private:
     juce::Point<int> pointer { -1, -1 };
     int openHeaderId = -1;
     int draggingLevelId = -1;
+    bool forwardingMiddleDrag = false;   // middle-drag scrolls/zooms the waveform, never presses a control
     TimelineMap lastMap;
     TimelineMap::View lastView;
 };

@@ -4,6 +4,7 @@
 #include "GroupUi.h"
 #include "IntersectLookAndFeel.h"
 #include "UIHelpers.h"
+#include <utility>
 
 namespace
 {
@@ -535,6 +536,14 @@ void GroupLaneControls::showMemberMenu (const Header& header)
 
 void GroupLaneControls::mouseDown (const juce::MouseEvent& e)
 {
+    if (e.mods.isMiddleButtonDown())
+    {
+        forwardingMiddleDrag = true;
+        if (auto* waveform = getParentComponent())
+            waveform->mouseDown (e.getEventRelativeTo (waveform));
+        return;
+    }
+
     const auto p = e.getPosition();
     if (auto* h = headerAt (p))
     {
@@ -575,6 +584,12 @@ void GroupLaneControls::mouseDown (const juce::MouseEvent& e)
 
 void GroupLaneControls::mouseDrag (const juce::MouseEvent& e)
 {
+    if (forwardingMiddleDrag)
+    {
+        if (auto* waveform = getParentComponent())
+            waveform->mouseDrag (e.getEventRelativeTo (waveform));
+        return;
+    }
     if (draggingLevelId < 0)
         return;
     for (auto& h : headers)
@@ -582,13 +597,18 @@ void GroupLaneControls::mouseDrag (const juce::MouseEvent& e)
             setGainFromX (h, e.getPosition().x);
 }
 
-void GroupLaneControls::mouseUp (const juce::MouseEvent&)
+void GroupLaneControls::mouseUp (const juce::MouseEvent& e)
 {
+    if (std::exchange (forwardingMiddleDrag, false))
+        if (auto* waveform = getParentComponent())
+            waveform->mouseUp (e.getEventRelativeTo (waveform));
     draggingLevelId = -1;
 }
 
 void GroupLaneControls::mouseDoubleClick (const juce::MouseEvent& e)
 {
+    if (e.mods.isMiddleButtonDown())
+        return;
     if (auto* h = headerAt (e.getPosition()); h != nullptr && h->level.contains (e.getPosition()))
         GroupUi::push (processor, IntersectProcessor::CmdSetMemberGain, h->sampleId, {}, 0, 0.0f);
 }

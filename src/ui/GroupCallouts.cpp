@@ -22,6 +22,23 @@ void paintBadge (juce::Graphics& g, juce::Rectangle<float> area, int memberIndex
     g.drawText (juce::String (GroupUi::memberNumber (memberIndex)), area, juce::Justification::centred, false);
 }
 
+/** A popover M: JUCE buttons click on any mouse button, but a middle click shouldn't mute anything. */
+class MuteButton final : public juce::TextButton
+{
+public:
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        if (! e.mods.isMiddleButtonDown())
+            juce::TextButton::mouseDown (e);
+    }
+
+    void mouseUp (const juce::MouseEvent& e) override
+    {
+        if (! e.mods.isMiddleButtonDown())
+            juce::TextButton::mouseUp (e);
+    }
+};
+
 void styleMuteButton (juce::TextButton& button)
 {
     button.setClickingTogglesState (true);
@@ -379,7 +396,8 @@ private:
 
     struct RowControls
     {
-        juce::TextButton mute, remove;
+        MuteButton mute;
+        juce::TextButton remove;
         juce::Slider level;
         juce::Label db;
         DropdownField output;
@@ -510,7 +528,7 @@ private:
     SampleGroup group;
     uint32_t played = 0;
     bool own = false;
-    std::list<juce::TextButton> mutes;
+    std::list<MuteButton> mutes;
     SmallToggle groupMix;
     juce::TextButton unmuteAll;
     RowList list;
