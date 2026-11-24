@@ -32,7 +32,7 @@ description: "Every button, parameter, gesture, and keyboard shortcut in the INT
 | Control | Function | Notes |
 | --- | --- | --- |
 | `BPM` | Tempo reference | `20` to `999` |
-| `SET BPM` | Calculate BPM from a duration: pick the length, check the BPM it gives, then `SET` | 16 bars to 1/16 note |
+| `SET BPM` | Calculate BPM from a duration: enter the length, check the BPM it gives, then `SET` | `BAR`: bars of any time signature; `NOTE`: any 1/N note (1/6 = quarter-note triplet) |
 | `PITCH` | Semitone shift | `-48` to `+48 st` |
 | `TUNE` | Fine detune | `-100` to `+100 ct` |
 | `ALGO` | Playback algorithm | `Repitch`, `Signalsmith`, `Bungee` |

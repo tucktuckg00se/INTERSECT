@@ -2117,34 +2117,23 @@ void SignalChainBar::dismissTextEditor()
     textEditor.reset();
 }
 
-namespace
-{
-const juce::StringArray kSetBpmChoices { "16 Bars", "8 Bars", "4 Bars", "2 Bars", "1 Bar",
-                                         "1/2 Note", "1/4 Note", "1/8 Note", "1/16 Note" };
-constexpr float kSetBpmBars[] = { 16.0f, 8.0f, 4.0f, 2.0f, 1.0f, 0.5f, 0.25f, 0.125f, 0.0625f };
-
-float setBpmBarsFor (int choice)
-{
-    return juce::isPositiveAndBelow (choice, (int) std::size (kSetBpmBars)) ? kSetBpmBars[choice] : 0.0f;
-}
-} // namespace
-
 void SignalChainBar::showSetBpmPopup (bool sliceScope, juce::Rectangle<int> anchorArea)
 {
     const auto safe = juce::Component::SafePointer<SignalChainBar> (this);
     showSetBpmCallout (*this, anchorArea,
                        sliceScope ? "Selected slice length" : "Selected sample length",
-                       kSetBpmChoices, lastSetBpmChoice,
-                       [safe, sliceScope] (int choice)
+                       lastSetBpmLength,
+                       [safe, sliceScope] (float bars)
                        {
-                           return safe != nullptr ? safe->previewSetBpm (sliceScope, setBpmBarsFor (choice)) : 0.0f;
+                           return safe != nullptr ? safe->previewSetBpm (sliceScope, bars) : 0.0f;
                        },
-                       [safe, sliceScope] (int choice)
+                       [safe, sliceScope] (const SetBpmLength& length)
                        {
-                           if (safe == nullptr || setBpmBarsFor (choice) <= 0.0f)
+                           const float bars = length.inFourFourBars();
+                           if (safe == nullptr || bars <= 0.0f)
                                return;
-                           safe->lastSetBpmChoice = choice;
-                           safe->applySetBpm (sliceScope, setBpmBarsFor (choice));
+                           safe->lastSetBpmLength = length;
+                           safe->applySetBpm (sliceScope, bars);
                        });
 }
 

@@ -12,6 +12,8 @@
 #include "audio/GroupMix.h"
 #include "ui/GroupUi.h"
 #include "params/ParamIds.h"
+#include "ui/SetBpmCallout.h"
+#include "audio/GrainEngine.h"
 
 #include <atomic>
 #include <cmath>
@@ -1230,6 +1232,42 @@ void statusMessagesClearThemselves()
     require (! Status {}.hasExpired (1000000), "no message: nothing to clear");
 }
 
+// SET BPM (#64): bars of any time signature, or one 1/N note, as a length in 4/4 bars.
+void setBpmLengthsReadRight()
+{
+    const auto near = [] (float a, float b) { return std::abs (a - b) < 1.0e-6f; };
+    const auto barLength = [] (int num, int den, int bars)
+    {
+        SetBpmLength length;
+        length.sigNumerator = num;
+        length.sigDenominator = den;
+        length.bars = bars;
+        return length.inFourFourBars();
+    };
+    const auto noteLength = [] (int den)
+    {
+        SetBpmLength length;
+        length.mode = SetBpmLength::Mode::note;
+        length.noteDenominator = den;
+        return length.inFourFourBars();
+    };
+
+    require (near (SetBpmLength {}.inFourFourBars(), 1.0f), "it opens on 1 bar of 4/4");
+    require (near (barLength (4, 4, 16), 16.0f), "16 bars of 4/4");
+    require (near (barLength (7, 8, 1), 0.875f), "a bar of 7/8 is 3.5 beats");
+    require (near (barLength (2, 3, 1), 2.0f / 3.0f), "2/3 of a bar");
+    require (near (barLength (6, 8, 2), 1.5f), "2 bars of 6/8");
+    require (near (noteLength (4), 0.25f) && near (noteLength (16), 0.0625f), "1/4 and 1/16 notes");
+    require (near (noteLength (6), 1.0f / 6.0f) && near (noteLength (3), 1.0f / 3.0f), "triplets: 1/6 and 1/3");
+    require (barLength (0, 4, 1) == 0.0f && barLength (4, 0, 1) == 0.0f && barLength (4, 4, 0) == 0.0f
+                 && noteLength (0) == 0.0f, "an empty or zero number is no length");
+    require (barLength (4, 4, SetBpmLength::kMaxBars + 1) == 0.0f && noteLength (SetBpmLength::kMaxNoteDenominator + 1) == 0.0f,
+             "numbers past the field limits are no length");
+
+    // What SET applies: 1 s measured as a 1/6 note is 2/3 of a beat per second = 40 BPM.
+    require (near (GrainEngine::calcStretchBpm (0, 48000, noteLength (6), 48000.0), 40.0f), "1/6 note over 1 s = 40 BPM");
+}
+
 void groupLengthsReadRight()
 {
     require (GroupUi::formatLength (7937998, 44100.0) == "3:00.0", "a stem a few frames short of 3 minutes reads 3:00.0");
@@ -1498,6 +1536,7 @@ int main (int argc, char* argv[])
         run ("Shift+click previews a group's mix", shiftPreviewPlaysTheGroupMix);
         run ("group lengths read right", groupLengthsReadRight);
         run ("status messages clear themselves", statusMessagesClearThemselves);
+        run ("SET BPM lengths read right", setBpmLengthsReadRight);
     }
     else if (group == "stress")
     {

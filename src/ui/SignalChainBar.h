@@ -1,6 +1,7 @@
 #pragma once
 
 #include <juce_gui_basics/juce_gui_basics.h>
+#include "SetBpmCallout.h"
 #include "../Constants.h"
 #include "../params/SampleParams.h"
 #include "SliceMembersButton.h"
@@ -201,7 +202,7 @@ private:
     bool selectedSampleIsGrouped() const;
     Scope scope = Scope::Sample;
     bool lastHadValidSlice = false;
-    int lastSetBpmChoice = 4;   // SET BPM opens on the length used last (1 Bar at first)
+    SetBpmLength lastSetBpmLength;   // SET BPM opens on the length used last (1 bar of 4/4 at first)
     int activeDragCell = -1;
     int dragStartY = 0;
     float dragStartInteractionValue = 0.0f;
