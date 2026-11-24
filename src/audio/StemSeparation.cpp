@@ -475,6 +475,13 @@ juce::String pickLatestSeriesManifestUrl (const juce::var& releases, const juce:
     return bestUrl;
 }
 
+juce::String chooseStemModelManifestUrl (const juce::String& latestUrl, bool hasCachedManifest)
+{
+    if (latestUrl.isNotEmpty())
+        return latestUrl;
+    return hasCachedManifest ? juce::String() : getStemModelManifestDownloadUrl();
+}
+
 juce::File getDefaultStemModelFolder()
 {
 #if JUCE_LINUX

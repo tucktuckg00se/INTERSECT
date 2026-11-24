@@ -160,6 +160,12 @@ void latestSeriesManifestIsPicked()
     require (pickLatestSeriesManifestUrl (parseJson (R"({ "message": "API rate limit exceeded" })"), "0.2", "m.json").isEmpty(),
              "API error object");
 
+    // A release list that can't be read (offline, API limit) falls back to the old baseline only for a first
+    // install; over a cached manifest it would point models back at replaced files and drop Core ML.
+    require (chooseStemModelManifestUrl ("https://x/v0.2.10/m.json", true) == "https://x/v0.2.10/m.json", "newest wins");
+    require (chooseStemModelManifestUrl ({}, false) == getStemModelManifestDownloadUrl(), "first install: baseline");
+    require (chooseStemModelManifestUrl ({}, true).isEmpty(), "no release list: keep the cached manifest");
+
     // This build's own configuration resolves through the same rules.
     require (getStemModelManifestDownloadUrl().endsWith ("/v0.2.1/" + getStemModelManifestAssetName()), "baseline manifest URL");
     require (getStemModelManifestFileName() == "intersect_stem_models_manifest-v0.2.json", "series-scoped cache name");

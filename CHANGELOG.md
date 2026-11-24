@@ -17,6 +17,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Stem separation on Apple silicon Macs ran only on the slower efficiency cores, which made it many times slower than it should be (#63).
 - Messages in the top bar, such as "MIDI saved to...", stayed until something replaced them. They now clear after a few seconds; a message for work still running, like a download, stays until it finishes.
 - Middle-clicking a mute (**M**) button in a sample group toggled it.
+- When INTERSECT couldn't get the newest model list from GitHub (for example on a busy shared network), it replaced the list it had with an old one: updated models showed as not installed, and Macs lost the Core ML versions until the next check. It now keeps the list it already has.
 
 ## [0.20.0] - 2026-11-15
 

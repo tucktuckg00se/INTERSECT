@@ -2,22 +2,34 @@
 #include "../HttpFetch.h"
 #include "../Download.h"
 
-juce::String resolveStemModelManifestUrl (juce::Thread& thread)
+juce::String findLatestStemModelManifestUrl (juce::Thread& thread)
 {
     // GitHub's API rejects requests without a User-Agent.
     const auto releases = fetchText (juce::URL (getStemModelReleasesApiUrl()), thread,
                                      "User-Agent: INTERSECT\r\nAccept: application/vnd.github+json");
-    const auto latest = releases.isNotEmpty()
-                          ? pickLatestSeriesManifestUrl (juce::JSON::parse (releases), getStemModelReleaseSeries(),
-                                                         getStemModelManifestAssetName())
-                          : juce::String();
-    return latest.isNotEmpty() ? latest : getStemModelManifestDownloadUrl();
+    return releases.isNotEmpty()
+               ? pickLatestSeriesManifestUrl (juce::JSON::parse (releases), getStemModelReleaseSeries(),
+                                              getStemModelManifestAssetName())
+               : juce::String();
 }
 
 bool downloadStemModelManifest (const juce::File& modelFolder, juce::Thread& thread,
                                 std::atomic<bool>& shouldCancel, juce::String& errorMessage)
 {
-    const auto text = fetchText (juce::URL (resolveStemModelManifestUrl (thread)), thread);
+    const auto manifestFile = getStemModelManifestFile (modelFolder);
+    const auto url = chooseStemModelManifestUrl (findLatestStemModelManifestUrl (thread), manifestFile.existsAsFile());
+    if (thread.threadShouldExit() || shouldCancel.load (std::memory_order_acquire))
+    {
+        errorMessage = "cancelled";
+        return false;
+    }
+    if (url.isEmpty())
+    {
+        errorMessage = "release list unavailable";
+        return false;
+    }
+
+    const auto text = fetchText (juce::URL (url), thread);
     if (thread.threadShouldExit() || shouldCancel.load (std::memory_order_acquire))
     {
         errorMessage = "cancelled";
@@ -34,7 +46,6 @@ bool downloadStemModelManifest (const juce::File& modelFolder, juce::Thread& thr
     }
 
     // TemporaryFile picks a unique name, so a refresh and a model download can't collide.
-    const auto manifestFile = getStemModelManifestFile (modelFolder);
     juce::TemporaryFile temp (manifestFile);
     if (! temp.getFile().replaceWithText (text) || ! temp.overwriteTargetFileWithTemporary())
     {

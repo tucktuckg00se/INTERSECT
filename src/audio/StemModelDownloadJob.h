@@ -3,12 +3,14 @@
 #include <atomic>
 #include <functional>
 
-// Manifest URL of the newest release in this build's stem-model series (GitHub releases API),
-// or the built-in baseline release's manifest when that fails. Blocking: worker threads only.
-juce::String resolveStemModelManifestUrl (juce::Thread& thread);
+// Manifest URL of the newest release in this build's stem-model series (GitHub releases API), or empty
+// when the release list can't be read. Blocking: worker threads only.
+juce::String findLatestStemModelManifestUrl (juce::Thread& thread);
 
 // Downloads the series' newest manifest into modelFolder's cache file. The cache is only replaced
-// by a manifest with a `models` array. Blocking: worker threads only.
+// by a manifest with a `models` array. When the release list can't be read, a first install gets the
+// baseline release's manifest and a cached one is kept (see chooseStemModelManifestUrl). Blocking:
+// worker threads only.
 bool downloadStemModelManifest (const juce::File& modelFolder, juce::Thread& thread,
                                 std::atomic<bool>& shouldCancel, juce::String& errorMessage);
 

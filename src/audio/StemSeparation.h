@@ -238,6 +238,11 @@ juce::String getStemModelReleasesApiUrl();
 // From a GitHub "list releases" response: the manifest asset URL of the highest published
 // (non-draft, non-prerelease) v<series>.<N> release that has it. Empty when there is none.
 juce::String pickLatestSeriesManifestUrl (const juce::var& releases, const juce::String& series, const juce::String& assetName);
+// The manifest to download: the series' newest (latestUrl, from the release list) or, when the release
+// list couldn't be read (offline, or GitHub's 60-an-hour limit per address used up), the baseline release's,
+// but only for a first install. The baseline is older than any cached manifest: installing it over one would
+// point models back at replaced files and drop their Core ML versions. Empty: keep the cached manifest.
+juce::String chooseStemModelManifestUrl (const juce::String& latestUrl, bool hasCachedManifest);
 juce::File getDefaultStemModelFolder();
 juce::File getStemModelManifestFile (const juce::File& modelFolder);
 
