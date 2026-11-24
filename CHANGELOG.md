@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.20.1] - 2026-11-24
+
 ### Added
 - **Stem separation on a Mac's GPU now runs through Apple's Core ML** for all four models (#63). Before, `DEVICE` GPU went through ONNX Runtime's CoreML provider, which split the models into hundreds of small pieces: slower than the CPU, and MVSep Mega 53 didn't finish at all. The Core ML version downloads with the model; a model you already have shows **UPDATE** to fetch it. The first separation with each model takes longer while macOS prepares it, up to a few minutes for MVSep Mega 53.
 - Your computer no longer goes to sleep during a stem separation (macOS and Windows).
