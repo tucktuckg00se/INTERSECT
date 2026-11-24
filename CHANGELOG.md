@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Stem separation on a Mac's GPU now runs through Apple's Core ML** for all four models (#63). Before, `DEVICE` GPU went through ONNX Runtime's CoreML provider, which split the models into hundreds of small pieces: slower than the CPU, and MVSep Mega 53 didn't finish at all. The Core ML version downloads with the model; a model you already have shows **UPDATE** to fetch it. The first separation with each model takes longer while macOS prepares it, up to a few minutes for MVSep Mega 53.
+- Your computer no longer goes to sleep during a stem separation (macOS and Windows).
+
+### Changed
+- **SET BPM** measures the length you pick as **BAR** (a time signature and a number of bars, such as 1 bar of 7/8, or 2/3) or **NOTE** (any 1/N note, such as 1/6 for a quarter-note triplet) instead of choosing from a fixed list (#64). Type a number and press Return. Tab moves between the numbers, Up/Down or the mouse wheel step them, and SET BPM opens on the last length you used.
+
+### Fixed
+- Stem separation on Apple silicon Macs ran only on the slower efficiency cores, which made it many times slower than it should be (#63).
+- Messages in the top bar, such as "MIDI saved to...", stayed until something replaced them. They now clear after a few seconds; a message for work still running, like a download, stays until it finishes.
+- Middle-clicking a mute (**M**) button in a sample group toggled it.
+
 ## [0.20.0] - 2026-11-15
 
 ### Added

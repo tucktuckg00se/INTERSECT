@@ -56,7 +56,7 @@ After both are installed, open a sample's `STEMS` view to separate it.
 ## GPU runtime requirements (per ONNX Runtime bundle)
 
 - **Windows — DirectML** — no extra installs required. Works with any GPU vendor (NVIDIA, AMD, Intel) on Windows 10+ with a recent DirectX 12-capable driver.
-- **macOS arm64 — CoreML** — no extra installs required. Uses the built-in Apple Neural Engine / GPU.
+- **macOS arm64 — CoreML** — no extra installs required. With `DEVICE` on GPU, the models run whole on the Mac's GPU through Apple's Core ML. Each model's Core ML version downloads with it; a model downloaded with an older INTERSECT shows `UPDATE` to fetch it. The first separation with each model takes longer while macOS prepares it (up to a few minutes for MVSep Mega 53); later ones start right away.
 - **macOS x64 (Intel Mac)** — stem separation is not available. ONNX Runtime 1.24 dropped x86_64 macOS support.
 - **Linux — NVIDIA CUDA 12 or CUDA 13** — pick the bundle that matches the CUDA runtime installed on your system. Requirements:
   - NVIDIA proprietary driver

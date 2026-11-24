@@ -62,7 +62,7 @@ INTERSECT remembers your stem choice for each model.
 
 ## Step 4 — Device, mode and output
 
-- `DEVICE` toggles `CPU` / `GPU` (only when a GPU-capable runtime bundle is installed). GPU is usually 10–30× faster. If the GPU can't start, INTERSECT says so in the header instead of silently falling back.
+- `DEVICE` toggles `CPU` / `GPU` (only when a GPU-capable runtime bundle is installed). GPU is usually 10–30× faster. If the GPU can't start, INTERSECT says so in the header instead of silently falling back. On a Mac, GPU runs each model through Apple's Core ML; the first separation with a model takes longer while macOS prepares it.
 - `MODE`:
   - `Separate` — one WAV per selected stem.
   - `Combine` — the selected stems are summed into a single WAV (handy for "everything but vocals").
